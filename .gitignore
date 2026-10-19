@@ -1,0 +1,23 @@
+# === PlatformIO ===
+.pio/
+.vscode/
+
+# === Node / Next.js ===
+node_modules/
+.next/
+out/
+
+# === Environment & secrets ===
+.env
+.env.*
+
+# === OS junk ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Build artifacts ===
+*.o
+*.d
+*.map
+
