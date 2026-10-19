@@ -174,9 +174,13 @@ To make a dedicated laptop or secondary monitor boot automatically into the anim
 
 ## Documentation
 
-- [Protocol Specification](docs/protocol.md)
-- [Wiring Guide](docs/wiring.md)
-- [Component List](docs/components.md)
-- [Debug Guide](docs/debug-guide.md)
-- [Audio Files](docs/audio-files.md)
+- [Bring-Up & Verification Checklist](docs/test-checklist.md) — 10-stage testing matrix
+- [Protocol Specification](docs/protocol.md) — BLE GATT specification
+- [Protocol Verification Check](docs/protocol-check.md) — Side-by-side firmware vs client mapping
+- [Interactive Serial Menu](docs/serial-menu.md) — UART diagnostics & hardware test commands
+- [Wiring Guide](docs/wiring.md) — Pinouts and electrical schematics
+- [Component List](docs/components.md) — Bill of Materials (BOM)
+- [Debug Guide](docs/debug-guide.md) — Troubleshooting by symptom
+- [Audio Files](docs/audio-files.md) — Sound effects and Web Audio synthesizer
+
 

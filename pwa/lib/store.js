@@ -72,7 +72,7 @@ class Store {
   }
 
   isDemoMode() {
-    return Boolean(this.getItem(STORAGE_KEYS.DEMO_MODE, false));
+    return Boolean(this.getItem(STORAGE_KEYS.DEMO_MODE, true));
   }
 
   setDemoMode(enabled) {

@@ -26,7 +26,7 @@ class BleService {
     this.timeSyncInterval = null;
 
     // Check if demo mode was active previously
-    if (store.isDemoMode()) {
+    if (typeof window !== 'undefined' && store.isDemoMode()) {
       setTimeout(() => demo.start(), 100);
     }
   }
@@ -210,26 +210,47 @@ class BleService {
   enqueueWrite(charKey, buffer, writeWithoutResponse = false) {
     if (demo.active) return Promise.resolve();
 
-    return new Promise((resolve, reject) => {
-      this.writeQueue = this.writeQueue.then(async () => {
-        const chr = this.characteristics.get(charKey);
-        if (!chr) {
-          return reject(new Error(`Characteristic ${charKey} not available`));
-        }
-        try {
-          if (writeWithoutResponse && chr.writeValueWithoutResponse) {
-            await chr.writeValueWithoutResponse(buffer);
-          } else {
-            await chr.writeValueWithResponse(buffer);
-          }
-          resolve();
-        } catch (err) {
-          reject(err);
-        }
-      }).catch((err) => {
-        console.error(`[BLE Write Error] ${charKey}:`, err);
-        reject(err);
+    if (!this.isConnected()) {
+      bus.emit('system:toast', {
+        message: 'Not connected. Connect via BLE or enable Demo Mode.',
+        type: 'warning',
       });
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      this.writeQueue = this.writeQueue
+        .then(async () => {
+          const chr = this.characteristics.get(charKey);
+          if (!chr) {
+            console.warn(`[BLE] Characteristic ${charKey} not found.`);
+            bus.emit('system:toast', {
+              message: `Characteristic ${charKey} not available on device`,
+              type: 'warning',
+            });
+            resolve();
+            return;
+          }
+          try {
+            if (writeWithoutResponse && chr.writeValueWithoutResponse) {
+              await chr.writeValueWithoutResponse(buffer);
+            } else {
+              await chr.writeValueWithResponse(buffer);
+            }
+            resolve();
+          } catch (err) {
+            console.error(`[BLE Write Error] ${charKey}:`, err);
+            bus.emit('system:toast', {
+              message: `Write failed: ${charKey}`,
+              type: 'error',
+            });
+            resolve();
+          }
+        })
+        .catch((err) => {
+          console.error(`[BLE Queue Error] ${charKey}:`, err);
+          resolve();
+        });
     });
   }
 

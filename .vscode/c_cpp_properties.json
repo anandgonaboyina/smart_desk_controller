@@ -1,0 +1,31 @@
+{
+    "configurations": [
+        {
+            "name": "ESP32-S3",
+            "includePath": [
+                "${workspaceFolder}/firmware/include",
+                "${workspaceFolder}/firmware/lib/**",
+                "${workspaceFolder}/firmware/src",
+                "C:/Users/Anand Kumar/.platformio/packages/framework-arduinoespressif32/cores/esp32",
+                "C:/Users/Anand Kumar/.platformio/packages/framework-arduinoespressif32/variants/esp32s3",
+                "C:/Users/Anand Kumar/.platformio/packages/framework-arduinoespressif32/libraries/**",
+                "C:/Users/Anand Kumar/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/**",
+                "C:/Users/Anand Kumar/.platformio/packages/toolchain-xtensa-esp32s3/xtensa-esp32s3-elf/include/**"
+            ],
+            "defines": [
+                "ESP32",
+                "ESP32S3",
+                "ARDUINO=10812",
+                "ARDUINO_ARCH_ESP32",
+                "ARDUINO_ESP32S3_DEV",
+                "BOARD_HAS_PSRAM"
+            ],
+            "compilerPath": "C:/Users/Anand Kumar/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-g++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}
+
