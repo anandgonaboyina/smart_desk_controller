@@ -377,3 +377,23 @@ export function unpackDeviceStatus(dataView) {
   };
 }
 
+// ── Diagnostics & Device Logs ───────────────────────────────────────────────
+export function packSetLogLevel(level) {
+  return new Uint8Array([0x0D, level & 0xFF]);
+}
+
+export function packSetLogEnabled(enabled) {
+  return new Uint8Array([0x0E, enabled ? 1 : 0]);
+}
+
+export function packRunSelfTest() {
+  return new Uint8Array([0x0F]);
+}
+
+export function unpackDeviceLog(dataView) {
+  if (!dataView || dataView.byteLength === 0) return '';
+  const bytes = new Uint8Array(dataView.buffer, dataView.byteOffset, dataView.byteLength);
+  return new TextDecoder().decode(bytes);
+}
+
+

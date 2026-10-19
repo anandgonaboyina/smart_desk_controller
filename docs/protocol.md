@@ -462,6 +462,18 @@ Short configurable flash patterns for events.
 | 3 | 1 | boot_anim (0=off, 1=sweep) |
 | 4 | 1 | ble_indication (0=off, 1=blink while advertising) |
 
+### DEVICE_LOG (0x001A) — Read / Notify
+
+**Properties:** Read, Notify.
+Emits live log lines formatted as UTF-8 text strings (up to 84 bytes per notification).
+Read returns the latest buffered log line.
+
+**System Commands for Logging & Diagnostics (UUID_SYSTEM_CMD):**
+- `0x0D`: `SYSCMD_SET_LOG_LEVEL` — payload: `[level(1)]` (0=NONE, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG)
+- `0x0E`: `SYSCMD_SET_LOG_ENABLED` — payload: `[enabled(1)]` (0=OFF, 1=ON)
+- `0x0F`: `SYSCMD_RUN_SELFTEST` — triggers the full boot self-test suite and outputs structured PASS/FAIL report
+
+
 ---
 
 ## Load / Coil / Level Conversion

@@ -13,6 +13,8 @@
 #include "relays.h"
 #include "feature_switches.h"
 #include "features.h"
+#include "log.h"
+#include "diagnostics.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -145,8 +147,27 @@ uint8_t systemCmdsExecute(uint8_t cmdId, const uint8_t* payload, uint8_t payload
             relaysSafeStateAll();
             return ERR_OK;
 
+        case SYSCMD_SET_LOG_LEVEL:
+            if (payloadLen >= 1) {
+                logSetLevel(payload[0]);
+                return ERR_OK;
+            }
+            return ERR_INVALID_PARAM;
+
+        case SYSCMD_SET_LOG_ENABLED:
+            if (payloadLen >= 1) {
+                logSetEnabled(payload[0] != 0);
+                return ERR_OK;
+            }
+            return ERR_INVALID_PARAM;
+
+        case SYSCMD_RUN_SELFTEST:
+            diagnosticsRunSelfTest();
+            return ERR_OK;
+
         default:
             return ERR_INVALID_PARAM;
     }
 }
+
 

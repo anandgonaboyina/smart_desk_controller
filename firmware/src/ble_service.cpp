@@ -15,6 +15,7 @@
 #include "feature_switches.h"
 #include "settings.h"
 #include "features.h"
+#include "log.h"
 #include <Arduino.h>
 #include <string.h>
 
@@ -68,11 +69,13 @@ static NimBLECharacteristic* s_chrSystemCmd = (NimBLECharacteristic*)0;
 static NimBLECharacteristic* s_chrDeviceStatus = (NimBLECharacteristic*)0;
 static NimBLECharacteristic* s_chrNotifyBlink = (NimBLECharacteristic*)0;
 static NimBLECharacteristic* s_chrBootSettings = (NimBLECharacteristic*)0;
+static NimBLECharacteristic* s_chrDeviceLog = (NimBLECharacteristic*)0;
 
 class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
         (void)pServer; (void)connInfo;
         s_connectedCount++;
+        LOGI(TAG_BLE, "Client connected. Active clients: %d", s_connectedCount);
         bleRestartAdvertising();
 #if FEATURE_LEDS
         ledsTriggerNotificationBlink(NOTIFY_EVENT_BLE_CONNECTED);
@@ -82,6 +85,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
         (void)pServer; (void)connInfo; (void)reason;
         if (s_connectedCount > 0) s_connectedCount--;
+        LOGI(TAG_BLE, "Client disconnected (reason %d). Active clients: %d", reason, s_connectedCount);
         s_displayClientConnected = false;
 #if FEATURE_HID
         hidGuardSetDisplayConnected(false);
@@ -98,11 +102,14 @@ class RoleCallbacks : public NimBLECharacteristicCallbacks {
         (void)connInfo;
         size_t len = pChr->getDataLength();
         const uint8_t* val = pChr->getValue();
-        if (len >= 1 && val[0] == ROLE_DISPLAY) {
-            s_displayClientConnected = true;
+        if (len >= 1) {
+            LOGI(TAG_BLE, "Client role set: %s", (val[0] == ROLE_DISPLAY) ? "DISPLAY" : "REMOTE");
+            if (val[0] == ROLE_DISPLAY) {
+                s_displayClientConnected = true;
 #if FEATURE_HID
-            hidGuardSetDisplayConnected(true);
+                hidGuardSetDisplayConnected(true);
 #endif
+            }
         }
     }
 };
@@ -298,6 +305,8 @@ static void setupCharacteristics(void) {
 
     s_chrDeviceStatus = s_service->createCharacteristic(UUID_DEVICE_STATUS, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_NOTIFY);
     static DeviceStatusCallbacks devStatCb; s_chrDeviceStatus->setCallbacks(&devStatCb);
+
+    s_chrDeviceLog = s_service->createCharacteristic(UUID_DEVICE_LOG, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_NOTIFY);
 }
 
 void bleBegin(void) {
@@ -320,6 +329,8 @@ void bleBegin(void) {
     // Wire subsystem state change callbacks
     relaysRegisterCallback([](uint8_t, uint8_t) { bleNotifyRelayState(); });
     featureSwitchesRegisterCallback([](uint8_t, uint8_t) { bleNotifyFeatureSwitches(); });
+    logSetNotifyCallback(bleNotifyDeviceLog);
+
 
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
     pAdv->addServiceUUID(UUID_SERVICE);
@@ -465,7 +476,15 @@ void bleNotifyDeviceStatus(void) {
     }
 }
 
+void bleNotifyDeviceLog(const char* line) {
+    if (s_chrDeviceLog != NULL && s_connectedCount > 0 && line != NULL) {
+        s_chrDeviceLog->setValue((const uint8_t*)line, strlen(line));
+        s_chrDeviceLog->notify();
+    }
+}
+
 void bleLoop(void) {
     // Non-blocking BLE background housekeeping
 }
+
 

@@ -125,7 +125,8 @@ class BleService {
     const notifyKeys = [
       'RELAY_STATE', 'RELAY_CONFIG', 'SCHEDULES', 'TIMERS', 'AWAY_MODE',
       'LED_STATE', 'LED_SLOTS', 'LED_PRESETS', 'LED_NOTIFY_BLINK',
-      'CALL_MODE', 'FEATURE_SWITCHES', 'HID_TYPE_NOW', 'SYSTEM_CMD', 'DEVICE_STATUS'
+      'CALL_MODE', 'FEATURE_SWITCHES', 'HID_TYPE_NOW', 'SYSTEM_CMD',
+      'DEVICE_STATUS', 'DEVICE_LOG'
     ];
 
     for (const key of notifyKeys) {
@@ -195,6 +196,9 @@ class BleService {
         break;
       case 'HID_SETTINGS':
         bus.emit('ble:hid_settings', pack.unpackHidSettings(dataView));
+        break;
+      case 'DEVICE_LOG':
+        bus.emit('ble:device_log', pack.unpackDeviceLog(dataView));
         break;
       default:
         break;
@@ -414,8 +418,36 @@ class BleService {
     const buf = pack.packSystemCmd(cmdId, payloadStr);
     return this.enqueueWrite('SYSTEM_CMD', buf);
   }
+
+  async setLogLevel(level) {
+    if (demo.active) {
+      demo.executeSystemCmd(0x0D, String(level));
+      return;
+    }
+    const buf = pack.packSetLogLevel(level);
+    return this.enqueueWrite('SYSTEM_CMD', buf);
+  }
+
+  async setLogEnabled(enabled) {
+    if (demo.active) {
+      demo.executeSystemCmd(0x0E, enabled ? '1' : '0');
+      return;
+    }
+    const buf = pack.packSetLogEnabled(enabled);
+    return this.enqueueWrite('SYSTEM_CMD', buf);
+  }
+
+  async runSelfTest() {
+    if (demo.active) {
+      demo.executeSystemCmd(0x0F);
+      return;
+    }
+    const buf = pack.packRunSelfTest();
+    return this.enqueueWrite('SYSTEM_CMD', buf);
+  }
 }
 
 export const ble = new BleService();
 export default ble;
+
 

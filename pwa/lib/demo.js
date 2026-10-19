@@ -469,6 +469,34 @@ class DemoSimulator {
     }, 1500);
   }
 
+  // ── Logging & Diagnostics (Simulated) ─────────────────────────────────────
+
+  emitLog(level, tag, text) {
+    const s = Math.floor(this.uptimeSec);
+    const ms = Math.floor((this.uptimeSec % 1) * 1000);
+    const line = `[${String(s).padStart(4, ' ')}.${String(ms).padStart(3, '0')}] [${level}] [${tag}] ${text} [SIMULATED]`;
+    bus.emit('ble:device_log', line);
+  }
+
+  runSelfTest() {
+    this.emitLog('INFO', 'TEST', '==================================================');
+    this.emitLog('INFO', 'TEST', '       SMART DESK CONTROLLER SELF-TEST (SIMULATED)');
+    this.emitLog('INFO', 'TEST', '==================================================');
+    this.emitLog('INFO', 'TEST', '[PASS] Reset Reason             : OK (Power-on)');
+    this.emitLog('INFO', 'TEST', '[PASS] NVS Storage              : OK (Read/Write verified)');
+    this.emitLog('INFO', 'TEST', '[PASS] Relay Pin Map            : OK (GPIO4,5,6,7 validated)');
+    this.emitLog('INFO', 'TEST', '[PASS] Relay Electrical         : OK (Readback matches safe OFF)');
+    this.emitLog('INFO', 'TEST', '[PASS] LED Driver               : OK (8x WS2812B GRB on GPIO8)');
+    this.emitLog('INFO', 'TEST', '[PASS] BLE GATT Engine          : OK (Advertising SmartDesk)');
+    this.emitLog('INFO', 'TEST', '[PASS] USB Keyboard HID         : OK (TinyUSB attached)');
+    this.emitLog('INFO', 'TEST', '[PASS] System Heap Memory       : OK (298450 bytes free)');
+    this.emitLog('INFO', 'TEST', '[PASS] Protocol Version         : OK (v1)');
+    this.emitLog('INFO', 'TEST', '--------------------------------------------------');
+    this.emitLog('INFO', 'TEST', 'Self-Test Finished: ALL TESTS PASSED [SIMULATED]');
+    this.emitLog('INFO', 'TEST', '==================================================');
+    bus.emit('system:toast', { message: 'Self-test completed: All tests passed (Simulated)', type: 'success' });
+  }
+
   // ── System Commands ────────────────────────────────────────────────────────
 
   executeSystemCmd(cmdId, payloadStr = '') {
@@ -481,6 +509,7 @@ class DemoSimulator {
       case 0x0B: // All Load OFF
         for (let i = 0; i < this.relayCount; i++) this.loads[i] = 0;
         bus.emit('ble:relay_state', { count: this.relayCount, loads: this.loads.slice(0, this.relayCount) });
+        this.emitLog('INFO', 'RELAY', 'All loads turned OFF by system command');
         bus.emit('system:toast', { message: 'All loads turned OFF', type: 'info' });
         break;
       case 0x0C: // Safe State
@@ -488,13 +517,24 @@ class DemoSimulator {
         this.ledState.mode = 0;
         bus.emit('ble:relay_state', { count: this.relayCount, loads: this.loads.slice(0, this.relayCount) });
         bus.emit('ble:led_state', { ...this.ledState });
+        this.emitLog('INFO', 'SYS', 'Safe state applied by system command');
         bus.emit('system:toast', { message: 'Safe state applied', type: 'info' });
+        break;
+      case 0x0D: // Set Log Level
+        this.emitLog('INFO', 'SYS', `Log level set to ${payloadStr}`);
+        break;
+      case 0x0E: // Set Log Enabled
+        this.emitLog('INFO', 'SYS', `Logging ${payloadStr ? 'ENABLED' : 'DISABLED'}`);
+        break;
+      case 0x0F: // Run Self-Test
+        this.runSelfTest();
         break;
       default:
         break;
     }
   }
 }
+
 
 export const demo = new DemoSimulator();
 export default demo;

@@ -14,6 +14,7 @@
 #include "relay_driver_gpio.h"
 #include "relay_driver_595.h"
 #include "features.h"
+#include "log.h"
 #include <Arduino.h>
 #include <Preferences.h>
 #include <string.h>
@@ -134,6 +135,7 @@ void relaysLoop(void) {
 uint8_t relaysSetLoad(uint8_t index, uint8_t desiredLoad) {
     if (index >= s_activeCount) return ERR_INVALID_PARAM;
     if (s_configs[index].affectedByAway && awayIsRelayLocked(index)) {
+        LOGW(TAG_RELAY, "Relay %d (%s) blocked by Away mode lock", index + 1, s_configs[index].name);
         return ERR_BLOCKED_BY_AWAY;
     }
     return relaysForceSetLoad(index, desiredLoad);
@@ -146,6 +148,8 @@ uint8_t relaysForceSetLoad(uint8_t index, uint8_t desiredLoad) {
 
     if (normLoad != s_loadStates[index]) {
         if (!relayCanSwitch(now, s_lastSwitchMs[index], s_configs[index].minSwitchMs)) {
+            LOGW(TAG_RELAY, "Relay %d (%s) rate-limited (interval %u ms)",
+                 index + 1, s_configs[index].name, s_configs[index].minSwitchMs);
             return ERR_RATE_LIMITED;
         }
         s_loadStates[index] = normLoad;
@@ -154,12 +158,19 @@ uint8_t relaysForceSetLoad(uint8_t index, uint8_t desiredLoad) {
         s_driver->applyAll();
         saveLoadStateNvs(index);
 
+        uint8_t coil = relayLoadToCoil(normLoad, s_configs[index].wiring);
+        uint8_t lvl = relayCoilToLevel(coil, s_configs[index].polarity);
+        LOGI(TAG_RELAY, "Relay %d (%s) -> LOAD %s (coil=%d, pin=%d %s)",
+             index + 1, s_configs[index].name, normLoad ? "ON" : "OFF",
+             coil, s_configs[index].gpioPin, lvl ? "HIGH" : "LOW");
+
         if (s_callback != (RelayStateCallback)0) {
             s_callback(index, normLoad);
         }
     }
     return ERR_OK;
 }
+
 
 uint8_t relaysGetLoad(uint8_t index) {
     if (index >= s_activeCount) return 0;

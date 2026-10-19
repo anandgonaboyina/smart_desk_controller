@@ -36,5 +36,6 @@ export const UUIDS = {
   DEVICE_STATUS:      'd3a00017-1b0e-4e6a-9b3f-c0f2a8d7e5b1',
   LED_NOTIFY_BLINK:   'd3a00018-1b0e-4e6a-9b3f-c0f2a8d7e5b1',
   LED_BOOT_SETTINGS:  'd3a00019-1b0e-4e6a-9b3f-c0f2a8d7e5b1',
+  DEVICE_LOG:         'd3a0001a-1b0e-4e6a-9b3f-c0f2a8d7e5b1',
 };
 

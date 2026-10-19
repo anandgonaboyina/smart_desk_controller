@@ -74,9 +74,12 @@
 #define UUID_HID_SETTINGS       "d3a00014-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // R/W
 #define UUID_HID_LOG            "d3a00015-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // R/N
 
-// ── System ──────────────────────────────────────────────────────────
+// ── System & Diagnostics ────────────────────────────────────────────
 #define UUID_SYSTEM_CMD         "d3a00016-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // W/N
 #define UUID_DEVICE_STATUS      "d3a00017-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // R/N
+#define UUID_LED_NOTIFY_BLINK   "d3a00018-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // R/W/N
+#define UUID_LED_BOOT_SETTINGS  "d3a00019-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // R/W
+#define UUID_DEVICE_LOG         "d3a0001a-1b0e-4e6a-9b3f-c0f2a8d7e5b1"  // R/N
 
 
 /* ════════════════════════════════════════════════════════════════════
@@ -560,9 +563,22 @@ static const uint8_t FSWITCH_DEFAULTS[FSWITCH_COUNT] = {
 #define SYSCMD_FACTORY_RESET    0x0A  // Payload: "RESET" + optional [erase_pw(1)]
 #define SYSCMD_ALL_LOAD_OFF     0x0B
 #define SYSCMD_SAFE_STATE       0x0C
+#define SYSCMD_SET_LOG_LEVEL    0x0D  // Payload: [level(1)] (0=none, 1=err, 2=warn, 3=info, 4=debug)
+#define SYSCMD_SET_LOG_ENABLED  0x0E  // Payload: [enabled(1)] (0/1)
+#define SYSCMD_RUN_SELFTEST     0x0F  // Triggers self-test suite
 
 #define FACTORY_RESET_MAGIC     "RESET"
 #define FACTORY_RESET_MAGIC_LEN 5
+
+
+/* ════════════════════════════════════════════════════════════════════
+ *  DEVICE LOG  (UUID_DEVICE_LOG)
+ *
+ *  Read: returns the most recent log line or status
+ *  Notify: emits each formatted log line string (UTF-8, max ~84 bytes)
+ * ════════════════════════════════════════════════════════════════════ */
+#define DEVICE_LOG_MAX_LEN      84
+
 
 
 /* ════════════════════════════════════════════════════════════════════

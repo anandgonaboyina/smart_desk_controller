@@ -56,6 +56,7 @@ void bleNotifyAway(void);
 void bleNotifyLedState(void);
 void bleNotifyCallMode(void);
 void bleNotifyDeviceStatus(void);
+void bleNotifyDeviceLog(const char* line);
 
 #ifdef __cplusplus
 }

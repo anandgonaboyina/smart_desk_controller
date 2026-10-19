@@ -225,5 +225,36 @@ check that these three files agree:
 3. `pwa/lib/pure/protocol-pack.js` — JavaScript pack/parse functions
 
 A mismatch here means one side writes bytes at different offsets than the other
-reads them.  Compare the offset tables side by side.
+reads them. Compare the offset tables side by side.
+
+---
+
+## How to Tell a Hardware Fault from a Code Fault
+
+Run `selftest` in the serial console or click **Run Self-Test** in the PWA Diagnostics panel.
+Review the structured output:
+
+### 1. Reset Reason Failures
+- **`[FAIL] Reset Reason : [HARDWARE] Brownout detected!`**
+  - **Fault:** HARDWARE. The 5V power supply sagged below 4.5V under load (e.g. all 4 relay coils or WS2812B LEDs energized simultaneously).
+  - **Fix:** Connect a dedicated 5V 2A power supply with 1000µF capacitor across the power rail. Never power relay coils directly from the ESP32 3.3V pin.
+- **`[FAIL] Reset Reason : [CODE] Watchdog reset!`**
+  - **Fault:** CODE. A FreeRTOS task or BLE callback blocked the scheduler for > 5 seconds.
+  - **Fix:** Ensure no `delay()` or blocking calls exist in BLE write callbacks or main loop.
+
+### 2. Relay Electrical Readback
+- Run `relaytest 1` in serial console:
+  - If output says: `WARNING: Pin level mismatch! HARDWARE fault or missing 10k pull-up resistor on GPIO4`:
+    - **Fault:** HARDWARE. The ESP32 is outputting the correct electrical level, but the physical optocoupler input is floating, disconnected, or inverted.
+    - **Fix:** Verify 10k external pull-up resistor to 3.3V on the active-LOW optocoupler input, and confirm common ground between ESP32 and relay board.
+  - If output says: `(CODE & HARDWARE OK)`:
+    - Both software pin logic and physical electrical levels agree.
+
+### 3. LED Lighting Faults
+- Run `ledtest` in serial console:
+  - If LEDs stay completely dark across all 4 steps:
+    - **Fault:** HARDWARE. Check 74HC245 level shifter wiring (VCC=5V, OE=GND, DIR=HIGH). WS2812B DIN requires 5V logic; 3.3V logic will not reliably trigger the first LED.
+  - If LEDs show red when green was requested:
+    - **Fault:** CODE / CONFIG. Open `firmware/include/config.h` and change `LED_COLOR_ORDER` from `NEO_RGB` to `NEO_GRB`.
+
 
