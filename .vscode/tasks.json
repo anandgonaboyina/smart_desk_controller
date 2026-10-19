@@ -4,11 +4,21 @@
     {
       "label": "PlatformIO: Build Firmware",
       "type": "shell",
-      "command": "pio run -e esp32s3_n16r8",
+      "command": "pio run",
       "group": {
         "kind": "build",
         "isDefault": true
       },
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "PlatformIO: Upload Firmware",
+      "type": "shell",
+      "command": "pio run -t upload",
+      "group": "build",
       "options": {
         "cwd": "${workspaceFolder}/firmware"
       },
@@ -79,4 +89,3 @@
     }
   ]
 }
-
