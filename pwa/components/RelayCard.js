@@ -11,15 +11,20 @@
 
 import React from 'react';
 
-export default function RelayCard({
-  channel,
-  timer,
-  isLockedByAway = false,
-  onToggle,
-  onSettingsClick,
-  onTimerClick,
-}) {
-  const { index, load, coil, gpioLevel, config } = channel;
+export default function RelayCard(props) {
+  const channel = props.channel || {
+    index: props.index ?? 0,
+    load: props.load ?? 0,
+    coil: props.coil ?? 0,
+    gpioLevel: props.gpioLevel ?? 0,
+    config: props.config || {
+      name: props.name || `Relay ${(props.index ?? 0) + 1}`,
+      icon: props.icon || '⚡',
+      gpioPin: props.gpioPin ?? (4 + (props.index ?? 0)),
+    },
+  };
+  const { timer, isLockedByAway = false, onToggle, onSettingsClick, onTimerClick } = props;
+  const { index, load, coil, gpioLevel, config = {} } = channel;
   const isLoadOn = Boolean(load);
 
   return (

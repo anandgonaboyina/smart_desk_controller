@@ -116,32 +116,51 @@ pio run --target upload
 pio device monitor
 ```
 
-### PWA (Development)
+### PWA (Development & Testing)
 
 ```bash
 cd pwa
 npm install
+
+# Run pure layer isolation check and unit tests (124 assertions)
+npm run check:pure
+
+# Start development server
 npm run dev
-# Open http://localhost:3000 in Chrome/Edge
+# Open http://localhost:3000 in Chrome or Edge
+# Click 'Demo Mode' in header to test all features with zero physical hardware!
 ```
 
-### PWA (Production — GitHub Pages)
+### PWA (Production Build & GitHub Pages Deployment)
 
 ```bash
 cd pwa
-npm run build    # Static export to out/
-# Deploy the out/ directory to GitHub Pages
-# Set basePath in next.config.js to match your repo name
+
+# 1. Set repository base path if deploying to GitHub Pages project site
+# (e.g. for https://username.github.io/smart_desk_controller/)
+export NEXT_PUBLIC_BASE_PATH="/smart_desk_controller"   # Linux/macOS
+$env:NEXT_PUBLIC_BASE_PATH="/smart_desk_controller"      # Windows PowerShell
+
+# 2. Build static export
+npm run build
+
+# 3. Deploy
+# Next.js exports static files into the `out/` directory.
+# Commit or publish `out/` to your gh-pages branch.
 ```
 
-### Windows Startup Shortcut
+### Windows Startup Fullscreen Display Mode
 
-Create a shortcut with this target:
-```
+To make a dedicated laptop or secondary monitor boot automatically into the animated desk companion display:
+
+1. Press `Win + R` and type `shell:startup` (opens Windows Startup folder).
+2. Right click → **New** → **Shortcut**.
+3. Set target command line (adjust URL to your deployed GitHub Pages or local host):
+```cmd
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --app=https://yourusername.github.io/smart_desk_controller/ --start-fullscreen --autoplay-policy=no-user-gesture-required
 ```
-
-Place it in `shell:startup` to launch on login.
+4. Click **Next**, name the shortcut `SmartDesk Display`, and click **Finish**.
+5. On Windows boot, Chrome launches in kiosk mode, skips audio gesture blocking, and connects to the desk companion.
 
 ## Key Design Decisions
 

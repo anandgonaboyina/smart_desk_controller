@@ -25,6 +25,8 @@ export const viewport = {
   userScalable: false,
 };
 
+import ServiceWorkerManager from '../components/ServiceWorkerManager.js';
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en" data-theme="dark">
@@ -35,6 +37,7 @@ export default function RootLayout({ children }) {
       <body>
         <div className="app-viewport">
           {children}
+          <ServiceWorkerManager />
         </div>
       </body>
     </html>

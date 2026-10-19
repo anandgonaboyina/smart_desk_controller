@@ -410,6 +410,33 @@ class BleService {
     return this.enqueueWrite('HID_TYPE_NOW', buf);
   }
 
+  async saveHidPassword(password) {
+    if (demo.active) {
+      demo.setHidPassword(password);
+      return;
+    }
+    const buf = pack.packHidPassword(password);
+    return this.enqueueWrite('HID_PASSWORD', buf);
+  }
+
+  async eraseHidPassword() {
+    if (demo.active) {
+      demo.eraseHidPassword();
+      return;
+    }
+    const buf = pack.packHidSetting(0x07, 1);
+    return this.enqueueWrite('HID_SETTINGS', buf);
+  }
+
+  async setHidSetting(fieldId, val) {
+    if (demo.active) {
+      demo.setHidSetting(fieldId, val);
+      return;
+    }
+    const buf = pack.packHidSetting(fieldId, val);
+    return this.enqueueWrite('HID_SETTINGS', buf);
+  }
+
   async sendSystemCmd(cmdId, payloadStr = '') {
     if (demo.active) {
       demo.executeSystemCmd(cmdId, payloadStr);

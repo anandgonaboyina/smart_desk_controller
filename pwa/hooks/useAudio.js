@@ -12,9 +12,12 @@ import { useState, useEffect, useCallback } from 'react';
 import audio from '../lib/audio.js';
 import store from '../lib/store.js';
 
+import audioSync from '../lib/audio-sync.js';
+
 export function useAudio() {
   const [enabled, setEnabled] = useState(true);
   const [volume, setVolume] = useState(0.7);
+  const [isMusicActive, setIsMusicActive] = useState(false);
   const [quietHours, setQuietHours] = useState({
     enabled: false,
     start: '22:00',
@@ -25,6 +28,7 @@ export function useAudio() {
     setEnabled(store.getAudioEnabled());
     setVolume(store.getAudioVolume());
     setQuietHours(store.getQuietHours());
+    setIsMusicActive(audioSync.isActive());
   }, []);
 
   const updateEnabled = useCallback((val) => {
@@ -47,14 +51,26 @@ export function useAudio() {
     audio.play(soundId);
   }, []);
 
+  const toggleMusicSync = useCallback(async () => {
+    if (audioSync.isActive()) {
+      audioSync.stop();
+      setIsMusicActive(false);
+    } else {
+      await audioSync.start();
+      setIsMusicActive(audioSync.isActive());
+    }
+  }, []);
+
   return {
     enabled,
     volume,
     quietHours,
+    isMusicActive,
     updateEnabled,
     updateVolume,
     updateQuietHours,
     playSound,
+    toggleMusicSync,
   };
 }
 

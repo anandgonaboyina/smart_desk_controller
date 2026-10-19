@@ -46,10 +46,25 @@ export function useUnlock() {
     ble.triggerHidTypeNow(path);
   }, []);
 
+  const savePassword = useCallback(async (password) => {
+    await ble.saveHidPassword(password);
+  }, []);
+
+  const erasePassword = useCallback(async () => {
+    await ble.eraseHidPassword();
+  }, []);
+
+  const updateSetting = useCallback(async (fieldId, val) => {
+    await ble.setHidSetting(fieldId, val);
+  }, []);
+
   return {
     settings,
     status,
     triggerTypeNow,
+    savePassword,
+    erasePassword,
+    updateSetting,
     passwordIsSet: settings.passwordIsSet,
   };
 }

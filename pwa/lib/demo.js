@@ -452,7 +452,31 @@ class DemoSimulator {
     }
   }
 
-  // ── HID & PC Unlock ────────────────────────────────────────────────────────
+  setHidPassword(password) {
+    this.hidSettings.passwordIsSet = Boolean(password && password.length > 0);
+    bus.emit('ble:hid_settings', { ...this.hidSettings });
+    this.emitLog('INFO', 'HID', 'Password updated (write-only) [SIMULATED]');
+    bus.emit('system:toast', { message: 'Password saved to device', type: 'success' });
+  }
+
+  eraseHidPassword() {
+    this.hidSettings.passwordIsSet = false;
+    bus.emit('ble:hid_settings', { ...this.hidSettings });
+    this.emitLog('INFO', 'HID', 'Password erased from NVS [SIMULATED]');
+    bus.emit('system:toast', { message: 'Password erased', type: 'info' });
+  }
+
+  setHidSetting(fieldId, val) {
+    if (fieldId === 0x01) this.hidSettings.signInType = val;
+    if (fieldId === 0x02) this.hidSettings.pressEnter = Boolean(val);
+    if (fieldId === 0x03) this.hidSettings.autoDelaySec = val;
+    if (fieldId === 0x04) this.hidSettings.autoEnabled = Boolean(val);
+    if (fieldId === 0x05) this.hidSettings.usbEnabled = Boolean(val);
+    if (fieldId === 0x06) this.hidSettings.bleEnabled = Boolean(val);
+    if (fieldId === 0x07) this.hidSettings.passwordIsSet = false;
+    if (fieldId === 0x08) this.hidSettings.usbKbDisabled = Boolean(val);
+    bus.emit('ble:hid_settings', { ...this.hidSettings });
+  }
 
   triggerHidTypeNow(path = 0) {
     bus.emit('caption:show', { text: 'Simulating PC unlock typing...', durationMs: 3000 });
