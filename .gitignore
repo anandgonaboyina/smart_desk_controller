@@ -1,6 +1,13 @@
 # === PlatformIO ===
 .pio/
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/c_cpp_properties.json
+firmware/.vscode/
+
+
 
 # === Node / Next.js ===
 node_modules/

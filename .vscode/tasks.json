@@ -1,0 +1,81 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PlatformIO: Build Firmware",
+      "type": "shell",
+      "command": "pio run -e esp32s3_n16r8",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "PlatformIO: Clean Build",
+      "type": "shell",
+      "command": "pio run -t clean",
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "PlatformIO: Serial Monitor (115200 baud)",
+      "type": "shell",
+      "command": "pio device monitor -b 115200",
+      "group": "test",
+      "options": {
+        "cwd": "${workspaceFolder}/firmware"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PWA: Run Pure Unit Tests (check:pure)",
+      "type": "shell",
+      "command": "npm run check:pure",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/pwa"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PWA: Start Dev Server (Next.js)",
+      "type": "shell",
+      "command": "npm run dev",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/pwa"
+      },
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Starting.*",
+          "endsPattern": ".*Ready in.*"
+        }
+      }
+    },
+    {
+      "label": "PWA: Production Static Build (export)",
+      "type": "shell",
+      "command": "npm run build",
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}/pwa"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
