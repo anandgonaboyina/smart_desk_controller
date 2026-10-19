@@ -108,3 +108,4 @@ export function formatScheduleSummary(schedule, relayName = 'Relay') {
 
   return `${relayName}: ${times || 'No action'} (${days})`;
 }
+

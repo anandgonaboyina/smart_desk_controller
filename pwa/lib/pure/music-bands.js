@@ -107,3 +107,4 @@ export function packMusicFrame(bass, mid, treble, beat) {
   buf[3] = beat ? 1 : 0;
   return buf;
 }
+

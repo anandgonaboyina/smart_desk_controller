@@ -110,3 +110,4 @@ export function selectHighestPriorityRule(matchingRules) {
 
   return best;
 }
+

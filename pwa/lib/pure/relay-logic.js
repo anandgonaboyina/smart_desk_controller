@@ -155,3 +155,4 @@ export function relayCanSwitch(nowMs, lastSwitchMs, minIntervalMs) {
   const elapsed = Math.max(0, nowMs - lastSwitchMs);
   return elapsed >= minIntervalMs;
 }
+

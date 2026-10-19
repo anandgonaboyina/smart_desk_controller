@@ -263,3 +263,4 @@ export function getHeartbeatIntensity(elapsedMs, cycleMs = 1000) {
   }
   return 0;
 }
+

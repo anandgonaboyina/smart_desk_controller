@@ -137,3 +137,4 @@ export function isMinuteInWindow(curMin, onMin, offMin) {
   // Overnight window: onMin > offMin
   return curMin >= onMin || curMin < offMin;
 }
+
