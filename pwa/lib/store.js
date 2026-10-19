@@ -127,3 +127,4 @@ class Store {
 
 export const store = new Store();
 export default store;
+

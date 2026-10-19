@@ -102,3 +102,4 @@ export function getBreathingOffset(timestampMs) {
   const phase = (timestampMs % periodMs) / periodMs;
   return Math.sin(phase * 2 * Math.PI) * 2;
 }
+
