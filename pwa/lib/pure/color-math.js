@@ -267,3 +267,112 @@ export function getHeartbeatIntensity(elapsedMs, cycleMs = 1000) {
   return 0;
 }
 
+/**
+ * 10 RGB Power-On Boot & Shutdown Transition Animations
+ */
+export const BOOT_ANIMATIONS = [
+  { id: 0, label: 'Left-to-Right / Bottom-to-Top Sweep', type: 'boot', durationMs: 1200 },
+  { id: 1, label: 'Right-to-Left / Top-to-Bottom Return', type: 'shutdown', durationMs: 1200 },
+  { id: 2, label: 'Center-Outward Expand', type: 'boot', durationMs: 1000 },
+  { id: 3, label: 'Outside-Inward Collapse', type: 'shutdown', durationMs: 1000 },
+  { id: 4, label: 'Smooth Warm Amber Fade-In', type: 'boot', durationMs: 1500 },
+  { id: 5, label: 'Smooth Fade-Out to Black', type: 'shutdown', durationMs: 1200 },
+  { id: 6, label: 'Rainbow Spectrum Curtain', type: 'boot', durationMs: 1800 },
+  { id: 7, label: 'Cyber Scanner Ping-Pong Beam', type: 'boot', durationMs: 1400 },
+  { id: 8, label: 'Starlight Sparkle Awakening', type: 'boot', durationMs: 1600 },
+  { id: 9, label: 'Aurora Shimmer Wave', type: 'both', durationMs: 2000 },
+];
+
+/**
+ * Calculate 8-pixel RGB colors for a given boot/shutdown animation frame.
+ *
+ * @param {number} animId        - Animation ID (0..9)
+ * @param {number} progress       - Progress normalized (0.0 to 1.0)
+ * @param {{r:number,g:number,b:number}} baseColor - User's selected base RGB color
+ * @returns {Array<{r:number,g:number,b:number}>} Array of 8 RGB pixel objects
+ */
+export function getBootAnimationPixels(animId, progress, baseColor = { r: 64, g: 150, b: 255 }) {
+  const p = Math.max(0, Math.min(1, progress));
+  const pixels = [];
+
+  for (let i = 0; i < 8; i++) {
+    switch (animId) {
+      case 0: { // Left-to-Right Sweep
+        const activeIdx = Math.floor(p * 9);
+        pixels.push(i < activeIdx ? baseColor : { r: 0, g: 0, b: 0 });
+        break;
+      }
+      case 1: { // Right-to-Left Return
+        const offIdx = Math.floor(p * 9);
+        pixels.push(i < (8 - offIdx) ? baseColor : { r: 0, g: 0, b: 0 });
+        break;
+      }
+      case 2: { // Center-Outward Expand
+        const dist = Math.abs(i - 3.5);
+        const maxDist = p * 4;
+        pixels.push(dist <= maxDist ? baseColor : { r: 0, g: 0, b: 0 });
+        break;
+      }
+      case 3: { // Outside-Inward Collapse
+        const dist = Math.abs(i - 3.5);
+        const threshold = (1 - p) * 4;
+        pixels.push(dist >= threshold ? baseColor : { r: 0, g: 0, b: 0 });
+        break;
+      }
+      case 4: { // Warm Fade-In
+        const factor = p * p;
+        pixels.push({
+          r: Math.round(255 * factor),
+          g: Math.round(180 * factor),
+          b: Math.round(80 * factor),
+        });
+        break;
+      }
+      case 5: { // Fade-Out
+        const factor = (1 - p) * (1 - p);
+        pixels.push({
+          r: Math.round(baseColor.r * factor),
+          g: Math.round(baseColor.g * factor),
+          b: Math.round(baseColor.b * factor),
+        });
+        break;
+      }
+      case 6: { // Rainbow Curtain
+        const hue = (p * 360 + i * 45) % 360;
+        pixels.push(hsvToRgb(hue, 100, Math.min(100, p * 150)));
+        break;
+      }
+      case 7: { // Cyber Scanner
+        const beamPos = Math.sin(p * Math.PI * 3) * 3.5 + 3.5;
+        const dist = Math.abs(i - beamPos);
+        const glow = Math.max(0, 1 - dist * 0.7);
+        pixels.push({
+          r: Math.round(baseColor.r * glow),
+          g: Math.round(baseColor.g * glow),
+          b: Math.round(baseColor.b * glow),
+        });
+        break;
+      }
+      case 8: { // Starlight Sparkle
+        const seed = Math.sin(i * 99 + p * 20);
+        const isLit = seed > (1 - p * 1.5);
+        pixels.push(isLit ? baseColor : { r: 0, g: 0, b: 0 });
+        break;
+      }
+      case 9:
+      default: { // Aurora Shimmer Wave
+        const wave = Math.sin(p * Math.PI * 2 + i * 0.8) * 0.5 + 0.5;
+        pixels.push({
+          r: Math.round(baseColor.r * wave * 0.4),
+          g: Math.round(baseColor.g * wave),
+          b: Math.round(255 * wave),
+        });
+        break;
+      }
+    }
+  }
+
+  return pixels;
+}
+
+
