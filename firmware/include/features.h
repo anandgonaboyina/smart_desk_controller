@@ -22,6 +22,7 @@
 /* ── Core (cannot be disabled) ───────────────────────────────────── */
 // Relay control, button "all off", safe-state, BLE pairing, and
 // min-switch-interval are always compiled in.  There is no flag.
+#define FEATURE_BLE             1   // BLE GATT peripheral engine
 
 /* ── Relay hardware drivers ──────────────────────────────────────── */
 #define FEATURE_RELAYS          1   // Relay manager (always 1 in practice)

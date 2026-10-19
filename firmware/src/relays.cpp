@@ -20,7 +20,7 @@
 #include <string.h>
 
 #if FEATURE_AWAY
-extern bool awayIsRelayLocked(uint8_t index);
+#include "away.h"
 #else
 static inline bool awayIsRelayLocked(uint8_t) { return false; }
 #endif

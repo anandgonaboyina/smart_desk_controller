@@ -14,6 +14,7 @@
 #if FEATURE_SCHEDULER
 
 #include "scheduler.h"
+#include "protocol.h"
 #include "../lib/schedule_logic/schedule_logic.h"
 #include "relays.h"
 #include "feature_switches.h"

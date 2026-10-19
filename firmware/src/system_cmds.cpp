@@ -34,8 +34,7 @@
 #include "hid.h"
 #endif
 
-extern void bleRestartAdvertising(void);
-extern void bleDisconnectAll(void);
+#include "ble_service.h"
 
 static uint32_t s_rebootAtMs = 0;
 

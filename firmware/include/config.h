@@ -23,7 +23,7 @@
 
 /* ── BLE security ────────────────────────────────────────────────── */
 #define BLE_PIN                 123456           // 6-digit passkey for pairing
-#define SECURITY_MODE           1                // 1 = PIN pairing required
+#define SECURITY_MODE           0                // 1 = PIN pairing required
                                                  // 0 = open (development only!)
 
 /* ── BLE connection ──────────────────────────────────────────────── */

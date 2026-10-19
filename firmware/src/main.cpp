@@ -19,6 +19,7 @@
 #include "diagnostics.h"
 
 #include "relays.h"
+#include "../lib/relay_logic/relay_logic.h"
 #include "feature_switches.h"
 #include "settings.h"
 #include "ble_service.h"
@@ -94,7 +95,7 @@ static void printFeatureSwitches(void) {
     const char* names[FSWITCH_COUNT] = {
         "PC_UNLOCK", "USB_TYPING", "BLE_HID", "AUTO_TYPE", "SCHEDULER",
         "TIMERS", "AWAY_MODE", "LED_STRIP", "LED_AUTO", "MUSIC_SYNC",
-        "CALL_MODE", "RELAY_LED_LINK", "DAILY_REBOOT", "NOTIFY_BLINKS", "BOOT_ANIMATION"
+        "CALL_MODE", "RELAY_LED_LINK", "DAILY_REBOOT"
     };
     for (uint8_t i = 0; i < FSWITCH_COUNT; i++) {
         LOGI(TAG_FEAT, "[%02u] %-16s : %s", i, names[i],

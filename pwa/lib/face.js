@@ -65,6 +65,18 @@ export const EXPRESSIONS = {
     hasBlush: true,
     blushColor: 'rgba(255, 90, 160, 0.85)',
   },
+  BLESH: {
+    eyeScaleY: 0.85,
+    eyeHeight: 32,
+    eyeWidth: 36,
+    eyeRadius: 16,
+    eyeTiltDeg: -5,
+    mouthPath: 'M 72,138 Q 86,152 100,142 Q 114,152 128,138',
+    color: '#fb7185',
+    glow: 'rgba(251, 113, 133, 0.7)',
+    hasBlush: true,
+    blushColor: 'rgba(255, 90, 160, 0.85)',
+  },
   CRAZY: {
     eyeScaleY: 1.25,
     eyeHeight: 46,

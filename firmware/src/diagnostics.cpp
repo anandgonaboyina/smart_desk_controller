@@ -16,6 +16,7 @@
 #include "features.h"
 #include "protocol.h"
 #include "relays.h"
+#include "../lib/relay_logic/relay_logic.h"
 #include "settings.h"
 #include "reliability.h"
 #include "feature_switches.h"
@@ -93,8 +94,8 @@ bool diagnosticsRunSelfTest(void) {
     bool pinsValid = true;
     uint8_t relayCnt = relaysGetActiveCount();
     for (uint8_t i = 0; i < relayCnt; i++) {
-        const RelayConfig* cfg = relaysGetConfig(i);
-        if (cfg && !settingsValidatePin(cfg->gpioPin)) {
+        RelayConfig cfg;
+        if (relaysGetConfig(i, &cfg) && settingsValidateRelayPin(i, cfg.gpioPin) != ERR_OK) {
             pinsValid = false;
             break;
         }
@@ -110,14 +111,15 @@ bool diagnosticsRunSelfTest(void) {
     if (relaysGetDriverType() == 0) { // Direct GPIO
         bool readbackMatch = true;
         for (uint8_t i = 0; i < relayCnt; i++) {
-            const RelayConfig* cfg = relaysGetConfig(i);
-            if (!cfg) continue;
-            uint8_t safeOff = relaysGetSafeOffLevel(i);
-            uint8_t actual = (uint8_t)digitalRead(cfg->gpioPin);
+            RelayConfig cfg;
+            if (!relaysGetConfig(i, &cfg)) continue;
+            uint8_t coil = relayLoadToCoil(0, cfg.wiring);
+            uint8_t safeOff = relayCoilToLevel(coil, cfg.polarity);
+            uint8_t actual = (uint8_t)digitalRead(cfg.gpioPin);
             if (actual != safeOff) {
                 readbackMatch = false;
                 char hint[64];
-                snprintf(hint, sizeof(hint), "Pin GPIO%d read %d, expected %d. Check 10k pull-up", cfg->gpioPin, actual, safeOff);
+                snprintf(hint, sizeof(hint), "Pin GPIO%d read %d, expected %d. Check 10k pull-up", cfg.gpioPin, actual, safeOff);
                 printTestResult("Relay Electrical", false, false, "HARDWARE", hint);
                 break;
             }
@@ -186,19 +188,20 @@ void diagnosticsTestRelay(uint8_t index) {
         return;
     }
 
-    const RelayConfig* cfg = relaysGetConfig(index);
-    if (!cfg) return;
+    RelayConfig cfg;
+    if (!relaysGetConfig(index, &cfg)) return;
 
-    LOGI(TAG_TEST, "── Testing Relay %d (%s, GPIO%d) ──", index + 1, cfg->name, cfg->gpioPin);
+    LOGI(TAG_TEST, "── Testing Relay %d (%s, GPIO%d) ──", index + 1, cfg.name, cfg.gpioPin);
     uint8_t origLoad = relaysGetLoad(index);
-    uint8_t safeOff = relaysGetSafeOffLevel(index);
-    uint8_t preRead = (uint8_t)digitalRead(cfg->gpioPin);
+    uint8_t coil = relayLoadToCoil(0, cfg.wiring);
+    uint8_t safeOff = relayCoilToLevel(coil, cfg.polarity);
+    uint8_t preRead = (uint8_t)digitalRead(cfg.gpioPin);
 
     LOGI(TAG_TEST, "Pre-test state: Load=%d, Expected GPIO level=%d, Readback=%d",
          origLoad, safeOff, preRead);
 
     if (preRead != safeOff && origLoad == 0) {
-        LOGW(TAG_TEST, "WARNING: Pin level mismatch! HARDWARE fault or missing 10k pull-up resistor on GPIO%d", cfg->gpioPin);
+        LOGW(TAG_TEST, "WARNING: Pin level mismatch! HARDWARE fault or missing 10k pull-up resistor on GPIO%d", cfg.gpioPin);
     }
 
     // Pulse relay for 1 second
@@ -206,17 +209,17 @@ void diagnosticsTestRelay(uint8_t index) {
     relaysSetLoad(index, 1);
     vTaskDelay(pdMS_TO_TICKS(100)); // Short settling time
 
-    uint8_t activeLevel = (uint8_t)digitalRead(cfg->gpioPin);
-    LOGI(TAG_TEST, "Active state: GPIO%d reads %d", cfg->gpioPin, activeLevel);
+    uint8_t activeLevel = (uint8_t)digitalRead(cfg.gpioPin);
+    LOGI(TAG_TEST, "Active state: GPIO%d reads %d", cfg.gpioPin, activeLevel);
 
     vTaskDelay(pdMS_TO_TICKS(900));
 
     // Revert to original load
     relaysSetLoad(index, origLoad);
     vTaskDelay(pdMS_TO_TICKS(50));
-    uint8_t postRead = (uint8_t)digitalRead(cfg->gpioPin);
+    uint8_t postRead = (uint8_t)digitalRead(cfg.gpioPin);
     LOGI(TAG_TEST, "Reverted state: GPIO%d reads %d (matches original: %s)",
-         cfg->gpioPin, postRead, (postRead == preRead) ? "YES (CODE & HARDWARE OK)" : "NO (HARDWARE FAULT)");
+         cfg.gpioPin, postRead, (postRead == preRead) ? "YES (CODE & HARDWARE OK)" : "NO (HARDWARE FAULT)");
 }
 
 void diagnosticsTestLeds(void) {

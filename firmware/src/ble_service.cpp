@@ -10,6 +10,13 @@
 
 #include "ble_service.h"
 #include <NimBLEDevice.h>
+
+#ifndef NIMBLE_PROPERTY_READ
+#define NIMBLE_PROPERTY_READ     NIMBLE_PROPERTY::READ
+#define NIMBLE_PROPERTY_WRITE    NIMBLE_PROPERTY::WRITE
+#define NIMBLE_PROPERTY_NOTIFY   NIMBLE_PROPERTY::NOTIFY
+#define NIMBLE_PROPERTY_WRITE_NR NIMBLE_PROPERTY::WRITE_NR
+#endif
 #include "../lib/packing/packing.h"
 #include "relays.h"
 #include "feature_switches.h"
@@ -100,8 +107,8 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 class RoleCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len >= 1) {
             LOGI(TAG_BLE, "Client role set: %s", (val[0] == ROLE_DISPLAY) ? "DISPLAY" : "REMOTE");
             if (val[0] == ROLE_DISPLAY) {
@@ -126,8 +133,8 @@ class RelayStateCallbacks : public NimBLECharacteristicCallbacks {
 
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len >= 2) {
             uint8_t index = val[0];
             uint8_t desiredLoad = val[1];
@@ -140,8 +147,8 @@ class RelayStateCallbacks : public NimBLECharacteristicCallbacks {
 class RelayConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len < 2) return;
         uint8_t cmd = val[0];
         uint8_t idx = val[1];
@@ -175,8 +182,8 @@ class RelayConfigCallbacks : public NimBLECharacteristicCallbacks {
 class TimeSyncCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len >= TSYNC_SIZE) {
             uint32_t unixTs = unpackUint32LE(&val[0]);
             int16_t tzOffsetMin = unpackInt16LE(&val[4]);
@@ -191,10 +198,48 @@ class TimeSyncCallbacks : public NimBLECharacteristicCallbacks {
 class MusicStreamCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len >= MUSIC_PACKET_SIZE) {
             musicProcessPacket(val);
+        }
+    }
+};
+#endif
+
+#if FEATURE_LEDS
+class LedStateCallbacks : public NimBLECharacteristicCallbacks {
+    void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
+        (void)connInfo;
+        LedState st;
+        ledsGetState(&st);
+        uint8_t buf[LED_STATE_SIZE];
+        buf[0] = st.mode; buf[1] = st.effect;
+        buf[2] = st.r; buf[3] = st.g; buf[4] = st.b;
+        buf[5] = st.brightness; buf[6] = st.speed; buf[7] = st.autoResumeMin;
+        buf[8] = st.r2; buf[9] = st.g2; buf[10] = st.b2;
+        packUint16LE(&buf[11], st.blinkOnMs);
+        packUint16LE(&buf[13], st.blinkOffMs);
+        pChr->setValue(buf, LED_STATE_SIZE);
+    }
+
+    void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
+        (void)connInfo;
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
+        if (len >= 7) {
+            LedState st;
+            ledsGetState(&st);
+            st.mode = val[0];
+            st.effect = val[1];
+            st.r = val[2]; st.g = val[3]; st.b = val[4];
+            st.brightness = val[5];
+            st.speed = val[6];
+            if (len >= 8) st.autoResumeMin = val[7];
+            if (len >= 11) { st.r2 = val[8]; st.g2 = val[9]; st.b2 = val[10]; }
+            if (len >= 13) st.blinkOnMs = unpackUint16LE(&val[11]);
+            if (len >= 15) st.blinkOffMs = unpackUint16LE(&val[13]);
+            ledsSetState(&st);
         }
     }
 };
@@ -210,8 +255,8 @@ class FeatureSwitchCallbacks : public NimBLECharacteristicCallbacks {
 
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len >= 2) {
             setFeatureSwitch(val[0], val[1]);
             bleNotifyFeatureSwitches();
@@ -222,8 +267,8 @@ class FeatureSwitchCallbacks : public NimBLECharacteristicCallbacks {
 class SystemCmdCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        size_t len = pChr->getDataLength();
-        const uint8_t* val = pChr->getValue();
+        size_t len = pChr->getLength();
+        const uint8_t* val = pChr->getValue().data();
         if (len >= 1) {
             uint8_t cmdId = val[0];
             const uint8_t* payload = (len > 1) ? &val[1] : (const uint8_t*)0;
@@ -283,7 +328,13 @@ static void setupCharacteristics(void) {
     s_chrAway      = s_service->createCharacteristic(UUID_AWAY_MODE, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_WRITE | NIMBLE_PROPERTY_NOTIFY);
 
     // LEDs & Music
-    s_chrLedState   = s_service->createCharacteristic(UUID_LED_STATE, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_WRITE | NIMBLE_PROPERTY_NOTIFY);
+#if FEATURE_LEDS
+    s_chrLedState   = s_service->createCharacteristic(UUID_LED_STATE, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_WRITE | NIMBLE_PROPERTY_WRITE_NR | NIMBLE_PROPERTY_NOTIFY);
+    static LedStateCallbacks ledStateCb;
+    s_chrLedState->setCallbacks(&ledStateCb);
+#else
+    s_chrLedState   = s_service->createCharacteristic(UUID_LED_STATE, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_NOTIFY);
+#endif
     s_chrLedSlots   = s_service->createCharacteristic(UUID_LED_SLOTS, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_WRITE | NIMBLE_PROPERTY_NOTIFY);
     s_chrLedPresets = s_service->createCharacteristic(UUID_LED_PRESETS, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_WRITE | NIMBLE_PROPERTY_NOTIFY);
     s_chrNotifyBlink = s_service->createCharacteristic(UUID_LED_NOTIFY_BLINK, NIMBLE_PROPERTY_READ | NIMBLE_PROPERTY_WRITE | NIMBLE_PROPERTY_NOTIFY);
@@ -328,19 +379,24 @@ void bleBegin(void) {
 
     // Wire subsystem state change callbacks
     relaysRegisterCallback([](uint8_t, uint8_t) { bleNotifyRelayState(); });
-    featureSwitchesRegisterCallback([](uint8_t, uint8_t) { bleNotifyFeatureSwitches(); });
+    registerFeatureSwitchCallback([](uint8_t, uint8_t) { bleNotifyFeatureSwitches(); });
     logSetNotifyCallback(bleNotifyDeviceLog);
+#if FEATURE_LEDS
+    ledsRegisterCallback([](const LedState*) { bleNotifyLedState(); });
+#endif
 
 
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
+    pAdv->setName(DEVICE_NAME);
     pAdv->addServiceUUID(UUID_SERVICE);
-    pAdv->setScanResponse(true);
+    pAdv->enableScanResponse(true);
     pAdv->start();
 }
 
 void bleRestartAdvertising(void) {
     if (s_connectedCount < BLE_MAX_CLIENTS) {
         NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
+        pAdv->stop();
         pAdv->start();
     }
 }

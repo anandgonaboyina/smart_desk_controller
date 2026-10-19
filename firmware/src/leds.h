@@ -66,8 +66,18 @@ typedef struct {
     uint8_t r2;
     uint8_t g2;
     uint8_t b2;
-    char    name[LPRESET_MAX_NAME + 1];
 } LedPreset;
+
+enum {
+    NOTIFY_EVENT_TIMER_ENDED = 0,
+    NOTIFY_EVENT_AWAY_STARTED,
+    NOTIFY_EVENT_AWAY_ENDED,
+    NOTIFY_EVENT_SCHED_FIRED,
+    NOTIFY_EVENT_CALL_ON,
+    NOTIFY_EVENT_BLE_CONNECTED,
+    NOTIFY_EVENT_BLE_LOST,
+    NOTIFY_EVENT_COUNT
+};
 
 typedef struct {
     uint8_t  eventId;
@@ -142,6 +152,32 @@ uint8_t ledsSetBootSettings(const LedBootSettings* inSettings);
  * Register state notification callback for BLE clients.
  */
 void ledsRegisterCallback(LedStateCallback cb);
+
+#define LED_PRIO_AUTO           0
+#define LED_PRIO_MANUAL         1
+#define LED_PRIO_MUSIC          2
+#define LED_PRIO_NOTIFY_BLINK   3
+#define LED_PRIO_CALL_MODE      4
+
+#define LED_BOOT_LAST_STATE     0
+#define LED_BOOT_PRESET         1
+#define LED_BOOT_OFF            2
+#define LBOOT_DEFAULT_INRUSH    50
+
+static inline void ledsSetManual(uint8_t r, uint8_t g, uint8_t b, uint8_t bright, uint8_t eff) {
+    LedState st = {0};
+    st.mode = LED_MODE_MANUAL;
+    st.effect = eff;
+    st.r = r; st.g = g; st.b = b;
+    st.brightness = bright;
+    ledsSetState(&st);
+}
+
+static inline void ledsSetAuto(void) {
+    LedState st = {0};
+    st.mode = LED_MODE_AUTO;
+    ledsSetState(&st);
+}
 
 #ifdef __cplusplus
 }

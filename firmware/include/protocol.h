@@ -101,6 +101,7 @@
 #define ERR_COOLDOWN_ACTIVE     0x0D
 #define ERR_IN_PROGRESS         0x0E
 #define ERR_CONFIRM_REQUIRED    0x0F
+#define ERR_PHOTOSENSITIVITY    0x10
 
 
 /* ════════════════════════════════════════════════════════════════════
@@ -119,7 +120,8 @@
  *  Write: [relay_index(1), desired_load(1)]
  *    Response: full state notify to ALL clients
  * ════════════════════════════════════════════════════════════════════ */
-// (No additional constants needed; layout is self-describing)
+#define RELAY_LOAD_OFF          0
+#define RELAY_LOAD_ON           1
 
 
 /* ════════════════════════════════════════════════════════════════════
@@ -324,7 +326,12 @@
 #define LED_EFFECT_FIRE         6
 #define LED_EFFECT_GRADIENT     7
 #define LED_EFFECT_STROBE       8
-#define LED_EFFECT_COUNT        9
+#define LED_EFFECT_BLINK        9
+#define LED_EFFECT_DOUBLE_BLINK 10
+#define LED_EFFECT_HEARTBEAT    11
+#define LED_EFFECT_COUNT        12
+
+#define LBOOT_ANIM_SWEEP_MS     1000
 
 
 /* ════════════════════════════════════════════════════════════════════

@@ -14,6 +14,7 @@
 #if FEATURE_HID
 
 #include "hid.h"
+#include "feature_switches.h"
 #include "../lib/password_obfuscation/password_obfuscation.h"
 #include <USB.h>
 #include <USBHIDKeyboard.h>

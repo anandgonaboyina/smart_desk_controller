@@ -9,7 +9,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { isPhotosensitiveSafe } from '../lib/pure/color-math.js';
 
 export const EFFECTS = [
@@ -38,6 +38,17 @@ export default function EffectPicker({
   onBlinkTimingChange,
   onBlinkChange,
 }) {
+  const [localSpeed, setLocalSpeed] = useState(speed);
+  useEffect(() => {
+    setLocalSpeed(speed);
+  }, [speed]);
+
+  const handleSpeedChange = (e) => {
+    const val = Number(e.target.value);
+    setLocalSpeed(val);
+    if (onSpeedChange) onSpeedChange(val);
+  };
+
   const isBlinkEffect = effect === 9 || effect === 10;
   const isSafe = isPhotosensitiveSafe(blinkOnMs, blinkOffMs);
   const handleEffect = onEffectChange || onSelect;
@@ -64,14 +75,14 @@ export default function EffectPicker({
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <span style={{ fontSize: '0.9rem' }}>Effect Speed</span>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{speed}</span>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{localSpeed}</span>
         </div>
         <input
           type="range"
           min={1}
           max={255}
-          value={speed}
-          onChange={(e) => onSpeedChange && onSpeedChange(Number(e.target.value))}
+          value={localSpeed}
+          onChange={handleSpeedChange}
         />
       </div>
 

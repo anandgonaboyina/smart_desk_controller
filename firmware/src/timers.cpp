@@ -13,6 +13,7 @@
 #if FEATURE_TIMERS
 
 #include "timers.h"
+#include "protocol.h"
 #include "relays.h"
 #include "feature_switches.h"
 #include <Arduino.h>
@@ -43,7 +44,7 @@ void timersBegin(void) {
     s_timerPrefs.begin(NVS_NS_TIMER, false);
     for (uint8_t i = 0; i < MAX_TIMERS; i++) {
         char key[8];
-        snprintf(key, sizeof(key), "tm%u", index = i);
+        snprintf(key, sizeof(key), "tm%u", i);
         size_t len = s_timerPrefs.getBytes(key, &s_timers[i], sizeof(RelayTimer));
         if (len == sizeof(RelayTimer) && s_timers[i].active && s_timers[i].remainingSec > 0) {
             s_timers[i].resumed = true;

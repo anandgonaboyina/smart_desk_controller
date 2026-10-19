@@ -26,6 +26,7 @@
 
 /* ── WS2812B LED strip ───────────────────────────────────────────── */
 #define PIN_LED_DATA        8   // Through 74HC245 level shifter + 330Ω
+#define PIN_WS2812          PIN_LED_DATA
 
 /* ── Physical button (to GND, internal pull-up) ──────────────────── */
 #define PIN_BUTTON          9

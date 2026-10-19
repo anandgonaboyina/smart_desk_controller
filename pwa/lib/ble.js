@@ -57,10 +57,26 @@ class BleService {
     bus.emit('ble:status', { state: 'connecting', deviceName: null, error: null });
 
     try {
-      this.device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: 'SmartDesk' }],
-        optionalServices: [UUID_SERVICE],
-      });
+      const allServices = [UUID_SERVICE, ...Object.values(UUIDS)];
+      try {
+        this.device = await navigator.bluetooth.requestDevice({
+          filters: [
+            { services: [UUID_SERVICE] },
+            { name: 'SmartDesk' },
+            { namePrefix: 'SmartDesk' },
+          ],
+          optionalServices: allServices,
+        });
+      } catch (filterErr) {
+        if (filterErr.name === 'NotFoundError' && !filterErr.message?.includes('User cancelled')) {
+          this.device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: allServices,
+          });
+        } else {
+          throw filterErr;
+        }
+      }
 
       this.device.addEventListener('gattserverdisconnected', () => this.handleDisconnected());
       store.setLastDeviceId(this.device.id);
@@ -376,8 +392,9 @@ class BleService {
       demo.setLedState(st);
       return;
     }
+    if (!this.isConnected()) return;
     const buf = pack.packLedState(st);
-    return this.enqueueWrite('LED_STATE', buf);
+    return this.enqueueWrite('LED_STATE', buf, true);
   }
 
   async testNotifyBlink(event, r, g, b, count, durationMs) {

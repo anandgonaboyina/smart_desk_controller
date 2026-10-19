@@ -15,8 +15,9 @@
 #if FEATURE_LEDS
 
 #include "leds.h"
+#include "pins.h"
 #include "led_effects.h"
-#include "../lib/led_math/led_math.h"
+#include "led_math.h"
 #include "music.h"
 #include "feature_switches.h"
 #include <Adafruit_NeoPixel.h>
@@ -202,6 +203,9 @@ uint8_t ledsSetState(const LedState* state) {
         return ERR_PHOTOSENSITIVITY;
     }
 
+    bool changed = (memcmp(&s_manualState, state, sizeof(LedState)) != 0);
+    if (!changed) return ERR_OK;
+
     memcpy(&s_manualState, state, sizeof(LedState));
     s_ledPrefs.begin(NVS_NS_LED, false);
     s_ledPrefs.putBytes("manual", &s_manualState, sizeof(LedState));
@@ -217,7 +221,7 @@ void ledsGetState(LedState* outState) {
 
 void ledsTriggerNotificationBlink(uint8_t eventId) {
     if (eventId >= NOTIFY_EVENT_COUNT) return;
-    if (!isFeatureEnabled(FSWITCH_NOTIFY_BLINKS) || !s_notifyConfigs[eventId].enabled) return;
+    if (!isFeatureEnabled(FSWITCH_LED_STRIP) || !s_notifyConfigs[eventId].enabled) return;
 
     s_currentNotify = s_notifyConfigs[eventId];
     s_notifyFlashRemaining = s_currentNotify.count;

@@ -33,7 +33,7 @@ export function RemoteScreen() {
   };
 
   const setBrightness = (b) => {
-    updateLedState({ brightness: b });
+    updateLedState({ mode: ledState.mode === 0 ? 1 : ledState.mode, brightness: b });
   };
 
   return (
@@ -88,7 +88,6 @@ export function RemoteScreen() {
         <BrightnessSlider
           value={ledState.brightness}
           onChange={setBrightness}
-          disabled={!ledState.mode}
         />
       </section>
     </div>
