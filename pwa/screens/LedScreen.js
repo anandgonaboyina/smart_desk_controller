@@ -48,17 +48,26 @@ export function LedScreen() {
       <div className="card-box">
         <h2 className="section-title">Color & Brightness</h2>
         <ColorWheel r={ledState.r} g={ledState.g} b={ledState.b} onChange={(c) => updateLedState(c)} />
-        <BrightnessSlider value={ledState.brightness} onChange={(b) => updateLedState({ brightness: b })} />
+        <BrightnessSlider
+          brightness={ledState.brightness}
+          value={ledState.brightness}
+          estimatedMa={estimatedMa}
+          onChange={(b) => updateLedState({ brightness: b })}
+        />
       </div>
 
       <div className="card-box">
         <h2 className="section-title">Lighting Effects & Blink Timing</h2>
         <EffectPicker
           effect={ledState.effect}
+          speed={ledState.speed}
+          onSpeedChange={(spd) => updateLedState({ speed: spd })}
+          onEffectChange={(eff) => updateLedState({ effect: eff })}
           onSelect={(eff) => updateLedState({ effect: eff })}
           blinkOnMs={ledState.blinkOnMs}
           blinkOffMs={ledState.blinkOffMs}
           onBlinkChange={handleBlinkChange}
+          onBlinkTimingChange={handleBlinkChange}
         />
       </div>
 

@@ -1,5 +1,5 @@
 /**
- * EffectPicker.js — LED Effect selector with blink rate and photosensitivity controls.
+ * EffectPicker.js — LED Effect selector with speed, blink rate, and safety controls.
  *
  * Purpose : Select from 12 effects (including blink, double-blink, heartbeat) and adjust
  *           speed or on/off timing with photosensitivity safety feedback.
@@ -33,11 +33,15 @@ export default function EffectPicker({
   blinkOnMs = 500,
   blinkOffMs = 500,
   onEffectChange,
+  onSelect,
   onSpeedChange,
   onBlinkTimingChange,
+  onBlinkChange,
 }) {
   const isBlinkEffect = effect === 9 || effect === 10;
   const isSafe = isPhotosensitiveSafe(blinkOnMs, blinkOffMs);
+  const handleEffect = onEffectChange || onSelect;
+  const handleBlink = onBlinkTimingChange || onBlinkChange;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -45,7 +49,7 @@ export default function EffectPicker({
         <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500 }}>Lighting Effect</label>
         <select
           value={effect}
-          onChange={(e) => onEffectChange && onEffectChange(Number(e.target.value))}
+          onChange={(e) => handleEffect && handleEffect(Number(e.target.value))}
           style={{ width: '100%', height: '44px' }}
         >
           {EFFECTS.map((eff) => (
@@ -89,7 +93,7 @@ export default function EffectPicker({
               max={2000}
               step={25}
               value={blinkOnMs}
-              onChange={(e) => onBlinkTimingChange && onBlinkTimingChange(Number(e.target.value), blinkOffMs)}
+              onChange={(e) => handleBlink && handleBlink(Number(e.target.value), blinkOffMs)}
             />
           </div>
 
@@ -101,7 +105,7 @@ export default function EffectPicker({
               max={2000}
               step={25}
               value={blinkOffMs}
-              onChange={(e) => onBlinkTimingChange && onBlinkTimingChange(blinkOnMs, Number(e.target.value))}
+              onChange={(e) => handleBlink && handleBlink(blinkOnMs, Number(e.target.value))}
             />
           </div>
         </div>
@@ -109,4 +113,3 @@ export default function EffectPicker({
     </div>
   );
 }
-

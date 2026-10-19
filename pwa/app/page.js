@@ -1,8 +1,8 @@
 /**
  * page.js — Main App Router root page for SmartDesk PWA.
  *
- * Purpose : Application shell with mode switching, left sidebar navigation (desktop),
- *           bottom tab bar (mobile), and Ctrl+K command palette launcher.
+ * Purpose : Application shell with mode switching. On initial launch, boots into
+ *           borderless fullscreen desk companion face with a side toggle to Remote mode.
  * Depends : React, hooks, screens, components.
  * Used by : Next.js App Router (/).
  */
@@ -48,7 +48,7 @@ const NAV_ITEMS = [
 export default function SmartDeskApp() {
   const { isConnected, isConnecting, deviceName, isDemo, connect, disconnect, toggleDemo } = useBle();
   const { theme, setTheme, clientRole, setClientRole } = useSettings();
-  const [activeScreen, setActiveScreen] = useState('remote');
+  const [activeScreen, setActiveScreen] = useState('display');
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -85,7 +85,6 @@ export default function SmartDeskApp() {
 
   const renderActiveScreen = () => {
     switch (activeScreen) {
-      case 'display': return <DisplayScreen />;
       case 'relays': return <RelaySettingsScreen />;
       case 'leds': return <LedScreen />;
       case 'schedules': return <SchedulesScreen />;
@@ -100,6 +99,22 @@ export default function SmartDeskApp() {
     }
   };
 
+  // Fullscreen Borderless Desk Face Mode on App Open
+  if (activeScreen === 'display') {
+    return (
+      <div className="smart-desk-app fullscreen-face-mode">
+        <DisplayScreen onSwitchToRemote={() => setActiveScreen('remote')} />
+        <CommandPalette
+          isOpen={isPaletteOpen}
+          onClose={() => setIsPaletteOpen(false)}
+          onExecuteCommand={handlePaletteCommand}
+        />
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      </div>
+    );
+  }
+
+  // Remote Dashboard Mode
   return (
     <div className="smart-desk-app">
       <Header
@@ -113,11 +128,7 @@ export default function SmartDeskApp() {
         onDisconnect={disconnect}
         onToggleDemo={toggleDemo}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        onToggleRole={() => {
-          const next = clientRole === 'display' ? 'remote' : 'display';
-          setClientRole(next);
-          setActiveScreen(next === 'display' ? 'display' : 'remote');
-        }}
+        onToggleRole={() => setActiveScreen('display')}
       />
 
       <div className="shell-container">
@@ -143,16 +154,16 @@ export default function SmartDeskApp() {
         <button className={`mobile-tab-btn ${activeScreen === 'remote' ? 'active' : ''}`} onClick={() => setActiveScreen('remote')}>
           <span>📱</span><span>Remote</span>
         </button>
-        <button className={`mobile-tab-btn ${activeScreen === 'relays' ? 'active' : ''}`} onClick={() => setActiveScreen('relays')}>
-          <span>⚡</span><span>Relays</span>
-        </button>
         <button className={`mobile-tab-btn ${activeScreen === 'leds' ? 'active' : ''}`} onClick={() => setActiveScreen('leds')}>
           <span>💡</span><span>LEDs</span>
         </button>
-        <button className={`mobile-tab-btn ${activeScreen === 'schedules' ? 'active' : ''}`} onClick={() => setActiveScreen('schedules')}>
-          <span>📅</span><span>Sched</span>
+        <button className={`mobile-tab-btn ${activeScreen === 'relays' ? 'active' : ''}`} onClick={() => setActiveScreen('relays')}>
+          <span>⚡</span><span>Relays</span>
         </button>
-        <button className={`mobile-tab-btn ${['away', 'unlock', 'features', 'diagnostics', 'system', 'settings', 'display'].includes(activeScreen) ? 'active' : ''}`} onClick={() => setActiveScreen('diagnostics')}>
+        <button className="mobile-tab-btn" onClick={() => setActiveScreen('display')}>
+          <span>🖥️</span><span>Face</span>
+        </button>
+        <button className={`mobile-tab-btn ${['away', 'unlock', 'features', 'diagnostics', 'system', 'settings'].includes(activeScreen) ? 'active' : ''}`} onClick={() => setActiveScreen('diagnostics')}>
           <span>🔍</span><span>Diag</span>
         </button>
       </nav>

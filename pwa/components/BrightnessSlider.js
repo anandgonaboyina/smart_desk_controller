@@ -12,11 +12,13 @@
 import React from 'react';
 
 export default function BrightnessSlider({
-  brightness = 75,
+  brightness,
+  value,
   estimatedMa = 150,
   maxBudgetMa = 300,
   onChange,
 }) {
+  const currentVal = brightness !== undefined ? brightness : (value !== undefined ? value : 75);
   const isNearLimit = estimatedMa > maxBudgetMa * 0.85;
 
   return (
@@ -24,7 +26,7 @@ export default function BrightnessSlider({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 500 }}>Brightness</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontFamily: 'var(--font-mono)' }}>{brightness}%</span>
+          <span style={{ fontFamily: 'var(--font-mono)' }}>{currentVal}%</span>
           <span className={`badge ${isNearLimit ? 'badge-warning' : 'badge-info'}`}>
             ⚡ {estimatedMa} mA / {maxBudgetMa} mA
           </span>
@@ -35,10 +37,9 @@ export default function BrightnessSlider({
         type="range"
         min={0}
         max={100}
-        value={brightness}
+        value={currentVal}
         onChange={(e) => onChange && onChange(Number(e.target.value))}
       />
     </div>
   );
 }
-
