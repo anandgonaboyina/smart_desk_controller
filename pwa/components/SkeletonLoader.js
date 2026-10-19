@@ -35,3 +35,4 @@ export default function SkeletonLoader({ count = 3, height = '80px' }) {
     </div>
   );
 }
+

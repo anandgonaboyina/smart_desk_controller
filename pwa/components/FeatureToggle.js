@@ -32,3 +32,4 @@ export default function FeatureToggle({ item, enabled = false, onChange }) {
     </div>
   );
 }
+

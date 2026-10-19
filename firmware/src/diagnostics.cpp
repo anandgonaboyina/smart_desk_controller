@@ -259,3 +259,4 @@ void diagnosticsPrintStatus(void) {
     LOGI(TAG_SYS, "BLE Clients: %d connected", bleGetConnectedCount());
 #endif
 }
+

@@ -36,3 +36,4 @@ All commands are non-blocking and safe to use while BLE clients are actively con
    - **Symptom:** White step flickers or reboots the ESP32.
    - **Root Cause:** 5V power supply sag or missing 1000µF capacitor across the strip supply.
    - **Action:** Ensure 5V 2A power supply is connected and 74HC245 level shifter has stable 5V VCC.
+

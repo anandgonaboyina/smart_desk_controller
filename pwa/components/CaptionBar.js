@@ -17,3 +17,4 @@ export default function CaptionBar({ caption = 'Desk standing by' }) {
     </div>
   );
 }
+

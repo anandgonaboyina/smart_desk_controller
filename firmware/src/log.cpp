@@ -190,3 +190,4 @@ uint8_t logGetRingBuffer(char* outBuf, uint16_t maxLen) {
 void logSetNotifyCallback(LogNotifyCallback cb) {
     s_notifyCb = cb;
 }
+

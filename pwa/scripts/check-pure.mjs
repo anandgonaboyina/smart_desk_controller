@@ -68,3 +68,4 @@ if (hasError) {
   console.log(`[check:pure] SUCCESS: All ${files.length} pure helper files verified cleanly. Zero browser APIs, zero React dependencies.`);
   process.exit(0);
 }
+

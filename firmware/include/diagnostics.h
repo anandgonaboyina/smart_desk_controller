@@ -47,3 +47,4 @@ void diagnosticsPrintStatus(void);
 #ifdef __cplusplus
 }
 #endif
+

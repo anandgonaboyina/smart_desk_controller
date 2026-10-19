@@ -84,3 +84,4 @@ export default function CommandPalette({ isOpen = false, onClose, onExecuteComma
     </div>
   );
 }
+

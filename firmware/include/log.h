@@ -90,3 +90,4 @@ void logSetNotifyCallback(LogNotifyCallback cb);
 #ifdef __cplusplus
 }
 #endif
+
