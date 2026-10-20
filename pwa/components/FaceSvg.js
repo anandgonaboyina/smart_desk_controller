@@ -1,8 +1,8 @@
 /**
- * FaceSvg.js — Borderless procedural SVG Robot Face.
+ * FaceSvg.js — Borderless living procedural SVG Robot Face.
  *
- * Purpose : Renders borderless expressive eyes and mouth with mood glows,
- *           blushing cheeks, crazy eyes, breathing offset, and blinking.
+ * Purpose : Renders living animated eyes that change shape, morph, blink,
+ *           shift gaze, and an expressive glowing mouth with zero borders.
  * Depends : React, face.js.
  * Used by : DisplayScreen.js, dev-preview.
  */
@@ -16,13 +16,27 @@ export default function FaceSvg({
   params,
   expression = 'NEUTRAL',
   isBlinking = false,
+  isLeftWink = false,
+  isRightWink = false,
   breathingOffset = 0,
+  gaze = { x: 0, y: 0 },
+  eyePulse = 1,
   size = 320,
 }) {
   const p = params || getExpression(expression);
-  const currentEyeScaleY = isBlinking ? 0.08 : p.eyeScaleY;
-  const leftTilt = p.eyeTiltDeg;
-  const rightTilt = -p.eyeTiltDeg;
+
+  // Calculate eye scale with wink & blink states
+  const leftBlink = isBlinking || isLeftWink;
+  const rightBlink = isBlinking || isRightWink;
+
+  const leftScaleY = leftBlink ? 0.08 : (p.eyeScaleY * eyePulse);
+  const leftScaleX = leftBlink ? 1.05 : (1 * eyePulse);
+
+  const rightScaleY = rightBlink ? 0.08 : (p.eyeScaleY * eyePulse);
+  const rightScaleX = rightBlink ? 1.05 : (1 * eyePulse);
+
+  const leftTilt = p.eyeTiltDeg || 0;
+  const rightTilt = -(p.eyeTiltDeg || 0);
 
   return (
     <svg
@@ -32,58 +46,70 @@ export default function FaceSvg({
       style={{
         maxWidth: '100%',
         height: 'auto',
-        transform: `translateY(${breathingOffset}px)`,
-        transition: 'transform 80ms ease-out',
-        filter: `drop-shadow(0 0 28px ${p.glow})`,
         overflow: 'visible',
+        transform: `translateY(${breathingOffset}px)`,
+        transition: 'transform 120ms ease-out',
+        filter: `drop-shadow(0 0 28px ${p.glow || p.color})`,
       }}
     >
-      {/* Blushing Cheeks (for SHY and BLUSH / BLESH) */}
-      {p.hasBlush && (
-        <g opacity="0.85">
-          <ellipse cx="44" cy="108" rx="16" ry="9" fill={p.blushColor} style={{ filter: 'blur(3px)' }} />
-          <ellipse cx="156" cy="108" rx="16" ry="9" fill={p.blushColor} style={{ filter: 'blur(3px)' }} />
+      {/* Eyes Group with Living Micro-Gaze Transition */}
+      <g
+        style={{
+          transform: `translate(${gaze.x}px, ${gaze.y}px)`,
+          transition: 'transform 0.4s cubic-bezier(0.2, 0.8, 0.3, 1)',
+        }}
+      >
+        {/* Left Eye — Pure Rounded Morphing Pill */}
+        <g
+          transform={`translate(62, 78) rotate(${leftTilt}) scale(${leftScaleX}, ${leftScaleY}) translate(-62, -78)`}
+          style={{ transition: 'transform 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)' }}
+        >
+          <rect
+            x={62 - p.eyeWidth / 2}
+            y={78 - p.eyeHeight / 2}
+            width={p.eyeWidth}
+            height={p.eyeHeight}
+            rx={leftBlink ? 3 : p.eyeRadius}
+            ry={leftBlink ? 3 : p.eyeRadius}
+            fill={p.color}
+            style={{
+              transition: 'fill 0.3s ease, rx 0.25s ease, ry 0.25s ease, width 0.25s ease, height 0.25s ease',
+            }}
+          />
         </g>
-      )}
 
-      {/* Left Eye */}
-      <g
-        transform={`translate(60, 80) rotate(${leftTilt}) scale(${p.isCrazyEyes ? 1.2 : 1}, ${p.isCrazyEyes ? currentEyeScaleY * 1.3 : currentEyeScaleY}) translate(-60, -80)`}
-      >
-        <rect
-          x={60 - p.eyeWidth / 2}
-          y={80 - p.eyeHeight / 2}
-          width={p.eyeWidth}
-          height={p.eyeHeight}
-          rx={p.eyeRadius}
-          fill={p.color}
-        />
-        {p.isCrazyEyes && <circle cx="60" cy="80" r="5" fill="#000" />}
+        {/* Right Eye — Pure Rounded Morphing Pill */}
+        <g
+          transform={`translate(138, 78) rotate(${rightTilt}) scale(${rightScaleX}, ${rightScaleY}) translate(-138, -78)`}
+          style={{ transition: 'transform 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)' }}
+        >
+          <rect
+            x={138 - p.eyeWidth / 2}
+            y={78 - p.eyeHeight / 2}
+            width={p.eyeWidth}
+            height={p.eyeHeight}
+            rx={rightBlink ? 3 : p.eyeRadius}
+            ry={rightBlink ? 3 : p.eyeRadius}
+            fill={p.color}
+            style={{
+              transition: 'fill 0.3s ease, rx 0.25s ease, ry 0.25s ease, width 0.25s ease, height 0.25s ease',
+            }}
+          />
+        </g>
       </g>
 
-      {/* Right Eye */}
-      <g
-        transform={`translate(140, 80) rotate(${p.isCrazyEyes ? 25 : rightTilt}) scale(${p.isCrazyEyes ? 0.85 : 1}, ${p.isCrazyEyes ? currentEyeScaleY * 0.75 : currentEyeScaleY}) translate(-140, -80)`}
-      >
-        <rect
-          x={140 - p.eyeWidth / 2}
-          y={80 - p.eyeHeight / 2}
-          width={p.eyeWidth}
-          height={p.eyeHeight}
-          rx={p.eyeRadius}
-          fill={p.color}
-        />
-        {p.isCrazyEyes && <circle cx="140" cy="80" r="4" fill="#000" />}
-      </g>
-
-      {/* Expressive Mouth */}
+      {/* Expressive Mouth — Natural Glowing Curve with Breathing */}
       <path
-        d={p.mouthPath}
-        fill={p.isCrazyEyes ? p.color : 'none'}
+        d={p.mouthPath || 'M 70,138 Q 100,150 130,138'}
+        fill="none"
         stroke={p.color}
         strokeWidth="6"
         strokeLinecap="round"
         strokeLinejoin="round"
+        style={{
+          transition: 'd 0.35s cubic-bezier(0.34, 1.3, 0.64, 1), stroke 0.3s ease',
+          transform: `translateY(${breathingOffset * 0.4}px)`,
+        }}
       />
     </svg>
   );

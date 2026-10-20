@@ -25,8 +25,19 @@ const MOODS = [
 ];
 
 export function DisplayScreen({ onSwitchToRemote }) {
-  const { expressionName, currentParams, caption, isBlinking, breathingOffset, setExpression } = useFace();
-  const { isConnected, isDemo } = useBle();
+  const {
+    expressionName,
+    currentParams,
+    caption,
+    isBlinking,
+    isLeftWink,
+    isRightWink,
+    breathingOffset,
+    gaze,
+    eyePulse,
+    setExpression,
+  } = useFace();
+  const { isConnected, isDemo, connect } = useBle();
   const [timeStr, setTimeStr] = useState('');
   const [dateStr, setDateStr] = useState('');
 
@@ -60,7 +71,11 @@ export function DisplayScreen({ onSwitchToRemote }) {
           <FaceSvg
             params={currentParams}
             isBlinking={isBlinking}
+            isLeftWink={isLeftWink}
+            isRightWink={isRightWink}
             breathingOffset={breathingOffset}
+            gaze={gaze}
+            eyePulse={eyePulse}
             size={340}
           />
         </div>
@@ -73,8 +88,13 @@ export function DisplayScreen({ onSwitchToRemote }) {
           <div className="clock-subrow">
             <span className="live-clock">{timeStr || '--:--'}</span>
             <span className="live-date">{dateStr}</span>
-            <span className={`live-dot ${isConnected ? 'dot-active' : 'dot-idle'}`}>
-              {isConnected ? (isDemo ? 'Demo Mode' : 'Connected') : 'Offline'}
+            <span
+              className={`live-dot ${isConnected ? 'dot-active' : 'dot-idle'}`}
+              onClick={!isConnected ? connect : undefined}
+              style={{ cursor: !isConnected ? 'pointer' : 'default' }}
+              title={!isConnected ? 'Click to connect SmartDesk' : undefined}
+            >
+              {isConnected ? (isDemo ? 'Demo Mode' : 'Connected') : 'Offline (Click to Connect)'}
             </span>
           </div>
         </div>

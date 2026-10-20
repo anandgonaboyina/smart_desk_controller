@@ -1,9 +1,5 @@
 /**
  * EmptyState.js — Informational placeholder for empty lists and views.
- *
- * Purpose : Presents friendly icon, title, description, and optional action trigger.
- * Depends : React only.
- * Used by : Screens, dev-preview.
  */
 
 "use client";
@@ -18,29 +14,23 @@ export default function EmptyState({
   onAction = null,
 }) {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px 20px',
-      textAlign: 'center',
-      background: 'var(--bg-surface)',
-      borderRadius: 'var(--radius-lg)',
-      border: '1px dashed var(--border-subtle)',
-    }}>
-      <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>{icon}</div>
-      <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '6px' }}>{title}</div>
-      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: '320px', marginBottom: actionLabel ? '16px' : '0' }}>
+    <div className="flex flex-col items-center justify-center p-10 text-center bg-gray-50 dark:bg-gray-800/40 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700 w-full animate-in fade-in zoom-in-95 duration-300">
+      <div className="text-5xl mb-4 drop-shadow-sm">{icon}</div>
+      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">
+        {title}
+      </h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs mb-6 leading-relaxed">
         {description}
-      </div>
+      </p>
 
       {actionLabel && (
-        <button className="btn btn-primary" onClick={onAction} style={{ height: '40px', minHeight: '40px' }}>
+        <button 
+          onClick={onAction} 
+          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-sm hover:shadow-md transition-all active:scale-95"
+        >
           {actionLabel}
         </button>
       )}
     </div>
   );
 }
-

@@ -1,10 +1,10 @@
 /**
- * useFace.js — React hook for Robot Face expressions, breathing, and captions.
+ * useFace.js — React hook for Robot Face expressions, living animations, and gaze.
  *
- * Purpose : Subscribes to face mood and caption events, animates natural
- *           blinking and breathing cycles, and returns geometry parameters.
- * Depends : React, bus.js, pure/rules-match.js, face.js.
- * Used by : DisplayScreen.js, FaceSvg.js, CaptionBar.js.
+ * Purpose : Continuous organic living animation loop (gaze shifts, natural micro-blinks,
+ *           breathing eye-pulse, mouth micro-movement, mood transitions).
+ * Depends : React, bus.js, face.js.
+ * Used by : DisplayScreen.js, FaceSvg.js.
  */
 
 "use client";
@@ -15,9 +15,13 @@ import { getExpression, getBreathingOffset } from '../lib/face.js';
 
 export function useFace() {
   const [expressionName, setExpressionName] = useState('NEUTRAL');
-  const [caption, setCaption] = useState('Desk standing by');
+  const [caption, setCaption] = useState('Desk companion active');
   const [isBlinking, setIsBlinking] = useState(false);
+  const [isLeftWink, setIsLeftWink] = useState(false);
+  const [isRightWink, setIsRightWink] = useState(false);
   const [breathingOffset, setBreathingOffset] = useState(0);
+  const [gaze, setGaze] = useState({ x: 0, y: 0 });
+  const [eyePulse, setEyePulse] = useState(1);
 
   const captionTimerRef = useRef(null);
 
@@ -34,25 +38,104 @@ export function useFace() {
       setCaption(text);
       if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
       captionTimerRef.current = setTimeout(() => {
-        setCaption('Desk standing by');
+        setCaption('Desk companion active');
       }, durationMs);
     });
 
-    // 1. Natural Blinking Loop (every 3.8s, blink for 140ms)
-    const blinkInterval = setInterval(() => {
-      setIsBlinking(true);
-      setTimeout(() => setIsBlinking(false), 140);
-    }, 3800);
+    // 1. Living Organic Action Loop (Continuous Animation with Small Delays)
+    let actionTimeout;
+    const livingActions = [
+      'IDLE_CENTER',
+      'LOOK_LEFT',
+      'LOOK_RIGHT',
+      'LOOK_UP',
+      'CUTE_SQUINT',
+      'CUTE_TILT',
+      'CURIOUS',
+      'WINK_LEFT',
+      'WINK_RIGHT',
+      'BLINK',
+    ];
 
-    // 2. Breathing Oscillation Loop (smooth requestAnimationFrame or 30ms interval)
+    const runLivingAction = () => {
+      const nextDelay = 1800 + Math.random() * 1600; // Small delay (1.8s - 3.4s)
+      actionTimeout = setTimeout(() => {
+        const action = livingActions[Math.floor(Math.random() * livingActions.length)];
+
+        switch (action) {
+          case 'LOOK_LEFT':
+            setGaze({ x: -10, y: (Math.random() - 0.5) * 4 });
+            break;
+          case 'LOOK_RIGHT':
+            setGaze({ x: 10, y: (Math.random() - 0.5) * 4 });
+            break;
+          case 'LOOK_UP':
+            setGaze({ x: (Math.random() - 0.5) * 4, y: -6 });
+            break;
+          case 'CUTE_SQUINT':
+            setEyePulse(0.85);
+            setGaze({ x: 0, y: 1 });
+            setTimeout(() => setEyePulse(1), 700);
+            break;
+          case 'CUTE_TILT':
+            setGaze({ x: 6, y: -3 });
+            setEyePulse(1.1);
+            setTimeout(() => {
+              setGaze({ x: 0, y: 0 });
+              setEyePulse(1);
+            }, 800);
+            break;
+          case 'CURIOUS':
+            setEyePulse(1.2);
+            setGaze({ x: 0, y: -4 });
+            setTimeout(() => {
+              setEyePulse(1);
+              setGaze({ x: 0, y: 0 });
+            }, 900);
+            break;
+          case 'WINK_LEFT':
+            setIsLeftWink(true);
+            setTimeout(() => setIsLeftWink(false), 240);
+            break;
+          case 'WINK_RIGHT':
+            setIsRightWink(true);
+            setTimeout(() => setIsRightWink(false), 240);
+            break;
+          case 'BLINK':
+          default:
+            setIsBlinking(true);
+            setTimeout(() => {
+              setIsBlinking(false);
+              // Occasional playful double-blink
+              if (Math.random() < 0.3) {
+                setTimeout(() => {
+                  setIsBlinking(true);
+                  setTimeout(() => setIsBlinking(false), 110);
+                }, 130);
+              }
+            }, 120);
+            // Center gaze with smooth return
+            setGaze({ x: 0, y: 0 });
+            break;
+        }
+
+        runLivingAction();
+      }, nextDelay);
+    };
+
+    runLivingAction();
+
+    // 2. Continuous Smooth Breathing Loop
     const breathInterval = setInterval(() => {
-      setBreathingOffset(getBreathingOffset(performance.now()));
+      const now = performance.now();
+      const offset = getBreathingOffset(now);
+      setBreathingOffset(offset);
     }, 40);
 
     return () => {
       unsubFace();
       unsubCaption();
-      clearInterval(blinkInterval);
+      clearTimeout(actionTimeout);
       clearInterval(breathInterval);
       if (captionTimerRef.current) clearTimeout(captionTimerRef.current);
     };
@@ -62,10 +145,6 @@ export function useFace() {
     setExpressionName(name);
   }, []);
 
-  const showCaption = useCallback((text, durationMs = 3500) => {
-    bus.emit('caption:show', { text, durationMs });
-  }, []);
-
   const currentParams = getExpression(expressionName);
 
   return {
@@ -73,11 +152,13 @@ export function useFace() {
     currentParams,
     caption,
     isBlinking,
+    isLeftWink,
+    isRightWink,
     breathingOffset,
+    gaze,
+    eyePulse,
     setExpression,
-    showCaption,
   };
 }
 
 export default useFace;
-

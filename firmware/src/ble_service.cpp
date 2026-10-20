@@ -17,14 +17,16 @@
 #define NIMBLE_PROPERTY_NOTIFY   NIMBLE_PROPERTY::NOTIFY
 #define NIMBLE_PROPERTY_WRITE_NR NIMBLE_PROPERTY::WRITE_NR
 #endif
+#include "features.h"
 #include "../lib/packing/packing.h"
 #include "relays.h"
 #include "feature_switches.h"
 #include "settings.h"
-#include "features.h"
 #include "log.h"
 #include <Arduino.h>
 #include <string.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 #if FEATURE_SCHEDULER
 #include "scheduler.h"
@@ -50,6 +52,30 @@
 #endif
 #include "system_cmds.h"
 #include "reliability.h"
+
+enum BleCmdType {
+    BLE_CMD_NONE = 0,
+    BLE_CMD_RELAY_STATE,
+    BLE_CMD_RELAY_CONFIG_READ,
+    BLE_CMD_RELAY_CONFIG_RESET,
+    BLE_CMD_RELAY_CONFIG_WRITE,
+    BLE_CMD_FEATURE_SWITCH,
+#if FEATURE_LEDS
+    BLE_CMD_LED_STATE,
+#endif
+};
+
+struct BleCommand {
+    uint8_t type;
+    uint8_t index;
+    uint8_t val;
+    RelayConfig cfg;
+#if FEATURE_LEDS
+    LedState led;
+#endif
+};
+
+static QueueHandle_t s_bleCmdQueue = (QueueHandle_t)0;
 
 static NimBLEServer*         s_server = (NimBLEServer*)0;
 static NimBLEService*        s_service = (NimBLEService*)0;
@@ -82,8 +108,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
         (void)pServer; (void)connInfo;
         s_connectedCount++;
-        LOGI(TAG_BLE, "Client connected. Active clients: %d", s_connectedCount);
-        bleRestartAdvertising();
+        LOGI(TAG_BLE, ">>> BLE CLIENT CONNECTED! Active clients: %d", s_connectedCount);
 #if FEATURE_LEDS
         ledsTriggerNotificationBlink(NOTIFY_EVENT_BLE_CONNECTED);
 #endif
@@ -100,7 +125,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 #if FEATURE_LEDS
         ledsTriggerNotificationBlink(NOTIFY_EVENT_BLE_LOST);
 #endif
-        bleRestartAdvertising();
+        NimBLEDevice::startAdvertising();
     }
 };
 
@@ -135,11 +160,13 @@ class RelayStateCallbacks : public NimBLECharacteristicCallbacks {
         (void)connInfo;
         size_t len = pChr->getLength();
         const uint8_t* val = pChr->getValue().data();
-        if (len >= 2) {
-            uint8_t index = val[0];
-            uint8_t desiredLoad = val[1];
-            relaysSetLoad(index, desiredLoad);
-            bleNotifyRelayState();
+        if (len >= 2 && s_bleCmdQueue) {
+            BleCommand cmd;
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.type = BLE_CMD_RELAY_STATE;
+            cmd.index = val[0];
+            cmd.val = val[1];
+            xQueueSend(s_bleCmdQueue, &cmd, 0);
         }
     }
 };
@@ -149,32 +176,44 @@ class RelayConfigCallbacks : public NimBLECharacteristicCallbacks {
         (void)connInfo;
         size_t len = pChr->getLength();
         const uint8_t* val = pChr->getValue().data();
-        if (len < 2) return;
-        uint8_t cmd = val[0];
+        if (len < 2 || !s_bleCmdQueue) return;
+        uint8_t cmdType = val[0];
         uint8_t idx = val[1];
+        BleCommand cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        cmd.index = idx;
 
-        if (cmd == RCFG_CMD_READ) {
-            bleNotifyRelayConfig(idx);
-        } else if (cmd == RCFG_CMD_RESET) {
-            settingsResetRelayConfig(idx);
-            bleNotifyRelayConfig(idx);
-        } else if (cmd == RCFG_CMD_WRITE && len >= (RCFG_OFF_NAME_LEN + 2)) {
-            RelayConfig cfg;
-            cfg.enabled = val[2 + RCFG_OFF_ENABLED];
-            cfg.polarity = val[2 + RCFG_OFF_POLARITY];
-            cfg.wiring = val[2 + RCFG_OFF_WIRING];
-            cfg.bootBehavior = val[2 + RCFG_OFF_BOOT];
-            cfg.gpioPin = val[2 + RCFG_OFF_PIN];
-            cfg.minSwitchMs = unpackUint16LE(&val[2 + RCFG_OFF_MIN_SW_LO]);
-            cfg.affectedByAway = val[2 + RCFG_OFF_AWAY];
+        if (cmdType == RCFG_CMD_READ) {
+            cmd.type = BLE_CMD_RELAY_CONFIG_READ;
+            xQueueSend(s_bleCmdQueue, &cmd, 0);
+        } else if (cmdType == RCFG_CMD_RESET) {
+            cmd.type = BLE_CMD_RELAY_CONFIG_RESET;
+            xQueueSend(s_bleCmdQueue, &cmd, 0);
+        } else if (cmdType == RCFG_CMD_WRITE && len >= (RCFG_OFF_NAME_LEN + 2)) {
+            cmd.type = BLE_CMD_RELAY_CONFIG_WRITE;
+            cmd.cfg.enabled = val[2 + RCFG_OFF_ENABLED];
+            cmd.cfg.polarity = val[2 + RCFG_OFF_POLARITY];
+            cmd.cfg.wiring = val[2 + RCFG_OFF_WIRING];
+            cmd.cfg.bootBehavior = val[2 + RCFG_OFF_BOOT];
+            cmd.cfg.gpioPin = val[2 + RCFG_OFF_PIN];
+            cmd.cfg.minSwitchMs = unpackUint16LE(&val[2 + RCFG_OFF_MIN_SW_LO]);
+            cmd.cfg.affectedByAway = val[2 + RCFG_OFF_AWAY];
 
             uint8_t nLen = val[2 + RCFG_OFF_NAME_LEN];
             if (nLen > RCFG_MAX_NAME) nLen = RCFG_MAX_NAME;
-            memcpy(cfg.name, &val[2 + 9], nLen);
-            cfg.name[nLen] = '\0';
+            memcpy(cmd.cfg.name, &val[2 + 9], nLen);
+            cmd.cfg.name[nLen] = '\0';
 
-            relaysSetConfig(idx, &cfg);
-            bleNotifyRelayConfig(idx);
+            uint8_t iLenOffset = 2 + 9 + nLen;
+            if (len > iLenOffset) {
+                uint8_t iLen = val[iLenOffset];
+                if (iLen > RCFG_MAX_ICON) iLen = RCFG_MAX_ICON;
+                memcpy(cmd.cfg.icon, &val[iLenOffset + 1], iLen);
+                cmd.cfg.icon[iLen] = '\0';
+            } else {
+                cmd.cfg.icon[0] = '\0';
+            }
+            xQueueSend(s_bleCmdQueue, &cmd, 0);
         }
     }
 };
@@ -227,19 +266,21 @@ class LedStateCallbacks : public NimBLECharacteristicCallbacks {
         (void)connInfo;
         size_t len = pChr->getLength();
         const uint8_t* val = pChr->getValue().data();
-        if (len >= 7) {
-            LedState st;
-            ledsGetState(&st);
-            st.mode = val[0];
-            st.effect = val[1];
-            st.r = val[2]; st.g = val[3]; st.b = val[4];
-            st.brightness = val[5];
-            st.speed = val[6];
-            if (len >= 8) st.autoResumeMin = val[7];
-            if (len >= 11) { st.r2 = val[8]; st.g2 = val[9]; st.b2 = val[10]; }
-            if (len >= 13) st.blinkOnMs = unpackUint16LE(&val[11]);
-            if (len >= 15) st.blinkOffMs = unpackUint16LE(&val[13]);
-            ledsSetState(&st);
+        if (len >= 7 && s_bleCmdQueue) {
+            BleCommand cmd;
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.type = BLE_CMD_LED_STATE;
+            ledsGetState(&cmd.led);
+            cmd.led.mode = val[0];
+            cmd.led.effect = val[1];
+            cmd.led.r = val[2]; cmd.led.g = val[3]; cmd.led.b = val[4];
+            cmd.led.brightness = val[5];
+            cmd.led.speed = val[6];
+            if (len >= 8) cmd.led.autoResumeMin = val[7];
+            if (len >= 11) { cmd.led.r2 = val[8]; cmd.led.g2 = val[9]; cmd.led.b2 = val[10]; }
+            if (len >= 13) cmd.led.blinkOnMs = unpackUint16LE(&val[11]);
+            if (len >= 15) cmd.led.blinkOffMs = unpackUint16LE(&val[13]);
+            xQueueSend(s_bleCmdQueue, &cmd, 0);
         }
     }
 };
@@ -257,9 +298,13 @@ class FeatureSwitchCallbacks : public NimBLECharacteristicCallbacks {
         (void)connInfo;
         size_t len = pChr->getLength();
         const uint8_t* val = pChr->getValue().data();
-        if (len >= 2) {
-            setFeatureSwitch(val[0], val[1]);
-            bleNotifyFeatureSwitches();
+        if (len >= 2 && s_bleCmdQueue) {
+            BleCommand cmd;
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.type = BLE_CMD_FEATURE_SWITCH;
+            cmd.index = val[0];
+            cmd.val = val[1];
+            xQueueSend(s_bleCmdQueue, &cmd, 0);
         }
     }
 };
@@ -369,6 +414,9 @@ void bleBegin(void) {
     NimBLEDevice::setSecurityIOCap(0); // Display only
 #endif
 
+    if (s_bleCmdQueue == (QueueHandle_t)0) {
+        s_bleCmdQueue = xQueueCreate(16, sizeof(BleCommand));
+    }
     s_server = NimBLEDevice::createServer();
     static ServerCallbacks srvCb;
     s_server->setCallbacks(&srvCb);
@@ -380,16 +428,25 @@ void bleBegin(void) {
     // Wire subsystem state change callbacks
     relaysRegisterCallback([](uint8_t, uint8_t) { bleNotifyRelayState(); });
     registerFeatureSwitchCallback([](uint8_t, uint8_t) { bleNotifyFeatureSwitches(); });
-    logSetNotifyCallback(bleNotifyDeviceLog);
 #if FEATURE_LEDS
     ledsRegisterCallback([](const LedState*) { bleNotifyLedState(); });
 #endif
+    logSetNotifyCallback(bleNotifyDeviceLog);
 
 
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
-    pAdv->setName(DEVICE_NAME);
-    pAdv->addServiceUUID(UUID_SERVICE);
-    pAdv->enableScanResponse(true);
+
+    NimBLEAdvertisementData advData;
+    advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
+    advData.setName(DEVICE_NAME);
+    pAdv->setAdvertisementData(advData);
+
+    NimBLEAdvertisementData scanData;
+    scanData.setCompleteServices(NimBLEUUID(UUID_SERVICE));
+    pAdv->setScanResponseData(scanData);
+
+    pAdv->setMinInterval(0x20); // 20ms fast advertising
+    pAdv->setMaxInterval(0x40); // 40ms fast advertising
     pAdv->start();
 }
 
@@ -540,7 +597,46 @@ void bleNotifyDeviceLog(const char* line) {
 }
 
 void bleLoop(void) {
-    // Non-blocking BLE background housekeeping
+    if (!s_bleCmdQueue) return;
+
+    BleCommand cmd;
+    while (xQueueReceive(s_bleCmdQueue, &cmd, 0) == pdTRUE) {
+        switch (cmd.type) {
+            case BLE_CMD_RELAY_STATE:
+                LOGI(TAG_BLE, ">>> Processing BLE RelayState: idx=%d desiredLoad=%d", cmd.index, cmd.val);
+                relaysSetLoad(cmd.index, cmd.val);
+                bleNotifyRelayState();
+                break;
+            case BLE_CMD_RELAY_CONFIG_READ:
+                bleNotifyRelayConfig(cmd.index);
+                break;
+            case BLE_CMD_RELAY_CONFIG_RESET:
+                settingsResetRelayConfig(cmd.index);
+                bleNotifyRelayConfig(cmd.index);
+                break;
+            case BLE_CMD_RELAY_CONFIG_WRITE:
+                LOGI(TAG_BLE, ">>> Processing BLE RelayConfig: idx=%d name='%s' pin=%d polar=%d",
+                     cmd.index, cmd.cfg.name, cmd.cfg.gpioPin, cmd.cfg.polarity);
+                relaysSetConfig(cmd.index, &cmd.cfg);
+                bleNotifyRelayConfig(cmd.index);
+                break;
+            case BLE_CMD_FEATURE_SWITCH:
+                LOGI(TAG_BLE, ">>> Processing BLE FeatureSwitch: idx=%d val=%d", cmd.index, cmd.val);
+                setFeatureSwitch(cmd.index, cmd.val);
+                bleNotifyFeatureSwitches();
+                break;
+#if FEATURE_LEDS
+            case BLE_CMD_LED_STATE:
+                LOGI(TAG_BLE, ">>> Processing BLE LED: mode=%u effect=%u bri=%u rgb=#%02X%02X%02X",
+                     cmd.led.mode, cmd.led.effect, cmd.led.brightness, cmd.led.r, cmd.led.g, cmd.led.b);
+                ledsSetState(&cmd.led);
+                bleNotifyLedState();
+                break;
+#endif
+            default:
+                break;
+        }
+    }
 }
 
 

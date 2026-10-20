@@ -27,71 +27,92 @@ export default function RelayCard(props) {
   const { index, load, coil, gpioLevel, config = {} } = channel;
   const isLoadOn = Boolean(load);
 
+  const handleCardClick = (e) => {
+    // Prevent toggle if clicking on specific buttons (Timer / Settings)
+    if (e.target.closest('button')) return;
+    if (!isLockedByAway && onToggle) {
+      onToggle(index);
+    }
+  };
+
   return (
-    <div className={`card relay-card ${isLoadOn ? 'load-on' : ''}`}>
-      <div className="relay-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span className="relay-icon">{config.icon || '⚡'}</span>
+    <div
+      className={`card relay-card remote-relay-pad ${isLoadOn ? 'load-on' : ''}`}
+      onClick={handleCardClick}
+      style={{ cursor: isLockedByAway ? 'not-allowed' : 'pointer', userSelect: 'none' }}
+    >
+      <div className="relay-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className={`relay-status-indicator ${isLoadOn ? 'active' : ''}`}>
+            <span style={{ fontSize: '1.4rem' }}>{config.icon || '⚡'}</span>
+          </div>
           <div>
-            <div className="card-title" style={{ fontSize: '1.05rem' }}>
-              {config.name || `Relay ${index + 1}`}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="channel-tag">CH {index + 1}</span>
+              <span className="card-title" style={{ fontSize: '1.05rem', fontWeight: 600 }}>
+                {config.name || `Relay ${index + 1}`}
+              </span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Coil: {coil ? 'ENERGIZED' : 'OFF'} • GPIO{config.gpioPin}: {gpioLevel ? 'HIGH' : 'LOW'}
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Coil: <strong style={{ color: coil ? '#34d399' : 'inherit' }}>{coil ? 'ON' : 'OFF'}</strong> • GPIO{config.gpioPin}: {gpioLevel ? 'HIGH' : 'LOW'}
             </div>
           </div>
         </div>
 
-        {/* Toggle switch */}
-        <label className="toggle-label" title={isLockedByAway ? 'Locked by Away mode' : 'Toggle Load'}>
-          <input
-            type="checkbox"
-            className="toggle-input"
-            checked={isLoadOn}
-            disabled={isLockedByAway}
-            onChange={() => onToggle && onToggle(index)}
-          />
-          <span className="toggle-slider" />
-        </label>
+        {/* Tactile Big Power Button */}
+        <button
+          className={`relay-power-btn ${isLoadOn ? 'btn-power-on' : 'btn-power-off'}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isLockedByAway && onToggle) onToggle(index);
+          }}
+          disabled={isLockedByAway}
+          title={isLockedByAway ? 'Locked by Away mode' : isLoadOn ? 'Click to Turn OFF' : 'Click to Turn ON'}
+        >
+          <span className="power-icon">⏻</span>
+          <span className="power-label">{isLoadOn ? 'ON' : 'OFF'}</span>
+        </button>
       </div>
 
       {/* Badges line: Away lock & Active timer */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '0.8rem', flexWrap: 'wrap' }}>
         {isLockedByAway && (
-          <span className="badge badge-warning">Away Locked</span>
+          <span className="badge badge-warning">🛡️ Away Locked</span>
         )}
 
         {timer && timer.active && (
-          <span className="badge badge-info" onClick={() => onTimerClick && onTimerClick(index)} style={{ cursor: 'pointer' }}>
+          <span className="badge badge-info" onClick={(e) => { e.stopPropagation(); onTimerClick && onTimerClick(index); }} style={{ cursor: 'pointer' }}>
             ⏱️ {timer.formatted || 'Active'}
           </span>
         )}
 
         {config.affectedByAway ? (
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }} title="Turns off automatically when Away Mode is active">
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             🛡️ Away Guard
           </span>
         ) : null}
-      </div>
 
-      {/* Actions footer */}
-      <div className="relay-actions" style={{ justifyContent: 'flex-end', marginTop: '4px' }}>
-        <button
-          className="btn btn-secondary"
-          onClick={() => onTimerClick && onTimerClick(index)}
-          style={{ height: '36px', minHeight: '36px', padding: '0 12px', fontSize: '0.85rem' }}
-        >
-          ⏱️ Timer
-        </button>
-
-        <button
-          className="btn btn-secondary btn-icon"
-          onClick={() => onSettingsClick && onSettingsClick(index)}
-          style={{ width: '36px', height: '36px', minHeight: '36px' }}
-          title="Relay Settings (Pin, Polarity, Wiring)"
-        >
-          ⚙️
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
+          {onTimerClick && (
+            <button
+              className="btn btn-secondary"
+              onClick={(e) => { e.stopPropagation(); onTimerClick(index); }}
+              style={{ height: '30px', minHeight: '30px', padding: '0 8px', fontSize: '0.78rem' }}
+            >
+              ⏱️ Timer
+            </button>
+          )}
+          {onSettingsClick && (
+            <button
+              className="btn btn-secondary btn-icon"
+              onClick={(e) => { e.stopPropagation(); onSettingsClick(index); }}
+              style={{ width: '30px', height: '30px', minHeight: '30px', fontSize: '0.8rem' }}
+              title="Configure Relay"
+            >
+              ⚙️
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

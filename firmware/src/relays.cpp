@@ -232,6 +232,8 @@ uint8_t relaysSetConfig(uint8_t index, const RelayConfig* inConfig) {
     settingsSaveRelayConfig(index, inConfig);
 
     if (s_driverType == DRIVER_GPIO) {
+        uint8_t safeLvl = relayGetSafeOffLevel(inConfig->polarity, inConfig->wiring);
+        s_gpioDriver.setSafeLevel(index, safeLvl);
         s_gpioDriver.setPin(index, inConfig->gpioPin);
     }
     applyHardwareOutput(index);

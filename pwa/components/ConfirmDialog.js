@@ -1,9 +1,5 @@
 /**
  * ConfirmDialog.js — Accessible confirmation modal.
- *
- * Purpose : Safety confirmation for photosensitivity rapid blink warnings and factory resets.
- * Depends : React only.
- * Used by : LedScreen.js, SystemScreen.js, dev-preview.
  */
 
 "use client";
@@ -23,20 +19,27 @@ export default function ConfirmDialog({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-overlay" onClick={onCancel} role="dialog" aria-modal="true">
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: '12px', fontSize: '1.15rem' }}>{title}</h3>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: 1.5 }}>
+        <h3 style={{ margin: '0 0 8px 0', fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {isDanger ? '⚠️ ' : ''} {title}
+        </h3>
+        <p style={{ margin: '0 0 24px 0', color: 'var(--text-secondary)', lineHeight: 1.5, fontSize: '0.95rem' }}>
           {message}
         </p>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-          <button className="btn btn-secondary" onClick={onCancel}>
+          <button
+            className="btn btn-secondary"
+            onClick={onCancel}
+            style={{ minHeight: '40px', padding: '0 16px' }}
+          >
             {cancelLabel}
           </button>
           <button
             className={`btn ${isDanger ? 'btn-danger' : 'btn-primary'}`}
             onClick={onConfirm}
+            style={{ minHeight: '40px', padding: '0 20px', fontWeight: 600 }}
           >
             {confirmLabel}
           </button>
@@ -45,4 +48,3 @@ export default function ConfirmDialog({
     </div>
   );
 }
-

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartDesk Bring-Up Test Page</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0b0f19;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 650px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 1.4rem; color: #38bdf8; font-weight: 700; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid #ef4444;
+      color: #f87171;
+    }
+    .status-badge.connected {
+      background: rgba(34, 197, 94, 0.15);
+      border-color: #22c55e;
+      color: #4ade80;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor;
+    }
+    .card {
+      background: #131b2e;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card-title { font-size: 1rem; font-weight: 600; color: #cbd5e1; }
+    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    button {
+      cursor: pointer;
+      font-weight: 700;
+      border-radius: 8px;
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+    .btn-connect {
+      padding: 12px 20px;
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      font-size: 0.95rem;
+    }
+    .btn-connect:hover { background: #0369a1; }
+    .btn-disconnect {
+      padding: 12px 20px;
+      background: #dc2626;
+      color: #fff;
+      border: none;
+      font-size: 0.95rem;
+    }
+    .relay-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 480px) {
+      .relay-grid { grid-template-columns: 1fr; }
+    }
+    .relay-btn {
+      padding: 18px 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.95rem;
+    }
+    .relay-btn.on {
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.25) 0%, rgba(56, 189, 248, 0.15) 100%);
+      border-color: #38bdf8;
+      color: #38bdf8;
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
+    }
+    .relay-state-label {
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      background: rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+    }
+    .relay-btn.on .relay-state-label {
+      background: #38bdf8;
+      color: #0b0f19;
+    }
+    .log-box {
+      background: #030712;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 14px;
+      height: 220px;
+      overflow-y: auto;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    .log-entry { margin-bottom: 4px; }
+    .log-time { color: #64748b; margin-right: 6px; }
+    .log-info { color: #cbd5e1; }
+    .log-success { color: #4ade80; }
+    .log-warn { color: #facc15; }
+    .log-err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>SmartDesk Bring-Up Test</h1>
+        <div style="font-size: 0.8rem; color: #64748b; margin-top: 2px;">Single-File BLE Verification</div>
+      </div>
+      <div id="statusBadge" class="status-badge">
+        <span class="dot"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="card-title">1. Connection Control</div>
+      <div class="btn-row">
+        <button id="btnConnect" class="btn-connect" onclick="connectBle()">⚡ Connect SmartDesk</button>
+        <button id="btnDisconnect" class="btn-disconnect" onclick="disconnectBle()" style="display:none;">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">2. 4-Relay Direct Control (GPIO 4, 5, 6, 7)</div>
+      <div class="relay-grid">
+        <button id="relay0" class="relay-btn" onclick="toggleRelay(0)" disabled>
+          <span>CH1 (GPIO 4)</span>
+          <span id="state0" class="relay-state-label">OFF</span>
+        </button>
+        <button id="relay1" class="relay-btn" onclick="toggleRelay(1)" disabled>
+          <span>CH2 (GPIO 5)</span>
+          <span id="state1" class="relay-state-label">OFF</span>
+        </button>
+        <button id="relay2" class="relay-btn" onclick="toggleRelay(2)" disabled>
+          <span>CH3 (GPIO 6)</span>
+          <span id="state2" class="relay-state-label">OFF</span>
+        </button>
+        <button id="relay3" class="relay-btn" onclick="toggleRelay(3)" disabled>
+          <span>CH4 (GPIO 7)</span>
+          <span id="state3" class="relay-state-label">OFF</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="card-title">3. Live BLE Event Logs</div>
+        <button onclick="clearLogs()" style="background:none; border:1px solid rgba(255,255,255,0.1); color:#94a3b8; padding:2px 8px; border-radius:4px; font-size:0.75rem;">Clear</button>
+      </div>
+      <div id="logBox" class="log-box"></div>
+    </div>
+  </div>
+
+  <script>
+    const SERVICE_UUID = "d3b00000-1b0e-4e6a-9b3f-c0f2a8d7e5b1";
+    const CHAR_RELAYS_UUID = "d3b00001-1b0e-4e6a-9b3f-c0f2a8d7e5b1";
+
+    let bleDevice = null;
+    let relayChar = null;
+    let relayStates = [0, 0, 0, 0];
+
+    function log(msg, type = 'info') {
+      const box = document.getElementById('logBox');
+      const time = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = `log-entry log-${type}`;
+      div.innerHTML = `<span class="log-time">[${time}]</span> ${msg}`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function clearLogs() {
+      document.getElementById('logBox').innerHTML = '';
+    }
+
+    function updateUi(connected) {
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+      const btnConn = document.getElementById('btnConnect');
+      const btnDisc = document.getElementById('btnDisconnect');
+
+      if (connected) {
+        badge.className = 'status-badge connected';
+        text.textContent = `Connected: ${bleDevice?.name || 'SmartDesk'}`;
+        btnConn.style.display = 'none';
+        btnDisc.style.display = 'inline-block';
+        for (let i = 0; i < 4; i++) document.getElementById(`relay${i}`).disabled = false;
+      } else {
+        badge.className = 'status-badge';
+        text.textContent = 'Disconnected';
+        btnConn.style.display = 'inline-block';
+        btnDisc.style.display = 'none';
+        for (let i = 0; i < 4; i++) {
+          document.getElementById(`relay${i}`).disabled = true;
+          setRelayUi(i, 0);
+        }
+      }
+    }
+
+    function setRelayUi(idx, val) {
+      relayStates[idx] = val ? 1 : 0;
+      const btn = document.getElementById(`relay${idx}`);
+      const lbl = document.getElementById(`state${idx}`);
+      if (relayStates[idx]) {
+        btn.classList.add('on');
+        lbl.textContent = 'ON';
+      } else {
+        btn.classList.remove('on');
+        lbl.textContent = 'OFF';
+      }
+    }
+
+    async function connectBle() {
+      if (!navigator.bluetooth) {
+        alert("Web Bluetooth not supported! Use Google Chrome or Microsoft Edge.");
+        return;
+      }
+
+      try {
+        log("Requesting Bluetooth device (Filter: name='SmartDesk')...", 'info');
+        bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'SmartDesk' }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        log(`Device selected: ${bleDevice.name} (${bleDevice.id})`, 'success');
+
+        log("Connecting to GATT server...", 'info');
+        const server = await bleDevice.gatt.connect();
+        log("GATT server connected! Getting service...", 'success');
+
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        log(`Service ${SERVICE_UUID} acquired!`, 'success');
+
+        log("Getting Relay characteristic...", 'info');
+        relayChar = await service.getCharacteristic(CHAR_RELAYS_UUID);
+        log("Relay characteristic acquired!", 'success');
+
+        log("Subscribing to Relay notifications...", 'info');
+        await relayChar.startNotifications();
+        relayChar.addEventListener('characteristicvaluechanged', (e) => {
+          const val = e.target.value;
+          const loads = [];
+          for (let i = 0; i < 4 && i < val.byteLength; i++) {
+            const load = val.getUint8(i);
+            loads.push(load);
+            setRelayUi(i, load);
+          }
+          log(`[NOTIFY] Relay states: [${loads.join(', ')}]`, 'success');
+        });
+        log("Subscribed to notifications successfully!", 'success');
+
+        // Initial Read
+        log("Reading initial relay states...", 'info');
+        const initVal = await relayChar.readValue();
+        for (let i = 0; i < 4 && i < initVal.byteLength; i++) {
+          setRelayUi(i, initVal.getUint8(i));
+        }
+        log(`Initial read: [${relayStates.join(', ')}]`, 'success');
+
+        updateUi(true);
+      } catch (err) {
+        log(`Connection failed: ${err.message}`, 'err');
+        updateUi(false);
+      }
+    }
+
+    function onDisconnected(e) {
+      log(`Device disconnected (${e.target?.name || 'SmartDesk'}).`, 'warn');
+      updateUi(false);
+      relayChar = null;
+      bleDevice = null;
+    }
+
+    async function disconnectBle() {
+      if (bleDevice && bleDevice.gatt.connected) {
+        log("Disconnecting...", 'info');
+        bleDevice.gatt.disconnect();
+      }
+      updateUi(false);
+    }
+
+    async function toggleRelay(idx) {
+      if (!relayChar) {
+        log("Not connected!", 'err');
+        return;
+      }
+
+      try {
+        const nextLoad = relayStates[idx] ? 0 : 1;
+        // 2-byte payload: [relayIndex, nextLoad]
+        const payload = new Uint8Array([idx, nextLoad]);
+        log(`Sending writeWithResponse: Relay ${idx + 1} -> ${nextLoad ? 'ON' : 'OFF'}...`, 'info');
+        await relayChar.writeValueWithResponse(payload);
+        log(`Write confirmed! Relay ${idx + 1} commanded ${nextLoad ? 'ON' : 'OFF'}.`, 'success');
+      } catch (err) {
+        log(`Write failed: ${err.message}`, 'err');
+      }
+    }
+  </script>
+</body>
+</html>
+

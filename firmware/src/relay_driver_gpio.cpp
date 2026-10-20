@@ -66,6 +66,11 @@ void GpioRelayDriver::setPin(uint8_t index, uint8_t gpioPin) {
     if (index >= RELAY_COUNT) return;
     if (isGpioSafe(gpioPin)) {
         _pins[index] = gpioPin;
+        if (_initialized) {
+            digitalWrite(gpioPin, _safeLevels[index]);
+            pinMode(gpioPin, OUTPUT);
+            digitalWrite(gpioPin, _levels[index]);
+        }
     }
 }
 

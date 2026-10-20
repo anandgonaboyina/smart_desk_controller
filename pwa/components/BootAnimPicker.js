@@ -1,10 +1,5 @@
 /**
  * BootAnimPicker.js — 10 Power-On Boot & Shutdown RGB Animation Selector.
- *
- * Purpose : Select from 10 boot/shutdown transitions (sweep, expand, fade, rainbow, scanner, etc.)
- *           with live interactive preview test buttons and power-on behavior config.
- * Depends : React, pure/color-math.js.
- * Used by : LedScreen.js.
  */
 
 "use client";
@@ -29,64 +24,65 @@ export default function BootAnimPicker({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="flex flex-col gap-6 p-1">
       {/* Power-On Boot Behavior */}
       <div>
-        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500 }}>
+        <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
           Power-On Boot Behavior
         </label>
-        <select
-          className="input-select"
-          value={bootBehavior}
-          onChange={(e) => onSelectBehavior && onSelectBehavior(Number(e.target.value))}
-          style={{ width: '100%', height: '42px' }}
-        >
-          <option value={0}>Restore Last Saved State</option>
-          <option value={1}>Turn Off on Startup</option>
-          <option value={2}>Default Warm White Ambient</option>
-        </select>
+        <div className="relative">
+          <select
+            value={bootBehavior}
+            onChange={(e) => onSelectBehavior && onSelectBehavior(Number(e.target.value))}
+            className="w-full h-12 pl-4 pr-10 text-gray-900 bg-gray-50 border border-gray-300 rounded-xl appearance-none dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-sm"
+          >
+            <option value={0}>Restore Last Saved State</option>
+            <option value={1}>Turn Off on Startup</option>
+            <option value={2}>Default Warm White Ambient</option>
+          </select>
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-gray-400">▼</div>
+        </div>
       </div>
 
       {/* 10 Boot / Shutdown Transition Animations */}
       <div>
-        <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500 }}>
+        <label className="block mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
           Boot & Shutdown RGB Animation (10 Styles)
         </label>
-        <select
-          className="input-select"
-          value={selectedAnimId}
-          onChange={(e) => onSelectAnim && onSelectAnim(Number(e.target.value))}
-          style={{ width: '100%', height: '42px' }}
-        >
-          {BOOT_ANIMATIONS.map((anim) => (
-            <option key={anim.id} value={anim.id}>
-              {anim.id + 1}. {anim.label} ({anim.type.toUpperCase()})
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            value={selectedAnimId}
+            onChange={(e) => onSelectAnim && onSelectAnim(Number(e.target.value))}
+            className="w-full h-12 pl-4 pr-10 text-gray-900 bg-gray-50 border border-gray-300 rounded-xl appearance-none dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer shadow-sm"
+          >
+            {BOOT_ANIMATIONS.map((anim) => (
+              <option key={anim.id} value={anim.id}>
+                {anim.id + 1}. {anim.label} ({anim.type.toUpperCase()})
+              </option>
+            ))}
+          </select>
+          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none text-gray-400">▼</div>
+        </div>
       </div>
 
       {/* Interactive Animation Test Buttons */}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+      <div className="flex flex-col sm:flex-row gap-3 mt-2">
         <button
-          className="btn btn-secondary"
           onClick={() => handleTest(selectedAnimId)}
           disabled={activeTestId !== null}
-          style={{ flex: 1, minWidth: '150px' }}
+          className="flex-1 py-3 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-500 transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-wait"
         >
-          {activeTestId === selectedAnimId ? 'Playing Preview...' : '▶️ Test Selected Animation'}
+          {activeTestId === selectedAnimId ? '✨ Playing Preview...' : '▶️ Test Selected'}
         </button>
 
         <button
-          className="btn btn-secondary"
           onClick={() => handleTest(5)} // ID 5: Smooth Fade-Out
           disabled={activeTestId !== null}
-          style={{ flex: 1, minWidth: '150px' }}
+          className="flex-1 py-3 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-red-500 transition-all shadow-sm active:scale-95 disabled:opacity-60 disabled:cursor-wait"
         >
-          {activeTestId === 5 ? 'Playing Shutdown...' : '⏹️ Test Shutdown Fade'}
+          {activeTestId === 5 ? '🌙 Shutting Down...' : '⏹️ Test Shutdown'}
         </button>
       </div>
     </div>
   );
 }
-

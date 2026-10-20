@@ -82,8 +82,8 @@ static void logTask(void* param) {
                 s_ringCount++;
             }
 
-            // 3. Dispatch to BLE callback if connected
-            if (s_notifyCb != NULL) {
+            // Only notify over BLE for errors/warnings to avoid GATT TX buffer exhaustion
+            if (s_notifyCb != NULL && item.level <= LOG_LEVEL_WARN) {
                 s_notifyCb(formatted);
             }
         }
@@ -104,7 +104,7 @@ void logInit(void) {
         xTaskCreatePinnedToCore(
             logTask,
             "logTask",
-            3072,
+            4096,
             NULL,
             1, // Low priority background task
             &s_logTaskHandle,
@@ -190,4 +190,3 @@ uint8_t logGetRingBuffer(char* outBuf, uint16_t maxLen) {
 void logSetNotifyCallback(LogNotifyCallback cb) {
     s_notifyCb = cb;
 }
-

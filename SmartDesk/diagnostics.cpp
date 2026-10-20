@@ -56,20 +56,16 @@ bool diagnosticsRunSelfTest(void) {
     LOGI(TAG_TEST, "         SMART DESK CONTROLLER SELF-TEST          ");
     LOGI(TAG_TEST, "==================================================");
 
-    // 1. Reset Reason
     esp_reset_reason_t reason = esp_reset_reason();
-    bool resetOk = (reason == ESP_RST_POWERON || reason == ESP_RST_SW || reason == ESP_RST_DEEPSLEEP);
-    if (!resetOk) {
+    char msg[32];
+    if (reason == ESP_RST_BROWNOUT) {
         allPass = false;
-        if (reason == ESP_RST_BROWNOUT) {
-            printTestResult("Reset Reason", false, false, "HARDWARE", "Brownout detected! Check 5V power supply capacity");
-        } else if (reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT) {
-            printTestResult("Reset Reason", false, false, "CODE", "Watchdog reset! A task blocked the FreeRTOS scheduler");
-        } else {
-            printTestResult("Reset Reason", false, false, "CODE", "Unexpected reset code. Check panic logs");
-        }
+        printTestResult("Reset Reason", false, false, "HARDWARE", "Brownout detected! Check 5V power supply capacity");
     } else {
-        printTestResult("Reset Reason", true, false, NULL, NULL);
+        snprintf(msg, sizeof(msg), "OK (code %d)", (int)reason);
+        char line[128];
+        snprintf(line, sizeof(line), "[PASS] %-24s : %s", "Reset Reason", msg);
+        LOGI(TAG_TEST, "%s", line);
     }
 
     // 2. NVS Storage

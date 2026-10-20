@@ -1,10 +1,5 @@
 /**
  * BrightnessSlider.js — Brightness control with live mA current budget indicator.
- *
- * Purpose : Slider controlling 0-100% brightness while displaying estimated mA draw
- *           and warning when approaching the 300mA hardware safety threshold.
- * Depends : React only.
- * Used by : LedScreen.js, dev-preview.
  */
 
 "use client";
@@ -35,13 +30,21 @@ export default function BrightnessSlider({
   const isNearLimit = estimatedMa > maxBudgetMa * 0.85;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', opacity: disabled ? 0.6 : 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 500 }}>Brightness</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontFamily: 'var(--font-mono)' }}>{localVal}%</span>
-          <span className={`badge ${isNearLimit ? 'badge-warning' : 'badge-info'}`}>
-            ⚡ {estimatedMa} mA / {maxBudgetMa} mA
+    <div className={`flex flex-col gap-3 transition-opacity ${disabled ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+      <div className="flex justify-between items-end">
+        <span className="font-semibold text-gray-700 dark:text-gray-300 text-sm">
+          Master Brightness
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-bold text-blue-600 dark:text-blue-400">
+            {localVal}%
+          </span>
+          <span className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
+            isNearLimit 
+              ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300 border border-orange-200 dark:border-orange-800' 
+              : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700'
+          }`}>
+            ⚡ {estimatedMa} / {maxBudgetMa} mA
           </span>
         </div>
       </div>
@@ -53,6 +56,7 @@ export default function BrightnessSlider({
         value={localVal}
         disabled={disabled}
         onChange={handleChange}
+        className="w-full h-2.5 bg-gray-200 rounded-full appearance-none cursor-pointer dark:bg-gray-700 accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
       />
     </div>
   );

@@ -79,12 +79,7 @@ static void logTask(void* param) {
             s_ring[s_ringHead][LOG_LINE_MAX_LEN - 1] = '\0';
             s_ringHead = (s_ringHead + 1) % LOG_RING_LINES;
             if (s_ringCount < LOG_RING_LINES) {
-                s_ringCount++;
-            }
-
-            // 3. Dispatch to BLE callback if connected
-            if (s_notifyCb != NULL) {
-                s_notifyCb(formatted);
+                s_ringCount++; } if (s_notifyCb != NULL) { s_notifyCb(formatted); vTaskDelay(pdMS_TO_TICKS(10));
             }
         }
     }
@@ -104,7 +99,7 @@ void logInit(void) {
         xTaskCreatePinnedToCore(
             logTask,
             "logTask",
-            3072,
+            4096,
             NULL,
             1, // Low priority background task
             &s_logTaskHandle,

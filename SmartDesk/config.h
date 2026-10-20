@@ -15,7 +15,7 @@
 #include "features.h"
 
 /* ── Identity ────────────────────────────────────────────────────── */
-#define DEVICE_NAME             "SmartDesk"      // BLE advertised name
+#define DEVICE_NAME             "SmartDesk-FIX1"      // BLE advertised name
 #define USER_NAME               "Anand"          // Shown in UI greetings
 #define FIRMWARE_VERSION_MAJOR  1
 #define FIRMWARE_VERSION_MINOR  0
@@ -34,11 +34,11 @@
 #define RELAY_COUNT             4                // Active relays (max 8 w/ 595)
 #define RELAY_MAX               8                // Absolute max (595 = 8 outputs)
 #define RELAY_DRIVER_DEFAULT    0                // 0 = GPIO direct, 1 = 74HC595
-#define MIN_RELAY_SWITCH_MS     2000             // Minimum ms between toggles
+#define MIN_RELAY_SWITCH_MS     250             // Minimum ms between toggles
                                                  // (protects chargers from rapid cycling)
 
 // Default per-relay settings (applied on first boot or after reset)
-#define DEFAULT_RELAY_POLARITY  0                // 0 = active-LOW, 1 = active-HIGH
+#define DEFAULT_RELAY_POLARITY  1                // 0 = active-LOW, 1 = active-HIGH
 #define DEFAULT_RELAY_WIRING    0                // 0 = NO (normally open), 1 = NC
 #define DEFAULT_RELAY_BOOT      0                // 0 = last state, 1 = always OFF, 2 = always ON
 

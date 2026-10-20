@@ -1,89 +1,108 @@
 /**
  * DiagnosticsPanel.js — Interactive hardware self-test trigger and report card.
- *
- * Purpose : Executes self-test suite and renders structured PASS/FAIL assertions
- *           with root-cause hardware vs code attribution and advice.
- * Depends : React only.
- * Used by : SystemScreen.js, dev-preview.
  */
 
 "use client";
 
 import React from 'react';
 
-export default function DiagnosticsPanel({
-  isRunning = false,
-  testResults = [],
-  onRunSelfTest,
-  isDemo = false,
-}) {
+export default function DiagnosticsPanel(props) {
+  const {
+    isRunning = false,
+    testResults = props.results || [],
+    results = [],
+    onRunSelfTest = props.onRunTest,
+    onRunTest,
+    isDemo = false,
+  } = props;
+
+  const items = (testResults && testResults.length > 0) ? testResults : results;
+  const handleRun = onRunSelfTest || onRunTest;
   return (
-    <div className="card">
-      <div className="card-header">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-all">
+      <div className="p-5 md:p-6 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50/50 dark:bg-gray-800/50">
         <div>
-          <div className="card-title">🔍 System Self-Test</div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <span>🔍</span> System Self-Test
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             12 automated assertions checking hardware wiring and firmware integrity
-          </div>
+          </p>
         </div>
 
         <button
           className="btn btn-primary"
-          onClick={onRunSelfTest}
+          style={{ height: '40px', padding: '0 20px', borderRadius: '12px' }}
+          onClick={handleRun}
           disabled={isRunning}
-          style={{ height: '40px', minHeight: '40px' }}
         >
-          {isRunning ? '⏳ Running...' : '▶️ Run Self-Test'}
+          {isRunning ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              Running Self-Test...
+            </span>
+          ) : (
+            '▶️ Run Self-Test'
+          )}
         </button>
       </div>
 
-      {isDemo && (
-        <div style={{ fontSize: '0.8rem', color: '#38bdf8', marginTop: '4px' }}>
-          💡 Running in Demo Mode will simulate the full self-test suite.
-        </div>
-      )}
-
-      {/* Results List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-        {testResults.map((t, idx) => {
-          const isPass = t.status === 'PASS';
-          const isFail = t.status === 'FAIL';
-          const badgeClass = isPass ? 'badge-success' : isFail ? 'badge-danger' : 'badge-info';
-
-          return (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-md)',
-                background: isFail ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                border: isFail ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid var(--border-subtle)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{t.testName}</span>
-                <span className={`badge ${badgeClass}`}>{t.status}</span>
-              </div>
-
-              {t.hint && (
-                <div style={{ fontSize: '0.8rem', color: isFail ? '#f87171' : 'var(--text-secondary)', marginTop: '4px' }}>
-                  {t.faultType && <strong>[{t.faultType}] </strong>}
-                  {t.hint}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {testResults.length === 0 && !isRunning && (
-          <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Click &quot;Run Self-Test&quot; to verify electrical connections, NVS, and peripheral tasks.
+      <div className="p-5 md:p-6">
+        {isDemo && (
+          <div className="mb-4 p-3 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 rounded-lg text-sm border border-sky-100 dark:border-sky-800/50 flex items-start gap-2">
+            <span>💡</span>
+            <span>Running in Demo Mode will simulate the full self-test suite and generate mock PASS/FAIL outputs.</span>
           </div>
         )}
+
+        {/* Results List */}
+        <div className="flex flex-col gap-3">
+          {items.map((t, idx) => {
+            const isPass = t.status === 'PASS';
+            const isFail = t.status === 'FAIL';
+
+            return (
+              <div
+                key={idx}
+                className={`flex flex-col p-4 rounded-xl border transition-colors ${
+                  isFail 
+                    ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50' 
+                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                <div className="flex justify-between items-start md:items-center mb-1">
+                  <span className="font-semibold text-sm md:text-base text-gray-800 dark:text-gray-200">
+                    {t.testName}
+                  </span>
+                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full ml-3 ${
+                    isPass ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400' :
+                    isFail ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 animate-pulse' :
+                    'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                  }`}>
+                    {t.status}
+                  </span>
+                </div>
+
+                {t.hint && (
+                  <div className={`text-sm mt-1.5 ${isFail ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {t.faultType && <strong className="uppercase text-xs tracking-wider opacity-80 mr-1">[{t.faultType}]</strong>}
+                    {t.hint}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {items.length === 0 && !isRunning && (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <span className="text-4xl text-gray-300 dark:text-gray-600 mb-3">🩺</span>
+              <p className="text-gray-500 dark:text-gray-400 text-sm max-w-sm">
+                Click "Run Self-Test" to verify electrical connections, NVS memory, and peripheral task health.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

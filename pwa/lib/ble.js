@@ -45,6 +45,8 @@ class BleService {
   async connect() {
     if (demo.active) {
       demo.stop();
+      demo.active = false;
+      store.setDemoMode(false);
     }
 
     if (!this.isSupported()) {
@@ -57,51 +59,118 @@ class BleService {
     bus.emit('ble:status', { state: 'connecting', deviceName: null, error: null });
 
     try {
-      const allServices = [UUID_SERVICE, ...Object.values(UUIDS)];
+      console.log(`[${new Date().toISOString()}] [BLE] Step 1: Requesting device...`);
       try {
         this.device = await navigator.bluetooth.requestDevice({
           filters: [
-            { services: [UUID_SERVICE] },
+            { name: 'SmartDesk-FIX1' },
             { name: 'SmartDesk' },
-            { namePrefix: 'SmartDesk' },
+            { namePrefix: 'Smart' },
           ],
-          optionalServices: allServices,
+          optionalServices: [UUID_SERVICE],
         });
       } catch (filterErr) {
-        if (filterErr.name === 'NotFoundError' && !filterErr.message?.includes('User cancelled')) {
+        if (!filterErr.message?.includes('User cancelled')) {
+          console.log(`[${new Date().toISOString()}] [BLE] Filter failed, falling back to acceptAllDevices...`);
           this.device = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
-            optionalServices: allServices,
+            optionalServices: [UUID_SERVICE],
           });
         } else {
           throw filterErr;
         }
       }
 
-      this.device.addEventListener('gattserverdisconnected', () => this.handleDisconnected());
+      console.log(`[${new Date().toISOString()}] [BLE] Device selected: ${this.device.name} (${this.device.id})`);
+      this.device.addEventListener('gattserverdisconnected', (e) => {
+        console.warn(`[${new Date().toISOString()}] [BLE] GATT Server disconnected event fired!`);
+        this.handleDisconnected();
+      });
       store.setLastDeviceId(this.device.id);
 
+      // Connect GATT Server
+      console.log(`[${new Date().toISOString()}] [BLE] Step 2: Connecting to GATT server...`);
       this.server = await this.device.gatt.connect();
+      console.log(`[${new Date().toISOString()}] [BLE] Step 2 OK: GATT connected.`);
+
+      // Get Primary Service
+      console.log(`[${new Date().toISOString()}] [BLE] Step 3: Getting primary service ${UUID_SERVICE}...`);
       this.service = await this.server.getPrimaryService(UUID_SERVICE);
+      console.log(`[${new Date().toISOString()}] [BLE] Step 3 OK: Primary service found.`);
 
-      await this.discoverCharacteristics();
-      await this.sendClientRole();
-      await this.syncTime();
-      await this.subscribeNotifications();
-      await this.readInitialStates();
+      // Step 4: Lazy single-characteristic fetch: ONLY RELAY_STATE first (exact working page.js flow)
+      console.log(`[${new Date().toISOString()}] [BLE] Step 4: Fetching single RELAY_STATE characteristic...`);
+      const chrRelay = await this.service.getCharacteristic(UUIDS.RELAY_STATE);
+      this.characteristics.set('RELAY_STATE', chrRelay);
+      console.log(`[${new Date().toISOString()}] [BLE] Step 4 OK: RELAY_STATE characteristic ready.`);
 
+      // Step 5: Subscribe ONLY to RELAY_STATE notifications
+      console.log(`[${new Date().toISOString()}] [BLE] Step 5: Subscribing to RELAY_STATE notifications...`);
+      await chrRelay.startNotifications();
+      chrRelay.addEventListener('characteristicvaluechanged', (e) => this.handleNotification('RELAY_STATE', e.target.value));
+      console.log(`[${new Date().toISOString()}] [BLE] Step 5 OK: RELAY_STATE subscribed.`);
+
+      // Step 6: Initial read of RELAY_STATE
+      console.log(`[${new Date().toISOString()}] [BLE] Step 6: Reading initial RELAY_STATE...`);
+      try {
+        const val = await chrRelay.readValue();
+        this.handleNotification('RELAY_STATE', val);
+        console.log(`[${new Date().toISOString()}] [BLE] Step 6 OK: Initial RELAY_STATE read.`);
+      } catch (readErr) {
+        console.warn(`[${new Date().toISOString()}] [BLE] Step 6 Notice: Initial read skipped (${readErr.message})`);
+      }
+
+      // Mark connected immediately
       this.connecting = false;
       bus.emit('ble:status', {
         state: 'connected',
         deviceName: this.device.name || 'SmartDesk',
         error: null,
       });
-      bus.emit('system:toast', { message: `Connected to ${this.device.name || 'SmartDesk'}`, type: 'success' });
+      bus.emit('system:toast', { message: `Connected to ${this.device.name || 'SmartDesk'}!`, type: 'success' });
+      console.log(`[${new Date().toISOString()}] [BLE] LINK ESTABLISHED & STABLE! Monitoring for 3 seconds before lazy expansion...`);
 
-      // Start periodic time sync (every 30 min)
-      this.startTimeSync();
+      // Step 7: Lazy expansion only after link has been stable for 3 seconds
+      setTimeout(async () => {
+        if (!this.isConnected()) {
+          console.warn(`[${new Date().toISOString()}] [BLE] Disconnected before lazy expansion.`);
+          return;
+        }
+
+        console.log(`[${new Date().toISOString()}] [BLE] Link stable for 3s. Starting lazy fetch of secondary characteristics...`);
+        const secondaryKeys = [
+          'LED_STATE',
+          'RELAY_CONFIG',
+          'FEATURE_SWITCHES',
+          'DEVICE_STATUS',
+          'CLIENT_ROLE',
+          'TIME_SYNC',
+          'SCHEDULES',
+          'TIMERS',
+          'AWAY_MODE',
+        ];
+
+        for (const key of secondaryKeys) {
+          if (!this.isConnected()) break;
+          try {
+            console.log(`[${new Date().toISOString()}] [BLE Lazy] Fetching ${key}...`);
+            const chr = await this.service.getCharacteristic(UUIDS[key]);
+            this.characteristics.set(key, chr);
+            console.log(`[${new Date().toISOString()}] [BLE Lazy] ${key} fetched.`);
+
+            // Short pause between individual GATT discoveries to protect Windows GATT cache
+            await new Promise((r) => setTimeout(r, 80));
+          } catch (lazyErr) {
+            console.warn(`[${new Date().toISOString()}] [BLE Lazy] Skipped ${key}: ${lazyErr.message}`);
+          }
+        }
+        console.log(`[${new Date().toISOString()}] [BLE] Lazy expansion complete. Total mapped: ${this.characteristics.size}`);
+      }, 3000);
+
     } catch (err) {
       this.connecting = false;
+      console.error(`[${new Date().toISOString()}] [BLE Connect Error]:`, err);
+      try { this.device?.gatt?.disconnect(); } catch (e) {}
       this.handleDisconnected(err.message || 'Connection failed');
       throw err;
     }
@@ -120,6 +189,7 @@ class BleService {
 
   handleDisconnected(error = null) {
     this.stopTimeSync();
+    this.writeQueue = Promise.resolve();
     this.characteristics.clear();
     this.server = null;
     this.service = null;
@@ -127,54 +197,96 @@ class BleService {
   }
 
   async discoverCharacteristics() {
-    for (const [key, uuid] of Object.entries(UUIDS)) {
-      try {
-        const chr = await this.service.getCharacteristic(uuid);
-        this.characteristics.set(key, chr);
-      } catch (err) {
-        console.warn(`[BLE] Characteristic ${key} (${uuid}) not found:`, err);
+    try {
+      const chars = await this.service.getCharacteristics();
+      const uuidToKey = {};
+      for (const [key, uuid] of Object.entries(UUIDS)) {
+        uuidToKey[uuid.toLowerCase()] = key;
+      }
+      for (const chr of chars) {
+        const key = uuidToKey[chr.uuid.toLowerCase()];
+        if (key) {
+          this.characteristics.set(key, chr);
+        }
+      }
+      console.log(`[BLE] Discovered and mapped ${this.characteristics.size} characteristics`);
+    } catch (err) {
+      console.warn('[BLE] Bulk getCharacteristics failed, falling back:', err);
+      for (const [key, uuid] of Object.entries(UUIDS)) {
+        try {
+          const chr = await this.service.getCharacteristic(uuid);
+          this.characteristics.set(key, chr);
+        } catch (e) {}
       }
     }
   }
 
-  async subscribeNotifications() {
-    const notifyKeys = [
-      'RELAY_STATE', 'RELAY_CONFIG', 'SCHEDULES', 'TIMERS', 'AWAY_MODE',
-      'LED_STATE', 'LED_SLOTS', 'LED_PRESETS', 'LED_NOTIFY_BLINK',
-      'CALL_MODE', 'FEATURE_SWITCHES', 'HID_TYPE_NOW', 'SYSTEM_CMD',
-      'DEVICE_STATUS', 'DEVICE_LOG'
-    ];
-
-    for (const key of notifyKeys) {
+  async subscribeEssentialNotifications() {
+    // Only subscribe to critical real-time hardware states
+    // (DEVICE_LOG is subscribed only on-demand in Diagnostics to prevent GATT flooding)
+    const essentialKeys = ['RELAY_STATE', 'LED_STATE'];
+    for (const key of essentialKeys) {
       const chr = this.characteristics.get(key);
       if (chr && chr.properties.notify) {
         try {
           await chr.startNotifications();
           chr.addEventListener('characteristicvaluechanged', (e) => this.handleNotification(key, e.target.value));
+          await new Promise((r) => setTimeout(r, 80));
         } catch (err) {
-          console.warn(`[BLE] Failed to subscribe notifications for ${key}:`, err);
+          console.warn(`[BLE] Failed notification subscribe for ${key}:`, err);
         }
       }
     }
   }
 
-  async readInitialStates() {
-    const readKeys = [
-      'RELAY_STATE', 'FEATURE_SWITCHES', 'LED_STATE',
-      'CALL_MODE', 'AWAY_MODE', 'DEVICE_STATUS', 'HID_SETTINGS'
-    ];
+  async subscribeSecondaryNotifications() {
+    const secondaryKeys = ['RELAY_CONFIG', 'AWAY_MODE', 'FEATURE_SWITCHES', 'DEVICE_STATUS'];
+    for (const key of secondaryKeys) {
+      const chr = this.characteristics.get(key);
+      if (chr && chr.properties.notify) {
+        try {
+          await chr.startNotifications();
+          chr.addEventListener('characteristicvaluechanged', (e) => this.handleNotification(key, e.target.value));
+          await new Promise((r) => setTimeout(r, 80));
+        } catch (err) {}
+      }
+    }
+  }
 
+  async readEssentialState() {
+    const chr = this.characteristics.get('RELAY_STATE');
+    if (chr && chr.properties.read) {
+      try {
+        const val = await chr.readValue();
+        this.handleNotification('RELAY_STATE', val);
+      } catch (err) {
+        console.warn('[BLE] Initial RELAY_STATE read warning:', err);
+      }
+    }
+  }
+
+  async readSecondaryStates() {
+    const readKeys = ['FEATURE_SWITCHES', 'LED_STATE', 'DEVICE_STATUS'];
     for (const key of readKeys) {
       const chr = this.characteristics.get(key);
       if (chr && chr.properties.read) {
         try {
           const val = await chr.readValue();
           this.handleNotification(key, val);
-        } catch (err) {
-          console.warn(`[BLE] Failed to read ${key}:`, err);
-        }
+          await new Promise((r) => setTimeout(r, 80));
+        } catch (err) {}
       }
     }
+  }
+
+  async subscribeNotifications() {
+    await this.subscribeEssentialNotifications();
+    await this.subscribeSecondaryNotifications();
+  }
+
+  async readInitialStates() {
+    await this.readEssentialState();
+    await this.readSecondaryStates();
   }
 
   // ── Notification Parser ────────────────────────────────────────────────────
@@ -250,14 +362,24 @@ class BleService {
           try {
             if (writeWithoutResponse && chr.writeValueWithoutResponse) {
               await chr.writeValueWithoutResponse(buffer);
-            } else {
+            } else if (chr.writeValue) {
+              await chr.writeValue(buffer);
+            } else if (chr.writeValueWithResponse) {
               await chr.writeValueWithResponse(buffer);
             }
             resolve();
           } catch (err) {
-            console.error(`[BLE Write Error] ${charKey}:`, err);
+            console.warn(`[BLE Write Warning] ${charKey}:`, err);
+            // Fallback retry with writeValueWithoutResponse if standard write failed
+            if (chr.writeValueWithoutResponse) {
+              try {
+                await chr.writeValueWithoutResponse(buffer);
+                resolve();
+                return;
+              } catch (e2) {}
+            }
             bus.emit('system:toast', {
-              message: `Write failed: ${charKey}`,
+              message: `Write failed: ${charKey} (${err.message})`,
               type: 'error',
             });
             resolve();
@@ -304,6 +426,12 @@ class BleService {
     }
     const buf = pack.packRelayStateWrite(index, desiredLoad);
     return this.enqueueWrite('RELAY_STATE', buf);
+  }
+
+  async requestRelayConfig(index) {
+    if (demo.active) return;
+    const buf = pack.packRelayConfigRead(index);
+    return this.enqueueWrite('RELAY_CONFIG', buf);
   }
 
   async setRelayConfig(index, cfg) {
@@ -394,7 +522,7 @@ class BleService {
     }
     if (!this.isConnected()) return;
     const buf = pack.packLedState(st);
-    return this.enqueueWrite('LED_STATE', buf, true);
+    return this.enqueueWrite('LED_STATE', buf, false);
   }
 
   async testNotifyBlink(event, r, g, b, count, durationMs) {

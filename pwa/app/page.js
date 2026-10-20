@@ -48,7 +48,7 @@ const NAV_ITEMS = [
 export default function SmartDeskApp() {
   const { isConnected, isConnecting, deviceName, isDemo, connect, disconnect, toggleDemo } = useBle();
   const { theme, setTheme, clientRole, setClientRole } = useSettings();
-  const [activeScreen, setActiveScreen] = useState('display');
+  const [activeScreen, setActiveScreen] = useState('remote'); // Start on remote for fast testing
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -85,7 +85,7 @@ export default function SmartDeskApp() {
 
   const renderActiveScreen = () => {
     switch (activeScreen) {
-      case 'relays': return <RelaySettingsScreen />;
+      case 'relays': return <RelaySettingsScreen onBack={() => setActiveScreen('remote')} />;
       case 'leds': return <LedScreen />;
       case 'schedules': return <SchedulesScreen />;
       case 'away': return <AwayScreen />;
@@ -95,11 +95,11 @@ export default function SmartDeskApp() {
       case 'system': return <SystemScreen />;
       case 'settings': return <SettingsScreen />;
       case 'remote':
-      default: return <RemoteScreen />;
+      default: return <RemoteScreen onOpenSettings={() => setActiveScreen('relays')} />;
     }
   };
 
-  // Fullscreen Borderless Desk Face Mode on App Open
+  // Fullscreen Borderless Desk Face Mode
   if (activeScreen === 'display') {
     return (
       <div className="smart-desk-app fullscreen-face-mode">
@@ -154,11 +154,11 @@ export default function SmartDeskApp() {
         <button className={`mobile-tab-btn ${activeScreen === 'remote' ? 'active' : ''}`} onClick={() => setActiveScreen('remote')}>
           <span>📱</span><span>Remote</span>
         </button>
-        <button className={`mobile-tab-btn ${activeScreen === 'leds' ? 'active' : ''}`} onClick={() => setActiveScreen('leds')}>
-          <span>💡</span><span>LEDs</span>
-        </button>
         <button className={`mobile-tab-btn ${activeScreen === 'relays' ? 'active' : ''}`} onClick={() => setActiveScreen('relays')}>
           <span>⚡</span><span>Relays</span>
+        </button>
+        <button className={`mobile-tab-btn ${activeScreen === 'leds' ? 'active' : ''}`} onClick={() => setActiveScreen('leds')}>
+          <span>💡</span><span>LEDs</span>
         </button>
         <button className="mobile-tab-btn" onClick={() => setActiveScreen('display')}>
           <span>🖥️</span><span>Face</span>
@@ -177,4 +177,6 @@ export default function SmartDeskApp() {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
+}
+
 }

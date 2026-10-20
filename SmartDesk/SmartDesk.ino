@@ -163,11 +163,17 @@ static void handleSerialMenu(void) {
     }
 }
 
+#define BUILD_MARKER "BUILD " __DATE__ " " __TIME__ ", tag BLEFIX-1"
+
 void setup() {
     // CRITICAL: Set all relay direct GPIO pins to safe electrical level FIRST
     relaysEarlyBootSafeState();
 
     Serial.begin(115200);
+    delay(100);
+    Serial.println("\n\n==================================================");
+    Serial.println(">>> SMARTDESK " BUILD_MARKER);
+    Serial.println("==================================================");
     delay(50);
 
     // Initialize non-blocking logging and diagnostics
@@ -175,6 +181,7 @@ void setup() {
     diagnosticsInit();
 
     LOGI(TAG_SYS, "========================================");
+    LOGI(TAG_SYS, " Marker: " BUILD_MARKER);
     LOGI(TAG_SYS, " SmartDesk Controller v%u.%u.%u",
          FIRMWARE_VERSION_MAJOR, FIRMWARE_VERSION_MINOR, FIRMWARE_VERSION_PATCH);
     LOGI(TAG_SYS, " User: %s | Target: ESP32-S3 N16R8", USER_NAME);
