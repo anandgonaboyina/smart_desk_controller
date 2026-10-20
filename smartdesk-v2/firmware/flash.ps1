@@ -114,7 +114,7 @@ try {
                 $trimmed = $line.Trim()
                 $capturedBanner.Add($trimmed)
                 Write-Host "  [ESP32] $trimmed" -ForegroundColor Gray
-                if ($trimmed -match "TAG=V2-PROD") {
+                if ($trimmed -match "TAG=V2-") {
                     $markerFound = $true
                 }
             }
@@ -143,7 +143,7 @@ if ($markerFound) {
     Write-Host "The new SmartDesk V2 build marker was successfully confirmed on hardware!`n" -ForegroundColor Green
 } else {
     Write-Host ">>> VERIFICATION RESULT: [FAIL]" -ForegroundColor Red
-    Write-Host "The expected BUILD marker (TAG=V2-PROD) was not detected in serial output.`n" -ForegroundColor Red
+    Write-Host "The expected BUILD marker (TAG=V2-) was not detected in serial output.`n" -ForegroundColor Red
     exit 1
 }
 

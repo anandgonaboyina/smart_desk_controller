@@ -133,7 +133,7 @@ static const uint8_t RELAY_PINS[RELAY_COUNT] = {4, 5, 6, 7};
 #define CHAR_INFO_UUID      "f1f28a13-9725-4636-a073-0666057bd91b"
 #define CHAR_ENV_UUID       "4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b"
 
-#define BUILD_MARKER        "BUILD " __DATE__ " " __TIME__ " TAG=V2-PROD"
+#define BUILD_MARKER        "BUILD " __DATE__ " " __TIME__ " TAG=V2-AUTOPRESENCE"
 
 /* ── Fast Command Queue for Non-Blocking Callbacks ───────────────────────── */
 enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
@@ -144,7 +144,7 @@ struct WriteCmd {
     uint8_t   data[32];
 };
 
-#define CMD_QUEUE_SIZE 8
+#define CMD_QUEUE_SIZE 16
 static volatile uint8_t s_cmdHead = 0;
 static volatile uint8_t s_cmdTail = 0;
 static WriteCmd s_cmdQueue[CMD_QUEUE_SIZE];
@@ -408,6 +408,41 @@ struct ScheduleRule {
 };
 static ScheduleRule s_schedules[MAX_SCHEDULES];
 
+// ── Presence & Away Subsystem (10 Known Paired Devices) ─────────────────────
+#define MAX_PAIRED_CLIENTS 10
+
+struct PairedClient {
+    char     addr[18];     // "XX:XX:XX:XX:XX:XX"
+    char     name[24];     // Friendly device name (e.g. "Anand's Laptop")
+    bool     valid;
+};
+
+struct PresenceConfig {
+    bool     enabled;          // Master Presence Switch
+    uint16_t awayDelayMin;     // Delay before turning load off (1..60 min)
+    uint8_t  awayRelayMask;    // Bits 0..3: Relays to turn OFF (0x00=None, 0x0F=All 4)
+    bool     awayRgbOff;       // true = turn RGB strip OFF, false = leave RGB as is
+    uint8_t  arrivalRelayMask; // Bits 0..3: Relays to turn ON (0x00=None, 0x0F=All 4)
+    bool     arrivalRgbOn;     // true = turn RGB strip ON, false = leave RGB as is
+    uint8_t  arrivalRgbMode;   // 1..15 Mode to activate when arrivalRgbOn is true
+};
+
+static PresenceConfig s_presenceConfig = {
+    true,   // enabled
+    5,      // 5 min away delay
+    0x0F,   // awayRelayMask: CH1..CH4
+    true,   // awayRgbOff: turn RGB off
+    0x0F,   // arrivalRelayMask: CH1..CH4
+    true,   // arrivalRgbOn: turn RGB on
+    1       // arrivalRgbMode: 1 = solid white/ambient
+};
+
+static PairedClient s_knownClients[MAX_PAIRED_CLIENTS];
+static uint32_t     s_awayTimerEndMs          = 0;   // 0 = inactive, >0 = countdown to away auto-off
+static bool         s_isAwayTriggered         = false;
+static char         s_connectedClientAddr[18] = {0};
+static char         s_connectedClientName[24] = "Unknown Device";
+
 static volatile bool s_flagConnected    = false;
 static volatile bool s_flagDisconnected = false;
 static volatile int  s_discReason       = 0;
@@ -510,29 +545,43 @@ static void notifyLedState() {
     s_pLedChar->notify();
 }
 
-static void buildEnvPayload(uint8_t* out11) {
-    out11[0] = s_sensorValid ? 1 : 0;
+static void buildEnvPayload(uint8_t* out14) {
+    out14[0] = s_sensorValid ? 1 : 0;
     int16_t t10 = (int16_t)(s_tempC * 10.0f);
-    out11[1] = (uint8_t)(t10 / 10);
-    out11[2] = (uint8_t)(abs(t10) % 10);
+    out14[1] = (uint8_t)(t10 / 10);
+    out14[2] = (uint8_t)(abs(t10) % 10);
     int16_t h10 = (int16_t)(s_humidity * 10.0f);
-    out11[3] = (uint8_t)(h10 / 10);
-    out11[4] = (uint8_t)(abs(h10) % 10);
-    out11[5] = s_buzzerMasterEnabled ? 1 : 0;
-    out11[6] = s_timeSync.synced ? 1 : 0;
+    out14[3] = (uint8_t)(h10 / 10);
+    out14[4] = (uint8_t)(abs(h10) % 10);
+    out14[5] = s_buzzerMasterEnabled ? 1 : 0;
+    out14[6] = s_timeSync.synced ? 1 : 0;
     uint8_t curH = 0, curM = 0, curS = 0, curDOW = 0;
     getLocalTime(&curH, &curM, &curS, &curDOW);
-    out11[7] = curH;
-    out11[8] = curM;
-    out11[9] = curS;
-    out11[10] = curDOW;
+    out14[7] = curH;
+    out14[8] = curM;
+    out14[9] = curS;
+    out14[10] = curDOW;
+
+    // Presence & Away Telemetry
+    out14[11] = s_presenceConfig.enabled ? 1 : 0;
+    uint8_t presState = 0;
+    uint8_t remMin = 0;
+    if (s_connected) {
+        presState = 1; // 1 = Present / Connected
+    } else if (s_awayTimerEndMs > 0) {
+        presState = 2; // 2 = Away Timer Counting Down
+        long remMs = (long)(s_awayTimerEndMs - millis());
+        remMin = (remMs > 0) ? (uint8_t)((remMs + 59999UL) / 60000UL) : 0;
+    }
+    out14[12] = presState;
+    out14[13] = remMin;
 }
 
 static void notifyEnvState() {
     if (!s_pEnvChar || !s_connected) return;
-    uint8_t payload[11];
+    uint8_t payload[14];
     buildEnvPayload(payload);
-    s_pEnvChar->setValue(payload, 11);
+    s_pEnvChar->setValue(payload, 14);
     s_pEnvChar->notify();
 }
 
@@ -730,23 +779,172 @@ static void saveScheduleToNVS(uint8_t i) {
     s_prefs.end();
 }
 
+/* ── Time & Presence Persistence ─────────────────────────────────────────── */
+static void saveTimeBaseToNVS() {
+    if (!s_timeSync.synced) return;
+    s_prefs.begin("desk_time", false);
+    s_prefs.putBool("synced", true);
+    s_prefs.putUInt("baseSec", s_timeSync.baseLocalSec);
+    s_prefs.putUInt("syncMs", s_timeSync.syncMillis);
+    s_prefs.end();
+}
+
+static void loadTimeBaseFromNVS() {
+    s_prefs.begin("desk_time", true);
+    bool synced = s_prefs.getBool("synced", false);
+    if (synced) {
+        s_timeSync.synced = true;
+        s_timeSync.baseLocalSec = s_prefs.getUInt("baseSec", 0);
+        s_timeSync.syncMillis = millis(); // continue counting forward from reboot
+        Serial.println(">>> [TIME] Restored internal clock from flash memory.");
+    }
+    s_prefs.end();
+}
+
+static void loadPresenceFromNVS() {
+    s_prefs.begin("desk_pres", true);
+    s_presenceConfig.enabled          = s_prefs.getBool("en", true);
+    s_presenceConfig.awayDelayMin     = s_prefs.getUShort("delay", 5);
+    s_presenceConfig.awayRelayMask    = s_prefs.getUChar("away_mask", 0x0F);
+    s_presenceConfig.awayRgbOff       = s_prefs.getBool("away_rgb", true);
+    s_presenceConfig.arrivalRelayMask = s_prefs.getUChar("arr_mask", 0x0F);
+    s_presenceConfig.arrivalRgbOn     = s_prefs.getBool("arr_rgb", true);
+    s_presenceConfig.arrivalRgbMode   = s_prefs.getUChar("arr_mode", 1);
+    s_prefs.end();
+
+    s_prefs.begin("desk_clients", true);
+    for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
+        char kAddr[16], kName[16], kVal[16];
+        snprintf(kAddr, sizeof(kAddr), "addr_%d", i);
+        snprintf(kName, sizeof(kName), "name_%d", i);
+        snprintf(kVal, sizeof(kVal), "val_%d", i);
+
+        s_knownClients[i].valid = s_prefs.getBool(kVal, false);
+        if (s_knownClients[i].valid) {
+            String a = s_prefs.getString(kAddr, "");
+            String n = s_prefs.getString(kName, "");
+            strncpy(s_knownClients[i].addr, a.c_str(), sizeof(s_knownClients[i].addr) - 1);
+            strncpy(s_knownClients[i].name, n.c_str(), sizeof(s_knownClients[i].name) - 1);
+        } else {
+            memset(&s_knownClients[i], 0, sizeof(PairedClient));
+        }
+    }
+    s_prefs.end();
+}
+
+static void savePresenceConfigToNVS() {
+    s_prefs.begin("desk_pres", false);
+    s_prefs.putBool("en", s_presenceConfig.enabled);
+    s_prefs.putUShort("delay", s_presenceConfig.awayDelayMin);
+    s_prefs.putUChar("away_mask", s_presenceConfig.awayRelayMask);
+    s_prefs.putBool("away_rgb", s_presenceConfig.awayRgbOff);
+    s_prefs.putUChar("arr_mask", s_presenceConfig.arrivalRelayMask);
+    s_prefs.putBool("arr_rgb", s_presenceConfig.arrivalRgbOn);
+    s_prefs.putUChar("arr_mode", s_presenceConfig.arrivalRgbMode);
+    s_prefs.end();
+}
+
+static void registerClientDevice(const char* macAddr, const char* friendlyName) {
+    if (!macAddr || strlen(macAddr) == 0) return;
+
+    int foundIdx = -1;
+    int emptyIdx = -1;
+    for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
+        if (s_knownClients[i].valid && strcasecmp(s_knownClients[i].addr, macAddr) == 0) {
+            foundIdx = i;
+            break;
+        }
+        if (!s_knownClients[i].valid && emptyIdx == -1) {
+            emptyIdx = i;
+        }
+    }
+
+    int targetIdx = (foundIdx != -1) ? foundIdx : (emptyIdx != -1 ? emptyIdx : 0);
+    s_knownClients[targetIdx].valid = true;
+    strncpy(s_knownClients[targetIdx].addr, macAddr, sizeof(s_knownClients[targetIdx].addr) - 1);
+    if (friendlyName && strlen(friendlyName) > 0) {
+        strncpy(s_knownClients[targetIdx].name, friendlyName, sizeof(s_knownClients[targetIdx].name) - 1);
+    } else if (strlen(s_knownClients[targetIdx].name) == 0) {
+        snprintf(s_knownClients[targetIdx].name, sizeof(s_knownClients[targetIdx].name), "Device %d", targetIdx + 1);
+    }
+
+    s_prefs.begin("desk_clients", false);
+    char kAddr[16], kName[16], kVal[16];
+    snprintf(kAddr, sizeof(kAddr), "addr_%d", targetIdx);
+    snprintf(kName, sizeof(kName), "name_%d", targetIdx);
+    snprintf(kVal, sizeof(kVal), "val_%d", targetIdx);
+    s_prefs.putBool(kVal, true);
+    s_prefs.putString(kAddr, s_knownClients[targetIdx].addr);
+    s_prefs.putString(kName, s_knownClients[targetIdx].name);
+    s_prefs.end();
+
+    Serial.printf(">>> [PRESENCE] Known device stored (#%d): MAC=%s, Name=%s\n",
+                  targetIdx + 1, s_knownClients[targetIdx].addr, s_knownClients[targetIdx].name);
+}
+
+static void handleClientConnected(const char* macAddr) {
+    s_awayTimerEndMs = 0; // cancel away countdown
+    bool wasAway = s_isAwayTriggered;
+    s_isAwayTriggered = false;
+
+    registerClientDevice(macAddr, s_connectedClientName);
+
+    Serial.printf(">>> [PRESENCE] Client arrived: %s | Away countdown cancelled.\n", macAddr);
+
+    if (wasAway && s_presenceConfig.enabled) {
+        Serial.println(">>> [PRESENCE] Arrival triggered! Executing configured arrival actions...");
+        if (s_presenceConfig.arrivalRelayMask != 0) {
+            for (int r = 0; r < RELAY_COUNT; r++) {
+                if ((s_presenceConfig.arrivalRelayMask & (1 << r)) != 0) {
+                    setRelayLoad(r, 1, "Presence Arrival");
+                }
+            }
+        }
+        if (s_presenceConfig.arrivalRgbOn) {
+            s_ledMode = (s_presenceConfig.arrivalRgbMode > 0) ? s_presenceConfig.arrivalRgbMode : 1;
+            notifyLedState();
+            Serial.printf(">>> [PRESENCE] Arrival: Turned RGB ON (Mode %d)\n", s_ledMode);
+        }
+    }
+}
+
+static void handleClientDisconnected() {
+    if (s_presenceConfig.enabled && s_presenceConfig.awayDelayMin > 0) {
+        s_awayTimerEndMs = millis() + ((uint32_t)s_presenceConfig.awayDelayMin * 60000UL);
+        Serial.printf(">>> [PRESENCE] Client departed. Away timer started: %d minutes countdown.\n", s_presenceConfig.awayDelayMin);
+    }
+}
+
 static void evaluateSchedules(uint32_t now) {
     if (!s_timeSync.synced) return;
     uint8_t h = 0, m = 0, s = 0, dow = 0;
     getLocalTime(&h, &m, &s, &dow);
     uint16_t curDayMin = ((uint16_t)dow * 1440) + ((uint16_t)h * 60) + m;
+    uint16_t curMinOfDay = ((uint16_t)h * 60) + m;
+
+    // Periodic 30s status print for verification
+    static uint32_t lastClockLogMs = 0;
+    if (now - lastClockLogMs >= 30000UL) {
+        lastClockLogMs = now;
+        int activeCount = 0;
+        for (int i = 0; i < MAX_SCHEDULES; i++) if (s_schedules[i].enabled) activeCount++;
+        Serial.printf(">>> [CLOCK STATUS] %02d:%02d:%02d DOW=%d | Active Rules: %d\n",
+                      h, m, s, dow, activeCount);
+    }
 
     for (int i = 0; i < MAX_SCHEDULES; i++) {
         if (!s_schedules[i].enabled) continue;
 
         // Check if schedule is active for current day of week
         if ((s_schedules[i].daysMask & (1 << dow)) != 0) {
-            // 1. Check Start Trigger
+            uint16_t startMinOfDay = ((uint16_t)s_schedules[i].startHour * 60) + s_schedules[i].startMin;
+
+            // 1. Exact Start Trigger
             if (h == s_schedules[i].startHour && m == s_schedules[i].startMin) {
                 if (s_schedules[i].lastFiredDayMinute != curDayMin) {
                     s_schedules[i].lastFiredDayMinute = curDayMin;
-                    Serial.printf(">>> [SCHEDULER] Rule %d FIRED! (Target: %d, Action: %d, DOW: %d, %02d:%02d)\n",
-                                  i + 1, s_schedules[i].targetType, s_schedules[i].targetAction, dow, h, m);
+                    Serial.printf(">>> [SCHEDULER] Rule %d START TRIGGERED! (Target: %d, Action: %d, Time: %02d:%02d)\n",
+                                  i + 1, s_schedules[i].targetType, s_schedules[i].targetAction, h, m);
 
                     // Execute target action
                     if (s_schedules[i].targetType < RELAY_COUNT) {
@@ -779,7 +977,7 @@ static void evaluateSchedules(uint32_t now) {
                 }
             }
 
-            // 2. Check Direct Stop Time Trigger (stopType == 2)
+            // 2. Direct Stop Time Trigger (stopType == 2)
             if (s_schedules[i].stopType == 2 && h == s_schedules[i].stopHour && m == s_schedules[i].stopMin) {
                 uint16_t stopMarker = curDayMin + 20000;
                 if (s_schedules[i].lastFiredDayMinute != stopMarker) {
@@ -795,9 +993,33 @@ static void evaluateSchedules(uint32_t now) {
                     }
                 }
             }
+
+            // 3. Catch-up Window Trigger: If rule was enabled or device rebooted while inside active window
+            if (s_schedules[i].stopType == 2) {
+                uint16_t stopMinOfDay = ((uint16_t)s_schedules[i].stopHour * 60) + s_schedules[i].stopMin;
+                bool inWindow = (startMinOfDay < stopMinOfDay)
+                    ? (curMinOfDay >= startMinOfDay && curMinOfDay < stopMinOfDay)
+                    : (curMinOfDay >= startMinOfDay || curMinOfDay < stopMinOfDay);
+
+                if (inWindow && s_schedules[i].lastFiredDayMinute == 0xFFFF) {
+                    s_schedules[i].lastFiredDayMinute = curDayMin;
+                    Serial.printf(">>> [SCHEDULER] Rule %d is IN ACTIVE WINDOW (%02d:%02d-%02d:%02d)! Applying start action.\n",
+                                  i + 1, s_schedules[i].startHour, s_schedules[i].startMin, s_schedules[i].stopHour, s_schedules[i].stopMin);
+                    if (s_schedules[i].targetType < RELAY_COUNT) {
+                        setRelayLoad(s_schedules[i].targetType, s_schedules[i].targetAction, "Scheduler Catch-up");
+                    } else if (s_schedules[i].targetType == 4) {
+                        if (s_schedules[i].targetAction == 0) allRelaysOff("Scheduler Catch-up");
+                        else for (int r = 0; r < RELAY_COUNT; r++) setRelayLoad(r, 1, "Scheduler Catch-up");
+                    } else if (s_schedules[i].targetType == 5) {
+                        s_ledMode = s_schedules[i].targetAction;
+                        s_ledR = s_schedules[i].rgbR; s_ledG = s_schedules[i].rgbG; s_ledB = s_schedules[i].rgbB; s_ledBri = s_schedules[i].rgbBri;
+                        notifyLedState();
+                    }
+                }
+            }
         }
 
-        // 3. Check Duration Auto-Stop (stopType == 1)
+        // 4. Check Duration Auto-Stop (stopType == 1)
         if (s_schedules[i].stopType == 1 && s_schedules[i].autoStopMs > 0) {
             if ((long)(now - s_schedules[i].autoStopMs) >= 0) {
                 s_schedules[i].autoStopMs = 0;
@@ -1394,9 +1616,11 @@ static void renderLeds() {
 /* ── Non-Blocking NimBLE Callbacks ───────────────────────────────────────── */
 class ServerCallbacks : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
-        (void)pServer; (void)connInfo;
+        (void)pServer;
         s_connected = true;
         s_flagConnected = true;
+        NimBLEAddress addr = connInfo.getAddress();
+        strncpy(s_connectedClientAddr, addr.toString().c_str(), sizeof(s_connectedClientAddr) - 1);
     }
 
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
@@ -1404,6 +1628,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         s_connected = false;
         s_discReason = reason;
         s_flagDisconnected = true;
+        NimBLEDevice::startAdvertising();
     }
 };
 
@@ -1439,7 +1664,7 @@ class LedCallbacks : public NimBLECharacteristicCallbacks {
 class ConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[125];
+        uint8_t payload[135];
         memset(payload, 0, sizeof(payload));
 
         // 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75)
@@ -1465,6 +1690,16 @@ class ConfigCallbacks : public NimBLECharacteristicCallbacks {
         payload[100] = (uint8_t)dlen;
         memcpy(&payload[101], s_deviceName, dlen);
 
+        // Presence Settings Record (Offset 125)
+        payload[125] = s_presenceConfig.enabled ? 1 : 0;
+        payload[126] = s_presenceConfig.awayDelayMin & 0xFF;
+        payload[127] = (s_presenceConfig.awayDelayMin >> 8) & 0xFF;
+        payload[128] = s_presenceConfig.awayRelayMask;
+        payload[129] = s_presenceConfig.awayRgbOff ? 1 : 0;
+        payload[130] = s_presenceConfig.arrivalRelayMask;
+        payload[131] = s_presenceConfig.arrivalRgbOn ? 1 : 0;
+        payload[132] = s_presenceConfig.arrivalRgbMode;
+
         pChr->setValue(payload, sizeof(payload));
     }
 
@@ -1487,9 +1722,9 @@ class InfoCallbacks : public NimBLECharacteristicCallbacks {
 class EnvCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[11];
+        uint8_t payload[14];
         buildEnvPayload(payload);
-        pChr->setValue(payload, 11);
+        pChr->setValue(payload, sizeof(payload));
     }
 };
 
@@ -1514,6 +1749,8 @@ void setup() {
     // 3. Load runtime configuration & schedules from NVS
     loadConfigsFromNVS();
     loadSchedulesFromNVS();
+    loadPresenceFromNVS();
+    loadTimeBaseFromNVS();
 
     // Print Boot Banner with exact BUILD marker
     Serial.println("\n\n==================================================");
@@ -1525,6 +1762,7 @@ void setup() {
     Serial.printf("DHT11 : Data on GPIO%d (3.3V, GND)\n", DHT_PIN);
     Serial.printf("Buzzer: Active Buzzer (B27) on GPIO%d (HIGH=Beep, LOW=Silent)\n", BUZZER_PIN);
     Serial.println("Scheduler: 8 NVS Rules • Synchronized to Browser Real Time");
+    Serial.printf("Presence: Max 10 Paired Devices • Away Timer = %d min\n", s_presenceConfig.awayDelayMin);
     Serial.printf("BLE   : Name=\"%s\"\n", s_deviceName);
     Serial.printf("Service UUID: %s\n", SERVICE_UUID);
     Serial.println("Serial Commands: Keys 1..4 = Toggle Relay | 0 = All Off");
@@ -1540,9 +1778,10 @@ void setup() {
     s_strip.clear();
     s_strip.show();
 
-    // 6. Initialize NimBLE
+    // 6. Initialize NimBLE with Security & Bonding enabled for Auto-Connect
     NimBLEDevice::init(s_deviceName);
-    NimBLEDevice::deleteAllBonds();
+    NimBLEDevice::setSecurityAuth(true, true, true);
+    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
     s_pServer = NimBLEDevice::createServer();
     static ServerCallbacks srvCb;
@@ -1613,6 +1852,10 @@ void setup() {
     scanData.setCompleteServices(NimBLEUUID(SERVICE_UUID));
     pAdv->setScanResponseData(scanData);
 
+    // Fast advertising interval: 20ms to 40ms for lightning-fast reconnects
+    pAdv->setMinInterval(32);
+    pAdv->setMaxInterval(64);
+
     pAdv->start();
     Serial.printf(">>> [BLE] Advertising started as \"%s\". Ready for connections.\n", s_deviceName);
 }
@@ -1622,7 +1865,11 @@ void loop() {
     // 1. Process deferred Connect/Disconnect events
     if (s_flagConnected) {
         s_flagConnected = false;
-        Serial.printf(">>> [BLE CONNECT] Client connected to \"%s\".\n", s_deviceName);
+        Serial.printf(">>> [BLE CONNECT] Client connected to \"%s\" (Addr: %s).\n", s_deviceName, s_connectedClientAddr);
+        handleClientConnected(s_connectedClientAddr);
+        notifyRelayState();
+        notifyLedState();
+        notifyEnvState();
     }
 
     if (s_flagDisconnected) {
@@ -1630,8 +1877,10 @@ void loop() {
         int r = s_discReason;
         Serial.printf(">>> [BLE DISCONNECT] Client disconnected. Reason: %d (0x%04X, HCI 0x%02X)\n",
                       r, (unsigned int)r, (unsigned int)(r & 0xFF));
+        handleClientDisconnected();
         NimBLEDevice::startAdvertising();
         Serial.println(">>> [BLE] Advertising restarted.");
+        notifyEnvState();
     }
 
     // 2. Process Command Queue from BLE callbacks
@@ -1729,7 +1978,7 @@ void loop() {
                     pAdv->start();
                     Serial.printf(">>> [BLE] Advertising updated with new name: \"%s\"\n", s_deviceName);
                 }
-            } else if (cmd.len >= 9) { // Relay Config [idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, nameLen, ...name]
+            } else if (cmd.len >= 9 && cmd.data[0] < RELAY_COUNT) { // Relay Config [idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, nameLen, ...name]
                 uint8_t idx         = cmd.data[0];
                 uint8_t wiring      = cmd.data[1];
                 uint8_t onEn        = cmd.data[2];
@@ -1790,7 +2039,12 @@ void loop() {
                 s_timeSync.synced = true;
                 s_timeSync.baseLocalSec = ((uint32_t)dow * 86400UL) + ((uint32_t)h * 3600UL) + ((uint32_t)m * 60UL) + s;
                 s_timeSync.syncMillis = millis();
-                Serial.printf(">>> [TIME-SYNC] Synchronized: %02d:%02d:%02d, DayOfWeek=%d\n", h, m, s, dow);
+                saveTimeBaseToNVS();
+                // Reset rule evaluation flags so any currently active window triggers immediately!
+                for (int i = 0; i < MAX_SCHEDULES; i++) {
+                    s_schedules[i].lastFiredDayMinute = 0xFFFF;
+                }
+                Serial.printf(">>> [TIME-SYNC] Clock Synchronized: %02d:%02d:%02d, DayOfWeek=%d\n", h, m, s, dow);
                 notifyEnvState();
             } else if (cmd.data[0] == 0xFA && cmd.len >= 15) { // 0xFA: Set Schedule Rule
                 // [0xFA, idx, enabled, daysMask, startH, startM, stopType, durOrStopH_Lo, durOrStopH_Hi, stopMin, targetType, targetAction, r, g, b, bri]
@@ -1811,12 +2065,12 @@ void loop() {
                     s_schedules[idx].rgbG               = cmd.data[13];
                     s_schedules[idx].rgbB               = cmd.data[14];
                     s_schedules[idx].rgbBri             = (cmd.len >= 16) ? cmd.data[15] : 50;
-                    s_schedules[idx].lastFiredDayMinute = 0xFFFF;
+                    s_schedules[idx].lastFiredDayMinute = 0xFFFF; // Reset so evaluation checks active window right away!
                     s_schedules[idx].autoStopMs         = 0;
                     saveScheduleToNVS(idx);
-                    Serial.printf(">>> [SCHEDULER] Updated Rule %d: Target=%d Action=%d Start=%02d:%02d StopType=%d\n",
+                    Serial.printf(">>> [SCHEDULER] Updated Rule %d: Target=%d Action=%d Start=%02d:%02d StopType=%d Enabled=%d\n",
                                   idx + 1, s_schedules[idx].targetType, s_schedules[idx].targetAction,
-                                  s_schedules[idx].startHour, s_schedules[idx].startMin, s_schedules[idx].stopType);
+                                  s_schedules[idx].startHour, s_schedules[idx].startMin, s_schedules[idx].stopType, s_schedules[idx].enabled);
                 }
             } else if (cmd.data[0] == 0xF9 && cmd.len >= 2) { // 0xF9: Disable Schedule Rule [0xF9, idx]
                 uint8_t idx = cmd.data[1];
@@ -1826,11 +2080,89 @@ void loop() {
                     saveScheduleToNVS(idx);
                     Serial.printf(">>> [SCHEDULER] Disabled Rule %d\n", idx + 1);
                 }
+            } else if (cmd.data[0] == 0xF8 && cmd.len >= 5) { // 0xF8: Set Presence Config
+                s_presenceConfig.enabled          = (cmd.data[1] == 1);
+                s_presenceConfig.awayDelayMin     = (cmd.data[2] | ((uint16_t)cmd.data[3] << 8));
+                if (s_presenceConfig.awayDelayMin < 1) s_presenceConfig.awayDelayMin = 1;
+                s_presenceConfig.awayRelayMask    = cmd.data[4];
+                s_presenceConfig.awayRgbOff       = (cmd.len >= 6) ? (cmd.data[5] == 1) : true;
+                s_presenceConfig.arrivalRelayMask = (cmd.len >= 7) ? cmd.data[6] : 0x0F;
+                s_presenceConfig.arrivalRgbOn     = (cmd.len >= 8) ? (cmd.data[7] == 1) : true;
+                s_presenceConfig.arrivalRgbMode   = (cmd.len >= 9) ? cmd.data[8] : 1;
+                savePresenceConfigToNVS();
+                Serial.printf(">>> [BLE CMD] Presence Config: Enabled=%d, AwayDelay=%dm, AwayRelays=0x%02X, AwayRGB=%d, ArrRelays=0x%02X, ArrRGB=%d (Mode %d)\n",
+                              s_presenceConfig.enabled, s_presenceConfig.awayDelayMin,
+                              s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? 1 : 0,
+                              s_presenceConfig.arrivalRelayMask, s_presenceConfig.arrivalRgbOn ? 1 : 0,
+                              s_presenceConfig.arrivalRgbMode);
+                notifyEnvState();
+            } else if (cmd.data[0] == 0xF7 && cmd.len >= 2) { // 0xF7: Register Client Name [0xF7, len, chars...]
+                uint8_t nlen = cmd.data[1];
+                if (nlen > 23) nlen = 23;
+                if (cmd.len >= 2 + nlen) {
+                    memset(s_connectedClientName, 0, sizeof(s_connectedClientName));
+                    memcpy(s_connectedClientName, &cmd.data[2], nlen);
+                    if (strlen(s_connectedClientAddr) > 0) {
+                        registerClientDevice(s_connectedClientAddr, s_connectedClientName);
+                    }
+                    Serial.printf(">>> [BLE CMD] Registered Client Name: '%s'\n", s_connectedClientName);
+                }
+            } else if (cmd.data[0] == 0xF6) { // 0xF6: Clear Known Clients
+                s_prefs.begin("desk_clients", false);
+                s_prefs.clear();
+                s_prefs.end();
+                for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
+                    memset(&s_knownClients[i], 0, sizeof(PairedClient));
+                }
+                Serial.println(">>> [BLE CMD] Cleared all known clients from flash.");
+            } else if (cmd.data[0] == 0xF5 && cmd.len >= 3) { // 0xF5: Test Schedule Rule [0xF5, ruleIdx, isStart 1/0]
+                uint8_t idx = cmd.data[1];
+                bool isStart = (cmd.data[2] == 1);
+                if (idx < MAX_SCHEDULES) {
+                    Serial.printf(">>> [BLE CMD] Manual Test Schedule Rule %d (%s)\n", idx + 1, isStart ? "START" : "STOP");
+                    if (isStart) {
+                        if (s_schedules[idx].targetType < RELAY_COUNT) {
+                            setRelayLoad(s_schedules[idx].targetType, s_schedules[idx].targetAction, "Manual Test Rule");
+                        } else if (s_schedules[idx].targetType == 4) {
+                            if (s_schedules[idx].targetAction == 0) allRelaysOff("Manual Test Rule");
+                            else for (int r = 0; r < RELAY_COUNT; r++) setRelayLoad(r, 1, "Manual Test Rule");
+                        } else if (s_schedules[idx].targetType == 5) {
+                            s_ledMode = s_schedules[idx].targetAction;
+                            s_ledR = s_schedules[idx].rgbR; s_ledG = s_schedules[idx].rgbG; s_ledB = s_schedules[idx].rgbB; s_ledBri = s_schedules[idx].rgbBri;
+                            notifyLedState();
+                        }
+                    } else {
+                        if (s_schedules[idx].targetType < RELAY_COUNT) setRelayLoad(s_schedules[idx].targetType, 0, "Manual Test Stop");
+                        else if (s_schedules[idx].targetType == 4) allRelaysOff("Manual Test Stop");
+                        else if (s_schedules[idx].targetType == 5) { s_ledMode = 0; notifyLedState(); }
+                    }
+                }
             }
         }
     }
 
     uint32_t now = millis();
+
+    // Check Presence Away Timeout
+    if (s_awayTimerEndMs > 0 && (long)(now - s_awayTimerEndMs) >= 0) {
+        s_awayTimerEndMs = 0;
+        s_isAwayTriggered = true;
+        Serial.printf(">>> [AWAY TRIGGER] Presence away timeout (%d min) reached! Executing configured away actions.\n",
+                      s_presenceConfig.awayDelayMin);
+        if (s_presenceConfig.awayRelayMask != 0) {
+            for (int r = 0; r < RELAY_COUNT; r++) {
+                if ((s_presenceConfig.awayRelayMask & (1 << r)) != 0) {
+                    setRelayLoad(r, 0, "Presence Away Timeout");
+                }
+            }
+        }
+        if (s_presenceConfig.awayRgbOff) {
+            s_ledMode = 0; // Turn RGB strip off
+            notifyLedState();
+            Serial.println(">>> [AWAY TRIGGER] Turned RGB Strip OFF.");
+        }
+        notifyEnvState();
+    }
 
     // Active Buzzer non-blocking updates (Big Buzzer B27)
     updateActiveBuzzer(now);

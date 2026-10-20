@@ -62,6 +62,14 @@
       * Byte 0: 0xFE (254)
       * Byte 1: Name Length L (1..20)
       * Bytes 2..1+L: Device Name string ASCII (max 20 chars)
+    - Write Presence Config (0xF8, 6..7 bytes):
+      * [0xF8, enabled, delayLo, delayHi, awayAction, arrivalAction, arrivalRelayMask]
+    - Write Register Client Name (0xF7, 2..25 bytes):
+      * [0xF7, nameLength, nameChars...]
+    - Write Clear Known Clients (0xF6, 1 byte):
+      * [0xF6]
+    - Write Test Schedule Rule (0xF5, 3 bytes):
+      * [0xF5, ruleIndex, isStart (1/0)]
     - Read Payload (125 bytes):
       * 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75):
         - Byte 0: Index i (0..3)
@@ -80,7 +88,19 @@
 
  4. INFO Characteristic: f1f28a13-9725-4636-a073-0666057bd91b
     Properties: READ
-    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-PROD | Name: <devName> | Uptime: <seconds>s"
+    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-AUTOPRESENCE | Name: <devName> | Uptime: <seconds>s"
+
+ 5. ENV Characteristic: 4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b
+    Properties: READ, NOTIFY
+    - Read / Notify Payload (14 bytes):
+      * Byte 0: Sensor Valid (0/1)
+      * Byte 1..2: Temp (Integer, Decimal)
+      * Byte 3..4: Humidity (Integer, Decimal)
+      * Byte 5: Master Buzzer (0/1)
+      * Byte 6..10: Time & DOW (synced, H, M, S, DOW)
+      * Byte 11: Presence Enabled (0/1)
+      * Byte 12: Presence State (0=Away/Standby, 1=Present/Connected, 2=Away Countdown)
+      * Byte 13: Away Remaining Minutes (0..60)
  ================================================================================
  */
 
@@ -393,6 +413,52 @@ export default function SmartDeskPage() {
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleRule | null>(null);
 
+  // Presence & Away Subsystem State (Max 10 Devices in ESP32 Flash)
+  const [presenceData, setPresenceData] = useState<{
+    enabled: boolean;
+    state: number; // 0=Away/Standby, 1=Present/Connected, 2=Away Countdown
+    remainingMin: number;
+  }>({
+    enabled: true,
+    state: 0,
+    remainingMin: 0,
+  });
+
+  const [presenceConfig, setPresenceConfig] = useState<{
+    enabled: boolean,
+    awayDelayMin: number,
+    awayRelayMask: number, // Bits 0..3: Relays to turn OFF (0x0F = all 4, 0x00 = none)
+    awayRgbOff: boolean,   // true = turn RGB strip OFF, false = leave RGB as is
+    arrivalRelayMask: number, // Bits 0..3: Relays to turn ON (0x0F = all 4, 0x00 = none)
+    arrivalRgbOn: boolean,    // true = turn RGB strip ON, false = leave RGB as is
+    arrivalRgbMode: number,   // 1..15 Mode to activate on arrival
+  }>({
+    enabled: true,
+    awayDelayMin: 5,
+    awayRelayMask: 0x0f,
+    awayRgbOff: true,
+    arrivalRelayMask: 0x0f,
+    arrivalRgbOn: true,
+    arrivalRgbMode: 1,
+  });
+
+  const [clientNickname, setClientNickname] = useState<string>("");
+  const [mounted, setMounted] = useState<boolean>(false);
+  const [persistedDeviceName, setPersistedDeviceName] = useState<string>("smartDesk Controller");
+
+  // Synchronized References to Avoid Stale Closures during Auto-Connect & Background Writes
+  const schedulesRef = useRef<ScheduleRule[]>(schedules);
+  useEffect(() => {
+    schedulesRef.current = schedules;
+  }, [schedules]);
+
+  const presenceConfigRef = useRef(presenceConfig);
+  useEffect(() => {
+    presenceConfigRef.current = presenceConfig;
+  }, [presenceConfig]);
+
+  const connectRef = useRef<(targetDevice?: BluetoothDevice, isAuto?: boolean) => Promise<void>>(null as any);
+
   // UI Simulation State for Transient Relay Action (Visible directly in browser)
   const [uiAnim, setUiAnim] = useState<{
     active: boolean;
@@ -467,26 +533,67 @@ export default function SmartDeskPage() {
 
   /* ── Check Web Bluetooth Support & Auto-Connect on Mount ───────────────── */
   useEffect(() => {
-    // 1. Load saved schedules from localStorage
+    // 1. Load saved configs, schedules & presence from localStorage
+    setMounted(true);
+    if (typeof window !== "undefined") {
+      const savedName = localStorage.getItem("smartdesk_last_device_name");
+      if (savedName) setPersistedDeviceName(savedName);
+    }
     if (typeof window !== "undefined") {
       try {
         const savedScheds = localStorage.getItem("smartdesk_schedules");
-        if (savedScheds) setSchedules(JSON.parse(savedScheds));
+        if (savedScheds) {
+          const parsed = JSON.parse(savedScheds);
+          setSchedules(parsed);
+          schedulesRef.current = parsed;
+        }
+        const savedPres = localStorage.getItem("smartdesk_presence_config");
+        if (savedPres) {
+          const parsedPres = JSON.parse(savedPres);
+          setPresenceConfig(parsedPres);
+          presenceConfigRef.current = parsedPres;
+        }
+        const savedNick = localStorage.getItem("smartdesk_client_nickname");
+        if (savedNick) {
+          setClientNickname(savedNick);
+        } else {
+          const defaultNick = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")
+            ? "Windows PC"
+            : typeof navigator !== "undefined" && navigator.userAgent.includes("Android")
+            ? "Android Phone"
+            : "My Device";
+          setClientNickname(defaultNick);
+        }
       } catch (e) {
         // ignore parse error
       }
     }
 
+    // Gracefully disconnect GATT before page reload to avoid Windows BLE stack driver hangs
+    const onCleanTeardown = () => {
+      if (deviceRef.current?.gatt?.connected) {
+        try {
+          deviceRef.current.gatt.disconnect();
+        } catch (_) {}
+      }
+    };
+    window.addEventListener("beforeunload", onCleanTeardown);
+    window.addEventListener("pagehide", onCleanTeardown);
+
     const nav = typeof window !== "undefined" ? (window.navigator as NavigatorWithBluetooth) : null;
     if (!nav?.bluetooth) {
       setBluetoothSupported(false);
       addLog("Web Bluetooth API is NOT supported in this browser. Please use Chrome/Edge on HTTPS or localhost.", "err");
-      return;
+      return () => {
+        window.removeEventListener("beforeunload", onCleanTeardown);
+        window.removeEventListener("pagehide", onCleanTeardown);
+      };
     }
 
     addLog("Web Bluetooth initialized. Ready for SmartDesk V2 connection.", "info");
 
-    // 2. Check for previously paired devices (Persist connection across refresh)
+    // 2. Check for previously paired devices with 600ms grace period to let Windows reset GATT channel
+    let timeoutId: NodeJS.Timeout;
     const checkPersistentDevices = async () => {
       try {
         if ("getDevices" in nav.bluetooth!) {
@@ -496,21 +603,71 @@ export default function SmartDeskPage() {
             const matched = devices.find((d: BluetoothDevice) => d.id === lastId) || devices[0];
             if (matched) {
               setLastDeviceDetected(matched);
-              addLog(`Found paired device '${matched.name}'. Attempting auto-reconnect...`, "info");
-              try {
-                await handleConnect(matched);
-              } catch (autoErr) {
-                addLog("Auto-reconnect prompt: click '⚡ Reconnect' banner to resume session.", "info");
+              addLog(`Found paired device '${matched.name || "smartDesk Controller"}'. Attempting auto-reconnect...`, "info");
+              
+              // 1. Try waking Windows radio using watchAdvertisements if supported
+              if ("watchAdvertisements" in matched) {
+                try {
+                  const abortController = new AbortController();
+                  await (matched as any).watchAdvertisements({ signal: abortController.signal });
+                  matched.addEventListener(
+                    "advertisementreceived",
+                    async () => {
+                      addLog("SmartDesk advertising beacon detected! Connecting...", "info");
+                      try { abortController.abort(); } catch (_) {}
+                      await connectRef.current(matched, true);
+                    },
+                    { once: true }
+                  );
+                } catch (_) {}
+              }
+
+              // 2. Attempt background auto-connect with backoff
+              let connectedOk = false;
+              for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                  await connectRef.current(matched, true);
+                  if (deviceRef.current?.gatt?.connected) {
+                    connectedOk = true;
+                    break;
+                  }
+                } catch (autoErr) {
+                  if (attempt < 2) {
+                    await sleep(1500);
+                  }
+                }
+              }
+
+              if (!connectedOk) {
+                addLog("Auto-reconnect ready: tap '⚡ 1-Click Connect' to resume session.", "info");
+                // Fallback: 1st tap anywhere auto-connects
+                const onOneTouchConnect = async () => {
+                  window.removeEventListener("pointerdown", onOneTouchConnect);
+                  if (!deviceRef.current?.gatt?.connected) {
+                    try {
+                      await connectRef.current(matched, true);
+                    } catch (_) {}
+                  }
+                };
+                window.addEventListener("pointerdown", onOneTouchConnect, { once: true });
               }
             }
           }
         }
       } catch (err) {
-        // getDevices permission or API check
+        // getDevices permission check
       }
     };
 
-    checkPersistentDevices();
+    timeoutId = setTimeout(() => {
+      checkPersistentDevices();
+    }, 1200);
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener("beforeunload", onCleanTeardown);
+      window.removeEventListener("pagehide", onCleanTeardown);
+    };
   }, [addLog]);
 
   /* ── Serialized Write Queue ────────────────────────────────────────────── */
@@ -679,6 +836,17 @@ export default function SmartDeskPage() {
         const dayOfWeek = dataView.getUint8(10);
         setEspClock({ synced, hour, minute, second, dayOfWeek });
       }
+
+      if (dataView.byteLength >= 14) {
+        const presEnabled = dataView.getUint8(11) === 1;
+        const presState = dataView.getUint8(12); // 0=Away/Standby, 1=Present/Connected, 2=Away Countdown
+        const awayRemMin = dataView.getUint8(13);
+        setPresenceData({
+          enabled: presEnabled,
+          state: presState,
+          remainingMin: awayRemMin,
+        });
+      }
     },
     []
   );
@@ -731,6 +899,7 @@ export default function SmartDeskPage() {
         const next = prev.some((s) => s.id === rule.id)
           ? prev.map((s) => (s.id === rule.id ? rule : s))
           : [...prev, rule];
+        schedulesRef.current = next;
         if (typeof window !== "undefined") {
           localStorage.setItem("smartdesk_schedules", JSON.stringify(next));
         }
@@ -752,6 +921,7 @@ export default function SmartDeskPage() {
     (ruleId: number) => {
       setSchedules((prev) => {
         const next = prev.filter((s) => s.id !== ruleId);
+        schedulesRef.current = next;
         if (typeof window !== "undefined") {
           localStorage.setItem("smartdesk_schedules", JSON.stringify(next));
         }
@@ -768,6 +938,86 @@ export default function SmartDeskPage() {
     },
     [enqueueWrite, addLog]
   );
+
+  /* ── Manual Test Schedule Rule on Hardware (0xF5) ───────────────────────── */
+  const handleTestScheduleRule = useCallback(
+    (ruleId: number, isStart: boolean = true) => {
+      if (!configCharRef.current) {
+        alert("Connect to SmartDesk first to test schedule rules on hardware!");
+        return;
+      }
+      const payload = new Uint8Array([0xF5, ruleId, isStart ? 1 : 0]);
+      enqueueWrite(`Test Schedule Rule ${ruleId + 1}`, async () => {
+        addLog(`[TX CONFIG] ${bytesToHex(payload)} (Manual Test Schedule Rule #${ruleId + 1} - ${isStart ? "TRIGGER START" : "STOP"})`, "tx");
+        await configCharRef.current?.writeValueWithResponse(payload);
+      });
+    },
+    [enqueueWrite, addLog]
+  );
+
+  /* ── Presence & Away Configuration Handlers ──────────────────────────────── */
+  const savePresenceConfig = useCallback(
+    (nextCfg: typeof presenceConfig) => {
+      setPresenceConfig(nextCfg);
+      presenceConfigRef.current = nextCfg;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("smartdesk_presence_config", JSON.stringify(nextCfg));
+      }
+      if (configCharRef.current) {
+        const payload = new Uint8Array([
+          0xF8,
+          nextCfg.enabled ? 1 : 0,
+          nextCfg.awayDelayMin & 0xff,
+          (nextCfg.awayDelayMin >> 8) & 0xff,
+          nextCfg.awayRelayMask,
+          nextCfg.awayRgbOff ? 1 : 0,
+          nextCfg.arrivalRelayMask,
+          nextCfg.arrivalRgbOn ? 1 : 0,
+          nextCfg.arrivalRgbMode,
+        ]);
+        enqueueWrite("Update Presence Config", async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Presence ${nextCfg.enabled ? "ENABLED" : "DISABLED"}, Delay: ${nextCfg.awayDelayMin}m, AwayRelays: 0x${nextCfg.awayRelayMask.toString(16)}, AwayRGB: ${nextCfg.awayRgbOff ? "OFF" : "KEEP"}, ArrRelays: 0x${nextCfg.arrivalRelayMask.toString(16)}, ArrRGB: ${nextCfg.arrivalRgbOn ? "ON" : "KEEP"})`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
+  const registerClientName = useCallback(
+    (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setClientNickname(trimmed);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("smartdesk_client_nickname", trimmed);
+      }
+      if (configCharRef.current) {
+        const enc = new TextEncoder();
+        const nameBytes = enc.encode(trimmed).slice(0, 23);
+        const payload = new Uint8Array(2 + nameBytes.length);
+        payload[0] = 0xF7;
+        payload[1] = nameBytes.length;
+        payload.set(nameBytes, 2);
+        enqueueWrite("Register Client Name", async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Registered Client Name: "${trimmed}")`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
+  const clearKnownClients = useCallback(() => {
+    if (!confirm("Are you sure you want to clear all 10 stored paired device slots from ESP32 flash?")) return;
+    if (configCharRef.current) {
+      const payload = new Uint8Array([0xF6]);
+      enqueueWrite("Clear Known Clients", async () => {
+        addLog(`[TX CONFIG] ${bytesToHex(payload)} (Cleared all stored paired clients from ESP32 flash)`, "tx");
+        await configCharRef.current?.writeValueWithResponse(payload);
+      });
+    }
+  }, [enqueueWrite, addLog]);
 
   const handleAddNewSchedule = useCallback(() => {
     const nextId = [0, 1, 2, 3, 4, 5, 6, 7].find((id) => !schedules.some((s) => s.id === id)) ?? schedules.length;
@@ -844,10 +1094,10 @@ export default function SmartDeskPage() {
   }, [addLog]);
 
   /* ── Connect Flow (One-by-One GATT Setup) ───────────────────────────────── */
-  const handleConnect = async (targetDevice?: BluetoothDevice) => {
+  const handleConnect = async (targetDevice?: BluetoothDevice, isAuto: boolean = false) => {
     const nav = window.navigator as NavigatorWithBluetooth;
     if (!nav.bluetooth) {
-      alert("Web Bluetooth is not supported in this browser!");
+      if (!isAuto) alert("Web Bluetooth is not supported in this browser!");
       return;
     }
 
@@ -1004,7 +1254,8 @@ export default function SmartDeskPage() {
 
       // Step 7f: Synchronize Active Day Schedules to ESP32
       try {
-        for (const rule of schedules) {
+        const rulesToSync = schedulesRef.current;
+        for (const rule of rulesToSync) {
           if (rule.enabled) {
             const schedPayload = new Uint8Array(16);
             schedPayload[0] = 0xFA;
@@ -1032,8 +1283,44 @@ export default function SmartDeskPage() {
             await cChar.writeValueWithResponse(schedPayload);
           }
         }
+        addLog(`Step 7f: Synchronized ${rulesToSync.filter((r) => r.enabled).length} active schedule rules to ESP32.`, "info");
       } catch (sErr) {
         addLog("Schedule sync optional/skipped.", "warn");
+      }
+
+      // Step 7g: Synchronize Presence & Away Config to ESP32 (0xF8)
+      try {
+        const pCfg = presenceConfigRef.current;
+        const presPayload = new Uint8Array([
+          0xF8,
+          pCfg.enabled ? 1 : 0,
+          pCfg.awayDelayMin & 0xff,
+          (pCfg.awayDelayMin >> 8) & 0xff,
+          pCfg.awayRelayMask,
+          pCfg.awayRgbOff ? 1 : 0,
+          pCfg.arrivalRelayMask,
+          pCfg.arrivalRgbOn ? 1 : 0,
+          pCfg.arrivalRgbMode,
+        ]);
+        await cChar.writeValueWithResponse(presPayload);
+        addLog(`Step 7g: Synchronized Presence Config (Away delay: ${pCfg.awayDelayMin}m, AwayRelays: 0x${pCfg.awayRelayMask.toString(16)}, ArrRelays: 0x${pCfg.arrivalRelayMask.toString(16)}).`, "info");
+      } catch (pErr) {
+        addLog("Presence config sync optional/skipped.", "warn");
+      }
+
+      // Step 7h: Register Client Name for Presence List (0xF7)
+      try {
+        const nick = localStorage.getItem("smartdesk_client_nickname") || clientNickname || "Web Client";
+        const enc = new TextEncoder();
+        const nBytes = enc.encode(nick).slice(0, 23);
+        const namePayload = new Uint8Array(2 + nBytes.length);
+        namePayload[0] = 0xF7;
+        namePayload[1] = nBytes.length;
+        namePayload.set(nBytes, 2);
+        await cChar.writeValueWithResponse(namePayload);
+        addLog(`Step 7h: Registered client device name "${nick}" with ESP32.`, "info");
+      } catch (nErr) {
+        // optional
       }
 
       if (typeof window !== "undefined") {
@@ -1048,12 +1335,22 @@ export default function SmartDeskPage() {
     } catch (err: unknown) {
       setConnecting(false);
       setConnected(false);
+      const isNotFound = (err as any)?.name === "NotFoundError" || String(err).includes("User cancelled");
       const msg = err instanceof Error ? err.message : String(err);
-      addLog(`Connection sequence failed: ${msg}`, "err");
-      console.error("BLE Connect Sequence Error:", err);
-      alert(`[Connection Failed]\n\n${msg}\n\nTips:\n- Remove old 'SmartDesk' devices in Windows Bluetooth settings.\n- Make sure ESP32-S3 is running SmartDeskV2.`);
+      if (isNotFound) {
+        addLog("Device chooser cancelled by user.", "info");
+      } else if (isAuto) {
+        // During silent auto-connect, treat as info/warn to prevent Next.js dev overlay
+        addLog(`Auto-reconnect standby (${msg})`, "warn");
+        console.warn("[BLE Auto-Connect Standby]:", msg);
+      } else {
+        addLog(`Connection attempt failed: ${msg}`, "err");
+        console.error("BLE Connect Sequence Error:", err);
+        alert(`[Connection Failed]\n\n${msg}\n\nTips:\n- Ensure ESP32-S3 is powered and running.\n- If Windows was previously paired, ensure Bluetooth is toggled ON.`);
+      }
     }
   };
+  connectRef.current = handleConnect;
 
   const handleDisconnect = () => {
     if (deviceRef.current && deviceRef.current.gatt?.connected) {
@@ -1760,27 +2057,36 @@ export default function SmartDeskPage() {
       <div className="w-full max-w-5xl flex flex-col gap-6">
 
         {/* ── AUTO-RECONNECT BANNER ────────────────────────────────────────── */}
-        {!connected && lastDeviceDetected && (
+        {!connected && (
           <div className="bg-gradient-to-r from-cyan-950 via-zinc-900 to-cyan-950 border border-cyan-500/70 p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl shadow-cyan-950/50">
             <div className="flex items-center gap-3">
               <span className="text-2xl animate-pulse">⚡</span>
               <div>
                 <div className="text-sm font-bold text-white flex items-center gap-2">
-                  <span>Previous Device Remembered:</span>
-                  <span className="text-cyan-300 font-mono underline font-bold">{lastDeviceDetected.name || "smartDesk Controller"}</span>
+                  <span>Target SmartDesk Controller:</span>
+                  <span className="text-cyan-300 font-mono underline font-bold" suppressHydrationWarning>{mounted ? (lastDeviceDetected?.name || persistedDeviceName) : "smartDesk Controller"}</span>
                 </div>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Web Bluetooth persistent permission detected. Reconnect instantly without opening the device chooser!
+                  Click to connect! On Windows Chrome, enable <code className="text-cyan-400 bg-zinc-950 px-1 py-0.5 rounded">chrome://flags/#enable-web-bluetooth-new-permissions-backend</code> to allow automatic zero-dialog reconnect across refreshes.
                 </p>
               </div>
             </div>
             <button
               type="button"
-              onClick={() => handleConnect(lastDeviceDetected)}
+              onClick={async () => {
+                if (lastDeviceDetected) {
+                  try {
+                    await handleConnect(lastDeviceDetected, false);
+                    if (deviceRef.current?.gatt?.connected) return;
+                  } catch (_) {}
+                }
+                // Fallback to opening chooser if direct connect failed
+                await handleConnect(undefined, false);
+              }}
               disabled={connecting}
               className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-95 text-zinc-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-cyan-500/30 cursor-pointer whitespace-nowrap"
             >
-              {connecting ? "Reconnecting..." : "⚡ 1-Click Reconnect"}
+              {connecting ? "Connecting..." : "⚡ 1-Click Connect"}
             </button>
           </div>
         )}
@@ -2166,6 +2472,14 @@ export default function SmartDeskPage() {
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"
+                          onClick={() => handleTestScheduleRule(rule.id, true)}
+                          title="Trigger this schedule rule action immediately on ESP32 hardware"
+                          className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-emerald-950/60 text-emerald-400 text-xs font-mono transition-all active:scale-95 cursor-pointer"
+                        >
+                          ▶️ Test
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => {
                             setEditingSchedule({ ...rule });
                             setShowScheduleModal(true);
@@ -2546,7 +2860,373 @@ export default function SmartDeskPage() {
           </div>
         )}
 
-        {/* ── LED CONTROLLER PANEL (16 MODES + SIMULATOR) ────────────────── */}
+        {/* ── 3. SMART PRESENCE & AWAY MODE (ESP32 HARDWARE LISTENER) ─────── */}
+        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-800 pb-3">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>📡 Smart Presence &amp; Away Mode</span>
+                <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                  10 Stored Devices • ESP32 Autonomy
+                </span>
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Automatically switches desk appliances ON upon arrival and OFF after you step away.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Live Presence Status Pill */}
+              <div
+                className={`px-3 py-1 rounded-full text-xs font-mono font-bold flex items-center gap-1.5 border ${
+                  connected
+                    ? "bg-emerald-950/80 text-emerald-300 border-emerald-600/80"
+                    : presenceData.state === 2
+                    ? "bg-amber-950/80 text-amber-300 border-amber-600/80 animate-pulse"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                }`}
+              >
+                <span>
+                  {connected
+                    ? "🟢 Home / Present"
+                    : presenceData.state === 2
+                    ? `⏳ Away: ${presenceData.remainingMin}m left`
+                    : "⚪ Away Standby"}
+                </span>
+              </div>
+
+              {/* Master Presence Switch */}
+              <button
+                type="button"
+                onClick={() =>
+                  savePresenceConfig({
+                    ...presenceConfig,
+                    enabled: !presenceConfig.enabled,
+                  })
+                }
+                className={`px-3 py-1 rounded-full text-xs font-mono font-bold border transition-all cursor-pointer ${
+                  presenceConfig.enabled
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60 hover:bg-cyan-500/30"
+                    : "bg-zinc-800 text-zinc-500 border-zinc-700 hover:bg-zinc-750"
+                }`}
+              >
+                {presenceConfig.enabled ? "PRESENCE: ON" : "PRESENCE: OFF"}
+              </button>
+            </div>
+          </div>
+
+          {/* Configuration Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Card 1: Away Timer & Custom Actions */}
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between gap-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-mono uppercase text-zinc-400 font-bold">1. Away Auto-Off Delay</h3>
+                  <span className="text-xs font-bold text-amber-400 font-mono">
+                    {presenceConfig.awayDelayMin} min
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Delay after all known devices disconnect before executing Away actions.
+                </p>
+
+                {/* Quick Delay Presets */}
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {[1, 2, 5, 10, 15, 30].map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          awayDelayMin: mins,
+                        })
+                      }
+                      className={`px-2.5 py-1 rounded text-xs font-mono transition-all cursor-pointer ${
+                        presenceConfig.awayDelayMin === mins
+                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/60 font-bold"
+                          : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-800"
+                      }`}
+                    >
+                      {mins}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-zinc-800/80 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-mono uppercase text-zinc-400 font-bold">
+                    Turn OFF Channels:
+                  </label>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          awayRelayMask: 0x0f,
+                          awayRgbOff: true,
+                        })
+                      }
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          awayRelayMask: 0x00,
+                          awayRgbOff: true,
+                        })
+                      }
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-cyan-300"
+                    >
+                      RGB
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          awayRelayMask: 0x0f,
+                          awayRgbOff: false,
+                        })
+                      }
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-amber-300"
+                    >
+                      Relays
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4 Relay Toggle Chips */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[0, 1, 2, 3].map((idx) => {
+                    const isTurnOff = Boolean(presenceConfig.awayRelayMask & (1 << idx));
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          const nextMask = presenceConfig.awayRelayMask ^ (1 << idx);
+                          savePresenceConfig({
+                            ...presenceConfig,
+                            awayRelayMask: nextMask,
+                          });
+                        }}
+                        className={`py-1 px-0.5 rounded text-center text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                          isTurnOff
+                            ? "bg-rose-500/20 text-rose-300 border-rose-500/60"
+                            : "bg-zinc-900 text-zinc-500 border-zinc-800"
+                        }`}
+                        title={configs[idx]?.name || `CH${idx + 1}`}
+                      >
+                        CH{idx + 1} {isTurnOff ? "OFF" : "—"}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* RGB Strip Off Toggle */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    savePresenceConfig({
+                      ...presenceConfig,
+                      awayRgbOff: !presenceConfig.awayRgbOff,
+                    })
+                  }
+                  className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-mono font-bold border flex items-center justify-between transition-all cursor-pointer ${
+                    presenceConfig.awayRgbOff
+                      ? "bg-rose-500/20 text-rose-300 border-rose-500/60"
+                      : "bg-zinc-900 text-zinc-500 border-zinc-800"
+                  }`}
+                >
+                  <span>🌈 WS2812B RGB Strip:</span>
+                  <span>{presenceConfig.awayRgbOff ? "TURN OFF" : "KEEP AS IS"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Card 2: Arrival Action & Custom Combination */}
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between gap-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-mono uppercase text-zinc-400 font-bold">2. Arrival Auto-On</h3>
+                  <span className="text-xs font-bold text-emerald-400 font-mono">
+                    {presenceConfig.arrivalRelayMask > 0 || presenceConfig.arrivalRgbOn ? "Custom Active" : "Disabled"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  Custom power-on combination when returning within Bluetooth range.
+                </p>
+
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-[11px] font-mono uppercase text-zinc-400 font-bold">
+                    Turn ON Channels:
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          arrivalRelayMask: 0x0f,
+                          arrivalRgbOn: true,
+                        })
+                      }
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          arrivalRelayMask: 0x00,
+                          arrivalRgbOn: true,
+                        })
+                      }
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-cyan-300"
+                    >
+                      RGB
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          arrivalRelayMask: 0x0f,
+                          arrivalRgbOn: false,
+                        })
+                      }
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-emerald-300"
+                    >
+                      Relays
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4 Relay Toggle Chips */}
+                <div className="grid grid-cols-4 gap-1.5 mt-2">
+                  {[0, 1, 2, 3].map((idx) => {
+                    const isTurnOn = Boolean(presenceConfig.arrivalRelayMask & (1 << idx));
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          const nextMask = presenceConfig.arrivalRelayMask ^ (1 << idx);
+                          savePresenceConfig({
+                            ...presenceConfig,
+                            arrivalRelayMask: nextMask,
+                          });
+                        }}
+                        className={`py-1 px-0.5 rounded text-center text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                          isTurnOn
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/60"
+                            : "bg-zinc-900 text-zinc-500 border-zinc-800"
+                        }`}
+                        title={configs[idx]?.name || `CH${idx + 1}`}
+                      >
+                        CH{idx + 1} {isTurnOn ? "ON" : "—"}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-zinc-800/80 flex flex-col gap-2">
+                {/* RGB Strip On Toggle */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    savePresenceConfig({
+                      ...presenceConfig,
+                      arrivalRgbOn: !presenceConfig.arrivalRgbOn,
+                    })
+                  }
+                  className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-mono font-bold border flex items-center justify-between transition-all cursor-pointer ${
+                    presenceConfig.arrivalRgbOn
+                      ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/60"
+                      : "bg-zinc-900 text-zinc-500 border-zinc-800"
+                  }`}
+                >
+                  <span>🌈 WS2812B RGB Strip:</span>
+                  <span>{presenceConfig.arrivalRgbOn ? "TURN ON" : "DO NOTHING"}</span>
+                </button>
+
+                {presenceConfig.arrivalRgbOn && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-zinc-400">Mode:</span>
+                    <select
+                      value={presenceConfig.arrivalRgbMode}
+                      onChange={(e) =>
+                        savePresenceConfig({
+                          ...presenceConfig,
+                          arrivalRgbMode: Number(e.target.value),
+                        })
+                      }
+                      className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 font-mono flex-1 focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value={1}>Solid Amber/White</option>
+                      <option value={2}>Breathe (Fade)</option>
+                      <option value={3}>Rainbow Glow</option>
+                      <option value={15}>Aurora Wave</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Card 3: Paired Devices & Bonding */}
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between gap-3">
+              <div>
+                <h3 className="text-xs font-mono uppercase text-zinc-400 font-bold">3. Device Identification</h3>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  ESP32 stores up to 10 device MACs. Give this device a friendly name for presence detection.
+                </p>
+
+                <div className="mt-3 flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      maxLength={20}
+                      value={clientNickname}
+                      onChange={(e) => setClientNickname(e.target.value)}
+                      placeholder="e.g. Anand's Laptop"
+                      className="bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => registerClientName(clientNickname)}
+                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs font-mono cursor-pointer transition-all active:scale-95"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
+                <span className="text-[11px] text-zinc-500 font-mono">10 Slots in NVS</span>
+                <button
+                  type="button"
+                  onClick={clearKnownClients}
+                  className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-rose-950/60 text-rose-400 text-[11px] font-mono border border-zinc-800 transition-all cursor-pointer"
+                >
+                  Clear Stored Slots
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── 4. LED CONTROLLER PANEL (16 MODES + SIMULATOR) ────────────────── */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
           <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
             <div>
