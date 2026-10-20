@@ -141,6 +141,7 @@ const CHAR_RELAY_UUID = "385d4ec5-88c3-417e-8aa5-2a70db5d49fa";
 const CHAR_LED_UUID = "1814a0cb-9d1f-4212-946a-72e78b64042e";
 const CHAR_CONFIG_UUID = "11848579-c357-45cb-bdb2-88f560c11708";
 const CHAR_INFO_UUID = "f1f28a13-9725-4636-a073-0666057bd91b";
+const CHAR_ENV_UUID = "4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b";
 
 /* ── Data Interfaces ─────────────────────────────────────────────────────── */
 interface RelayState {
@@ -157,6 +158,9 @@ interface RelayConfigItem {
   offAnimEnabled: boolean;
   offAnimMode: number;
   offAnimDuration: number;
+  beepOn?: boolean;
+  beepOff?: boolean;
+  beepTimerEnd?: boolean;
 }
 
 interface LedState {
@@ -167,6 +171,27 @@ interface LedState {
   bri: number;
   spd: number;
 }
+
+interface ScheduleRule {
+  id: number;           // 0..7
+  enabled: boolean;
+  name: string;
+  daysMask: number;     // bit 0=Sun, 1=Mon, ..., 6=Sat (127 = everyday)
+  startHour: number;    // 0..23
+  startMin: number;     // 0..59
+  stopType: number;     // 0=None, 1=DurationMinutes, 2=DirectStopTime
+  durationMin: number;  // 1..1440
+  stopHour: number;     // 0..23
+  stopMin: number;      // 0..59
+  targetType: number;   // 0=CH1, 1=CH2, 2=CH3, 3=CH4, 4=All Relays, 5=RGB Strip
+  targetAction: number; // For Relay: 1=ON, 0=OFF; For RGB: Mode 0..15
+  rgbR: number;
+  rgbG: number;
+  rgbB: number;
+  rgbBri: number;
+}
+
+const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface LogEntry {
   id: string;
@@ -240,6 +265,7 @@ export default function SmartDeskPage() {
   const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
   const [renameInput, setRenameInput] = useState<string>("smartDesk Controller");
   const [showAllDevices, setShowAllDevices] = useState<boolean>(false);
+  const [climateWidgetMinimized, setClimateWidgetMinimized] = useState<boolean>(false);
 
   const [relays, setRelays] = useState<RelayState[]>([
     { load: false, remainingMin: 0 },
@@ -249,10 +275,10 @@ export default function SmartDeskPage() {
   ]);
 
   const [configs, setConfigs] = useState<RelayConfigItem[]>([
-    { name: "Relay 1", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
-    { name: "Relay 2", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
-    { name: "Relay 3", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
-    { name: "Relay 4", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
+    { name: "Relay 1", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2, beepOn: true, beepOff: true, beepTimerEnd: true },
+    { name: "Relay 2", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2, beepOn: true, beepOff: true, beepTimerEnd: true },
+    { name: "Relay 3", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2, beepOn: true, beepOff: true, beepTimerEnd: true },
+    { name: "Relay 4", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2, beepOn: true, beepOff: true, beepTimerEnd: true },
   ]);
 
   const [led, setLed] = useState<LedState>({
@@ -297,6 +323,76 @@ export default function SmartDeskPage() {
   const connectedRef = useRef<boolean>(connected);
   connectedRef.current = connected;
 
+  // Environmental & Climate State (DHT11 Sensor on GPIO 9)
+  const [envData, setEnvData] = useState<{ valid: boolean; tempC: number; humidity: number }>({
+    valid: false,
+    tempC: 0,
+    humidity: 0,
+  });
+
+  // Active Buzzer State (Big Buzzer B27 on GPIO 10)
+  const [masterBuzzer, setMasterBuzzer] = useState<boolean>(true);
+
+  // ESP32 Internal Real-Time Clock (Synchronized via 0xFB)
+  const [espClock, setEspClock] = useState<{
+    synced: boolean;
+    hour: number;
+    minute: number;
+    second: number;
+    dayOfWeek: number;
+  }>({
+    synced: false,
+    hour: 0,
+    minute: 0,
+    second: 0,
+    dayOfWeek: 0,
+  });
+
+  // Auto-Connect & Refresh Persistence
+  const [lastDeviceDetected, setLastDeviceDetected] = useState<BluetoothDevice | null>(null);
+
+  // Autonomous Day Scheduler Rules (Up to 8 Rules synced to ESP32 NVS)
+  const [schedules, setSchedules] = useState<ScheduleRule[]>([
+    {
+      id: 0,
+      enabled: false,
+      name: "Morning Desk Power",
+      daysMask: 62, // Mon..Fri (2|4|8|16|32)
+      startHour: 9,
+      startMin: 0,
+      stopType: 1, // Duration
+      durationMin: 480, // 8 Hours
+      stopHour: 17,
+      stopMin: 0,
+      targetType: 4, // All Relays
+      targetAction: 1, // Turn ON
+      rgbR: 0,
+      rgbG: 180,
+      rgbB: 255,
+      rgbBri: 50,
+    },
+    {
+      id: 1,
+      enabled: false,
+      name: "Evening Ambient Strip",
+      daysMask: 127, // Everyday
+      startHour: 18,
+      startMin: 30,
+      stopType: 2, // Direct Stop Time
+      durationMin: 0,
+      stopHour: 23,
+      stopMin: 0,
+      targetType: 5, // RGB Strip
+      targetAction: 15, // Aurora
+      rgbR: 255,
+      rgbG: 120,
+      rgbB: 20,
+      rgbBri: 70,
+    },
+  ]);
+  const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+  const [editingSchedule, setEditingSchedule] = useState<ScheduleRule | null>(null);
+
   // UI Simulation State for Transient Relay Action (Visible directly in browser)
   const [uiAnim, setUiAnim] = useState<{
     active: boolean;
@@ -317,6 +413,7 @@ export default function SmartDeskPage() {
   const ledCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
   const configCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
   const infoCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
+  const envCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
 
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const ledDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -368,15 +465,52 @@ export default function SmartDeskPage() {
     }
   }, [logs]);
 
-  /* ── Check Web Bluetooth Support on Mount ──────────────────────────────── */
+  /* ── Check Web Bluetooth Support & Auto-Connect on Mount ───────────────── */
   useEffect(() => {
+    // 1. Load saved schedules from localStorage
+    if (typeof window !== "undefined") {
+      try {
+        const savedScheds = localStorage.getItem("smartdesk_schedules");
+        if (savedScheds) setSchedules(JSON.parse(savedScheds));
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+
     const nav = typeof window !== "undefined" ? (window.navigator as NavigatorWithBluetooth) : null;
     if (!nav?.bluetooth) {
       setBluetoothSupported(false);
       addLog("Web Bluetooth API is NOT supported in this browser. Please use Chrome/Edge on HTTPS or localhost.", "err");
-    } else {
-      addLog("Web Bluetooth initialized. Ready for SmartDesk V2 connection.", "info");
+      return;
     }
+
+    addLog("Web Bluetooth initialized. Ready for SmartDesk V2 connection.", "info");
+
+    // 2. Check for previously paired devices (Persist connection across refresh)
+    const checkPersistentDevices = async () => {
+      try {
+        if ("getDevices" in nav.bluetooth!) {
+          const devices = await (nav.bluetooth as any).getDevices();
+          if (devices && devices.length > 0) {
+            const lastId = localStorage.getItem("smartdesk_last_device_id");
+            const matched = devices.find((d: BluetoothDevice) => d.id === lastId) || devices[0];
+            if (matched) {
+              setLastDeviceDetected(matched);
+              addLog(`Found paired device '${matched.name}'. Attempting auto-reconnect...`, "info");
+              try {
+                await handleConnect(matched);
+              } catch (autoErr) {
+                addLog("Auto-reconnect prompt: click '⚡ Reconnect' banner to resume session.", "info");
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // getDevices permission or API check
+      }
+    };
+
+    checkPersistentDevices();
   }, [addLog]);
 
   /* ── Serialized Write Queue ────────────────────────────────────────────── */
@@ -478,6 +612,13 @@ export default function SmartDeskPage() {
         const nameLen = Math.min(16, dataView.getUint8(offset + 8));
         const nameBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + offset + 9, nameLen);
         const name = decoder.decode(nameBytes).replace(/\0/g, "").trim() || `Relay ${i + 1}`;
+        let bz = { beepOn: true, beepOff: true, beepTimerEnd: true };
+        if (typeof window !== "undefined") {
+          try {
+            const savedBz = localStorage.getItem(`smartdesk_relay_bz_${i}`);
+            if (savedBz) bz = JSON.parse(savedBz);
+          } catch (e) {}
+        }
         newConfigs.push({
           name,
           wiring,
@@ -487,6 +628,9 @@ export default function SmartDeskPage() {
           offAnimEnabled: offEn,
           offAnimMode: offMd,
           offAnimDuration: offDu,
+          beepOn: bz.beepOn ?? true,
+          beepOff: bz.beepOff ?? true,
+          beepTimerEnd: bz.beepTimerEnd ?? true,
         });
       }
       setConfigs(newConfigs);
@@ -509,6 +653,180 @@ export default function SmartDeskPage() {
     [addLog]
   );
 
+  /* ── Parse Environment, Buzzer & Clock (11 Bytes) ───────────────────────── */
+  const parseEnvData = useCallback(
+    (dataView: DataView) => {
+      if (dataView.byteLength < 6) return;
+      const valid = dataView.getUint8(0) === 1;
+      const tempInt = dataView.getUint8(1);
+      const tempDec = dataView.getUint8(2);
+      const humInt = dataView.getUint8(3);
+      const humDec = dataView.getUint8(4);
+      const buzz = dataView.getUint8(5) === 1;
+
+      setEnvData({
+        valid,
+        tempC: tempInt + tempDec * 0.1,
+        humidity: humInt + humDec * 0.1,
+      });
+      setMasterBuzzer(buzz);
+
+      if (dataView.byteLength >= 11) {
+        const synced = dataView.getUint8(6) === 1;
+        const hour = dataView.getUint8(7);
+        const minute = dataView.getUint8(8);
+        const second = dataView.getUint8(9);
+        const dayOfWeek = dataView.getUint8(10);
+        setEspClock({ synced, hour, minute, second, dayOfWeek });
+      }
+    },
+    []
+  );
+
+  /* ── Synchronize Real-Time Clock to ESP32 (0xFB) ────────────────────────── */
+  const syncRealTime = useCallback(() => {
+    if (!configCharRef.current) return;
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const s = now.getSeconds();
+    const dow = now.getDay(); // 0=Sun..6=Sat
+    const payload = new Uint8Array([0xFB, h, m, s, dow]);
+
+    enqueueWrite("Sync Clock to ESP32", async () => {
+      addLog(`[TX CONFIG] ${bytesToHex(payload)} (Sync Real-Time: ${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}, Day=${DAYS_OF_WEEK[dow]})`, "tx");
+      await configCharRef.current?.writeValueWithResponse(payload);
+      setEspClock({ synced: true, hour: h, minute: m, second: s, dayOfWeek: dow });
+    });
+  }, [enqueueWrite, addLog]);
+
+  /* ── Sync Schedule Rule to ESP32 (0xFA) ─────────────────────────────────── */
+  const saveScheduleRule = useCallback(
+    (rule: ScheduleRule) => {
+      const payload = new Uint8Array(16);
+      payload[0] = 0xFA;
+      payload[1] = rule.id;
+      payload[2] = rule.enabled ? 1 : 0;
+      payload[3] = rule.daysMask;
+      payload[4] = rule.startHour;
+      payload[5] = rule.startMin;
+      payload[6] = rule.stopType;
+      if (rule.stopType === 1) {
+        payload[7] = rule.durationMin & 0xff;
+        payload[8] = (rule.durationMin >> 8) & 0xff;
+        payload[9] = 0;
+      } else {
+        payload[7] = rule.stopHour;
+        payload[8] = 0;
+        payload[9] = rule.stopMin;
+      }
+      payload[10] = rule.targetType;
+      payload[11] = rule.targetAction;
+      payload[12] = rule.rgbR ?? 0;
+      payload[13] = rule.rgbG ?? 180;
+      payload[14] = rule.rgbB ?? 255;
+      payload[15] = rule.rgbBri ?? 50;
+
+      setSchedules((prev) => {
+        const next = prev.some((s) => s.id === rule.id)
+          ? prev.map((s) => (s.id === rule.id ? rule : s))
+          : [...prev, rule];
+        if (typeof window !== "undefined") {
+          localStorage.setItem("smartdesk_schedules", JSON.stringify(next));
+        }
+        return next;
+      });
+
+      if (configCharRef.current) {
+        enqueueWrite(`Sync Schedule Rule ${rule.id + 1}`, async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Saved Schedule Rule ${rule.id + 1}: ${rule.name})`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
+  /* ── Delete / Disable Schedule Rule (0xF9) ──────────────────────────────── */
+  const deleteScheduleRule = useCallback(
+    (ruleId: number) => {
+      setSchedules((prev) => {
+        const next = prev.filter((s) => s.id !== ruleId);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("smartdesk_schedules", JSON.stringify(next));
+        }
+        return next;
+      });
+
+      if (configCharRef.current) {
+        const payload = new Uint8Array([0xF9, ruleId]);
+        enqueueWrite(`Disable Schedule Rule ${ruleId + 1}`, async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Disabled Schedule Rule ${ruleId + 1})`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
+  const handleAddNewSchedule = useCallback(() => {
+    const nextId = [0, 1, 2, 3, 4, 5, 6, 7].find((id) => !schedules.some((s) => s.id === id)) ?? schedules.length;
+    if (nextId >= 8) {
+      alert("Maximum 8 schedule rules allowed on ESP32 flash!");
+      return;
+    }
+    setEditingSchedule({
+      id: nextId,
+      enabled: true,
+      name: `Schedule Rule ${nextId + 1}`,
+      daysMask: 127,
+      startHour: 9,
+      startMin: 0,
+      stopType: 1,
+      durationMin: 120,
+      stopHour: 17,
+      stopMin: 0,
+      targetType: 0,
+      targetAction: 1,
+      rgbR: 0,
+      rgbG: 180,
+      rgbB: 255,
+      rgbBri: 50,
+    });
+    setShowScheduleModal(true);
+  }, [schedules]);
+
+  /* ── Master Buzzer Toggle (0xFD) ────────────────────────────────────────── */
+  const toggleMasterBuzzer = useCallback(() => {
+    if (!configCharRef.current) return;
+    const nextState = !masterBuzzer;
+    const payload = new Uint8Array([0xFD, nextState ? 1 : 0]);
+    enqueueWrite(`Toggle Buzzer -> ${nextState ? "ON" : "MUTED"}`, async () => {
+      addLog(`[TX CONFIG] ${bytesToHex(payload)} (Master Active Buzzer: ${nextState ? "ON" : "MUTED"})`, "tx");
+      await configCharRef.current?.writeValueWithResponse(payload);
+      setMasterBuzzer(nextState);
+    });
+  }, [masterBuzzer, enqueueWrite, addLog]);
+
+  /* ── Save Individual Relay Buzzer Config (0xFC) ────────────────────────── */
+  const saveRelayBuzzerConfig = useCallback(
+    (idx: number, beepOn: boolean, beepOff: boolean, beepTimerEnd: boolean) => {
+      if (!configCharRef.current) return;
+      const payload = new Uint8Array([
+        0xFC,
+        idx,
+        beepOn ? 1 : 0,
+        beepOff ? 1 : 0,
+        beepTimerEnd ? 1 : 0,
+      ]);
+      enqueueWrite(`Save Relay ${idx + 1} Buzzer Settings`, async () => {
+        addLog(`[TX CONFIG] ${bytesToHex(payload)} (Relay ${idx + 1} Buzzer: On=${beepOn} Off=${beepOff} End=${beepTimerEnd})`, "tx");
+        await configCharRef.current?.writeValueWithResponse(payload);
+      });
+    },
+    [enqueueWrite, addLog]
+  );
+
   /* ── Disconnect Cleanup ────────────────────────────────────────────────── */
   const handleDisconnected = useCallback(() => {
     addLog("Device disconnected from host.", "warn");
@@ -518,13 +836,15 @@ export default function SmartDeskPage() {
     ledCharRef.current = null;
     configCharRef.current = null;
     infoCharRef.current = null;
+    envCharRef.current = null;
     deviceRef.current = null;
     setUiAnim(null);
+    setEnvData({ valid: false, tempC: 0, humidity: 0 });
     stopMusicSyncRef.current();
   }, [addLog]);
 
   /* ── Connect Flow (One-by-One GATT Setup) ───────────────────────────────── */
-  const handleConnect = async () => {
+  const handleConnect = async (targetDevice?: BluetoothDevice) => {
     const nav = window.navigator as NavigatorWithBluetooth;
     if (!nav.bluetooth) {
       alert("Web Bluetooth is not supported in this browser!");
@@ -533,25 +853,35 @@ export default function SmartDeskPage() {
 
     try {
       setConnecting(true);
-      addLog("Step 1: Requesting Bluetooth device...", "info");
 
-      const reqOptions: RequestDeviceOptions = showAllDevices
-        ? {
-            acceptAllDevices: true,
-            optionalServices: [SERVICE_UUID],
-          }
-        : {
-            filters: [
-              { namePrefix: "smartDesk" },
-              { namePrefix: "SmartDesk" },
-              { namePrefix: "smart" },
-              { namePrefix: "Smart" },
-              ...(deviceName ? [{ name: deviceName }] : []),
-            ],
-            optionalServices: [SERVICE_UUID],
-          };
-
-      const dev = await nav.bluetooth.requestDevice(reqOptions);
+      let dev: BluetoothDevice;
+      if (targetDevice) {
+        addLog(`Step 1: Connecting directly to pre-authorized device '${targetDevice.name}'...`, "info");
+        dev = targetDevice;
+      } else {
+        addLog("Step 1: Requesting Bluetooth device...", "info");
+        const reqOptions: RequestDeviceOptions = showAllDevices
+          ? {
+              acceptAllDevices: true,
+              optionalServices: [SERVICE_UUID],
+            }
+          : {
+              filters: [
+                { services: [SERVICE_UUID] },
+                { namePrefix: "smart" },
+                { namePrefix: "Smart" },
+                { namePrefix: "sd" },
+                { namePrefix: "SD" },
+                { namePrefix: "desk" },
+                { namePrefix: "Desk" },
+                { namePrefix: "controller" },
+                { namePrefix: "Controller" },
+                ...(deviceName ? [{ name: deviceName }] : []),
+              ],
+              optionalServices: [SERVICE_UUID],
+            };
+        dev = await nav.bluetooth.requestDevice(reqOptions);
+      }
 
       deviceRef.current = dev;
       setDeviceName(dev.name || "smartDesk Controller");
@@ -589,7 +919,17 @@ export default function SmartDeskPage() {
       infoCharRef.current = iChar;
       await sleep(150);
 
-      // Start notifications: RELAY first, then LED
+      let eChar: BluetoothRemoteGATTCharacteristic | null = null;
+      try {
+        addLog("Step 5e: Acquiring ENV (Climate/Buzzer/Clock) characteristic...", "info");
+        eChar = await service.getCharacteristic(CHAR_ENV_UUID);
+        envCharRef.current = eChar;
+        await sleep(150);
+      } catch (err: unknown) {
+        addLog("ENV characteristic not found or optional.", "warn");
+      }
+
+      // Start notifications: RELAY first, then LED, then ENV
       addLog("Step 6a: Starting notifications on RELAY characteristic...", "info");
       await rChar.startNotifications();
       rChar.addEventListener("characteristicvaluechanged", (e: Event) => {
@@ -605,6 +945,20 @@ export default function SmartDeskPage() {
         if (target.value) parseLedData(target.value);
       });
       await sleep(150);
+
+      if (eChar) {
+        try {
+          addLog("Step 6c: Starting notifications on ENV characteristic...", "info");
+          await eChar.startNotifications();
+          eChar.addEventListener("characteristicvaluechanged", (e: Event) => {
+            const target = e.target as BluetoothRemoteGATTCharacteristic;
+            if (target.value) parseEnvData(target.value);
+          });
+          await sleep(150);
+        } catch (err: unknown) {
+          addLog("Could not start ENV notifications.", "warn");
+        }
+      }
 
       // Read initial values
       addLog("Step 7a: Reading initial RELAY state...", "info");
@@ -628,8 +982,68 @@ export default function SmartDeskPage() {
       setInfoString(infoText);
       addLog(`[RX INFO] ${infoText}`, "rx");
 
+      if (eChar) {
+        try {
+          const eVal = await eChar.readValue();
+          parseEnvData(eVal);
+        } catch (err: unknown) {
+          // ignore
+        }
+      }
+
+      // Step 7e: Synchronize Browser Real-Time to ESP32 Clock
+      try {
+        const now = new Date();
+        const timePayload = new Uint8Array([0xFB, now.getHours(), now.getMinutes(), now.getSeconds(), now.getDay()]);
+        addLog(`Step 7e: Synchronizing Browser Real-Time (${now.toLocaleTimeString()}) to ESP32...`, "info");
+        await cChar.writeValueWithResponse(timePayload);
+        setEspClock({ synced: true, hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds(), dayOfWeek: now.getDay() });
+      } catch (tErr) {
+        addLog("Real-time clock sync optional/skipped.", "warn");
+      }
+
+      // Step 7f: Synchronize Active Day Schedules to ESP32
+      try {
+        for (const rule of schedules) {
+          if (rule.enabled) {
+            const schedPayload = new Uint8Array(16);
+            schedPayload[0] = 0xFA;
+            schedPayload[1] = rule.id;
+            schedPayload[2] = 1;
+            schedPayload[3] = rule.daysMask;
+            schedPayload[4] = rule.startHour;
+            schedPayload[5] = rule.startMin;
+            schedPayload[6] = rule.stopType;
+            if (rule.stopType === 1) {
+              schedPayload[7] = rule.durationMin & 0xff;
+              schedPayload[8] = (rule.durationMin >> 8) & 0xff;
+              schedPayload[9] = 0;
+            } else {
+              schedPayload[7] = rule.stopHour;
+              schedPayload[8] = 0;
+              schedPayload[9] = rule.stopMin;
+            }
+            schedPayload[10] = rule.targetType;
+            schedPayload[11] = rule.targetAction;
+            schedPayload[12] = rule.rgbR ?? 0;
+            schedPayload[13] = rule.rgbG ?? 180;
+            schedPayload[14] = rule.rgbB ?? 255;
+            schedPayload[15] = rule.rgbBri ?? 50;
+            await cChar.writeValueWithResponse(schedPayload);
+          }
+        }
+      } catch (sErr) {
+        addLog("Schedule sync optional/skipped.", "warn");
+      }
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("smartdesk_last_device_id", dev.id);
+        localStorage.setItem("smartdesk_last_device_name", dev.name || "smartDesk Controller");
+      }
+
       setConnected(true);
       setConnecting(false);
+      setLastDeviceDetected(null);
       addLog(">>> CONNECTION FULLY ESTABLISHED & OPERATIONAL! <<<", "info");
     } catch (err: unknown) {
       setConnecting(false);
@@ -707,7 +1121,10 @@ export default function SmartDeskPage() {
     offEn: boolean,
     offMd: number,
     offDu: number,
-    newName: string
+    newName: string,
+    beepOn: boolean = true,
+    beepOff: boolean = true,
+    beepEnd: boolean = true
   ) => {
     if (!configCharRef.current) return;
     const enc = new TextEncoder();
@@ -738,10 +1155,18 @@ export default function SmartDeskPage() {
           offAnimEnabled: offEn,
           offAnimMode: offMd,
           offAnimDuration: offDu,
+          beepOn,
+          beepOff,
+          beepTimerEnd: beepEnd,
         };
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`smartdesk_relay_bz_${idx}`, JSON.stringify({ beepOn, beepOff, beepEnd }));
+        }
         return copy;
       });
-      alert(`Settings saved for ${newName}!\n\n- Contact Wiring: ${wiring ? "NC (Normally Closed)" : "NO (Normally Open)"}\n- ON RGB Action: ${onEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === onMd)?.label}, ${onDu}s)` : "Disabled"}\n- OFF RGB Action: ${offEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === offMd)?.label}, ${offDu}s)` : "Disabled"}`);
+      // Synchronize Buzzer Settings (0xFC) to ESP32
+      saveRelayBuzzerConfig(idx, beepOn, beepOff, beepEnd);
+      alert(`Settings saved for ${newName}!\n\n- Contact Wiring: ${wiring ? "NC (Normally Closed)" : "NO (Normally Open)"}\n- ON RGB Action: ${onEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === onMd)?.label}, ${onDu}s)` : "Disabled"}\n- OFF RGB Action: ${offEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === offMd)?.label}, ${offDu}s)` : "Disabled"}\n- Buzzer: ON=${beepOn ? "Beep" : "Off"}, OFF=${beepOff ? "Beep" : "Off"}, TimerEnd=${beepEnd ? "Beep" : "Off"}`);
     });
   };
 
@@ -1334,6 +1759,32 @@ export default function SmartDeskPage() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans p-3 sm:p-6 lg:p-8 flex flex-col items-center select-none">
       <div className="w-full max-w-5xl flex flex-col gap-6">
 
+        {/* ── AUTO-RECONNECT BANNER ────────────────────────────────────────── */}
+        {!connected && lastDeviceDetected && (
+          <div className="bg-gradient-to-r from-cyan-950 via-zinc-900 to-cyan-950 border border-cyan-500/70 p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl shadow-cyan-950/50">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl animate-pulse">⚡</span>
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Previous Device Remembered:</span>
+                  <span className="text-cyan-300 font-mono underline font-bold">{lastDeviceDetected.name || "smartDesk Controller"}</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Web Bluetooth persistent permission detected. Reconnect instantly without opening the device chooser!
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleConnect(lastDeviceDetected)}
+              disabled={connecting}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-95 text-zinc-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-cyan-500/30 cursor-pointer whitespace-nowrap"
+            >
+              {connecting ? "Reconnecting..." : "⚡ 1-Click Reconnect"}
+            </button>
+          </div>
+        )}
+
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <header className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-xl">
           <div className="flex flex-col">
@@ -1366,17 +1817,47 @@ export default function SmartDeskPage() {
               </div>
 
               {connected && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenameInput(deviceName);
-                    setShowRenameModal(true);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-cyan-400 hover:text-cyan-300 text-xs font-mono font-semibold border border-zinc-700 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
-                  title="Change Bluetooth Device Name"
-                >
-                  ✏️ Rename Device
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenameInput(deviceName);
+                      setShowRenameModal(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-cyan-400 hover:text-cyan-300 text-xs font-mono font-semibold border border-zinc-700 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                    title="Change Bluetooth Device Name"
+                  >
+                    ✏️ Rename
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleMasterBuzzer}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border flex items-center gap-1 cursor-pointer transition-all active:scale-95 ${
+                      masterBuzzer
+                        ? "bg-amber-950/70 border-amber-600 text-amber-300 hover:bg-amber-900/80"
+                        : "bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    title="Active Buzzer B27 (GPIO 10) Master Toggle"
+                  >
+                    {masterBuzzer ? "🔊 Buzzer ON" : "🔇 Muted"}
+                  </button>
+
+                  {envData.valid && (
+                    <div className="hidden sm:inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-zinc-800/90 border border-zinc-700 text-xs font-mono text-emerald-300">
+                      <span>🌡️ {envData.tempC.toFixed(1)}°C</span>
+                      <span className="text-zinc-600">•</span>
+                      <span>💧 {envData.humidity.toFixed(0)}%</span>
+                    </div>
+                  )}
+
+                  {espClock.synced && (
+                    <div className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/90 border border-zinc-700 text-xs font-mono text-cyan-300" title="ESP32 Autonomous Real-Time Clock">
+                      <span>🕒</span>
+                      <span>{String(espClock.hour).padStart(2, "0")}:{String(espClock.minute).padStart(2, "0")}:{String(espClock.second).padStart(2, "0")}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <p className="text-xs text-zinc-400 font-mono mt-1">
@@ -1401,7 +1882,7 @@ export default function SmartDeskPage() {
               {!connected ? (
                 <button
                   type="button"
-                  onClick={handleConnect}
+                  onClick={() => handleConnect()}
                   disabled={connecting || !bluetoothSupported}
                   className="flex-1 sm:flex-none min-h-[44px] px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:scale-95 disabled:opacity-50 text-white font-bold text-sm tracking-wide shadow-lg shadow-cyan-900/30 transition-all cursor-pointer"
                 >
@@ -1513,13 +1994,557 @@ export default function SmartDeskPage() {
                 disabled={!connected}
                 onToggle={() => toggleRelay(idx)}
                 onSetTimer={(min) => setTimer(idx, min)}
-                onSaveConfig={(wiring, onEn, onMd, onDu, offEn, offMd, offDu, name) =>
-                  saveRelayConfig(idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, name)
+                onSaveConfig={(wiring, onEn, onMd, onDu, offEn, offMd, offDu, name, bzOn, bzOff, bzEnd) =>
+                  saveRelayConfig(idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, name, bzOn, bzOff, bzEnd)
                 }
               />
             ))}
           </div>
         </section>
+
+        {/* ── 2. AUTONOMOUS REAL-TIME DAY SCHEDULER (ESP32 NVS) ────────────── */}
+        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-800 pb-3">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>📅 2. Autonomous Day Scheduler</span>
+                <span className="text-xs font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800">
+                  ESP32 Real-Time Clock &amp; NVS
+                </span>
+              </h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                Rules persist in ESP32 flash memory and execute 24/7 autonomously even when phone/PC is disconnected.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-cyan-300">
+                <span>🕒</span>
+                <span>
+                  {espClock.synced
+                    ? `${String(espClock.hour).padStart(2, "0")}:${String(espClock.minute).padStart(2, "0")}:${String(espClock.second).padStart(2, "0")} (${DAYS_OF_WEEK[espClock.dayOfWeek]})`
+                    : "Clock Unsynced"}
+                </span>
+                {espClock.synced && <span className="text-[10px] text-emerald-400 font-bold">✓</span>}
+              </div>
+
+              <button
+                type="button"
+                onClick={syncRealTime}
+                disabled={!connected}
+                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-cyan-400 text-xs font-mono font-semibold border border-zinc-700 transition-all active:scale-95 cursor-pointer disabled:opacity-40"
+                title="Sync ESP32 Clock to Current Browser Time"
+              >
+                ⏱️ Sync Clock
+              </button>
+
+              <button
+                type="button"
+                onClick={handleAddNewSchedule}
+                disabled={schedules.length >= 8}
+                className="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-md shadow-cyan-950/50 active:scale-95 cursor-pointer disabled:opacity-40"
+              >
+                ➕ Add Rule
+              </button>
+            </div>
+          </div>
+
+          {/* Schedule Rules Grid */}
+          {schedules.length === 0 ? (
+            <div className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-3">
+              <span className="text-3xl">📅</span>
+              <p className="text-sm font-semibold text-zinc-300">No autonomous schedules configured yet</p>
+              <p className="text-xs text-zinc-500 max-w-md">
+                Create scheduled rules to automatically power your desk appliances, turn relays on/off, or trigger ambient WS2812B lighting at specific times of day.
+              </p>
+              <button
+                type="button"
+                onClick={handleAddNewSchedule}
+                className="mt-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold cursor-pointer transition-all active:scale-95"
+              >
+                Create First Schedule Rule
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {schedules.map((rule) => {
+                const isRelay = rule.targetType < 5;
+                const targetName =
+                  rule.targetType < 4
+                    ? `${configs[rule.targetType]?.name || `Relay ${rule.targetType + 1}`} (CH${rule.targetType + 1})`
+                    : rule.targetType === 4
+                    ? "All Relays (CH1..CH4)"
+                    : "WS2812B RGB Strip (GPIO 8)";
+
+                const actionText = isRelay
+                  ? rule.targetAction === 1
+                    ? "Turn LOAD ON"
+                    : "Turn LOAD OFF"
+                  : `Mode: ${LED_MODES.find((m) => m.id === rule.targetAction)?.label || `Mode ${rule.targetAction}`} (${rule.rgbBri}% Bri)`;
+
+                return (
+                  <div
+                    key={rule.id}
+                    className={`bg-zinc-950/80 border rounded-xl p-4 flex flex-col justify-between gap-3 transition-all ${
+                      rule.enabled
+                        ? "border-cyan-500/60 shadow-[0_0_16px_rgba(6,182,212,0.1)]"
+                        : "border-zinc-800/80 opacity-70"
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm text-white">{rule.name}</h4>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                            Rule #{rule.id + 1}
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono text-zinc-400 mt-0.5">
+                          Target: <strong className="text-zinc-200">{targetName}</strong>
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => saveScheduleRule({ ...rule, enabled: !rule.enabled })}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-black border transition-all cursor-pointer ${
+                          rule.enabled
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/60"
+                            : "bg-zinc-800 text-zinc-500 border-zinc-700"
+                        }`}
+                      >
+                        {rule.enabled ? "ACTIVE" : "PAUSED"}
+                      </button>
+                    </div>
+
+                    {/* Action & Timing Badge */}
+                    <div className="bg-zinc-900/90 p-2.5 rounded-lg border border-zinc-800/80 flex flex-col gap-1.5 text-xs font-mono">
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-400">Action:</span>
+                        <span className={`font-bold ${isRelay ? (rule.targetAction === 1 ? "text-emerald-400" : "text-rose-400") : "text-cyan-400"}`}>
+                          {actionText}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-400">Start Time:</span>
+                        <span className="text-zinc-200 font-bold">
+                          {String(rule.startHour).padStart(2, "0")}:{String(rule.startMin).padStart(2, "0")}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-400">Stop Condition:</span>
+                        <span className="text-amber-300">
+                          {rule.stopType === 1
+                            ? `⏳ Duration: ${Math.floor(rule.durationMin / 60)}h ${rule.durationMin % 60}m`
+                            : rule.stopType === 2
+                            ? `🛑 Stops at ${String(rule.stopHour).padStart(2, "0")}:${String(rule.stopMin).padStart(2, "0")}`
+                            : "♾️ Continuous Run"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Active Days Pill Row */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-1">
+                        {DAYS_OF_WEEK.map((day, dIdx) => {
+                          const active = Boolean(rule.daysMask & (1 << dIdx));
+                          return (
+                            <span
+                              key={dIdx}
+                              className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-mono font-bold ${
+                                active
+                                  ? "bg-cyan-500/30 text-cyan-300 border border-cyan-500/60"
+                                  : "bg-zinc-900 text-zinc-600 border border-zinc-800"
+                              }`}
+                            >
+                              {day.charAt(0)}
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSchedule({ ...rule });
+                            setShowScheduleModal(true);
+                          }}
+                          className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-750 text-cyan-400 text-xs font-mono transition-all active:scale-95 cursor-pointer"
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteScheduleRule(rule.id)}
+                          className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-rose-950/60 text-rose-400 text-xs font-mono transition-all active:scale-95 cursor-pointer"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ── SCHEDULE EDIT / CREATE MODAL ───────────────────────────────── */}
+        {showScheduleModal && editingSchedule && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 sm:p-6 max-w-lg w-full shadow-2xl flex flex-col gap-4 my-8">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+                <h3 className="font-bold text-white text-base flex items-center gap-2">
+                  <span>📅 Configure Autonomous Schedule Rule #{editingSchedule.id + 1}</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(false)}
+                  className="text-zinc-400 hover:text-white font-mono text-sm px-2 py-1 rounded cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Rule Name */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Rule Name</label>
+                <input
+                  type="text"
+                  maxLength={24}
+                  value={editingSchedule.name}
+                  onChange={(e) => setEditingSchedule({ ...editingSchedule, name: e.target.value })}
+                  placeholder="e.g. Work Hours Desk Power"
+                  className="bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Target & Action */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Target Device</label>
+                  <select
+                    value={editingSchedule.targetType}
+                    onChange={(e) => {
+                      const t = parseInt(e.target.value, 10);
+                      setEditingSchedule({
+                        ...editingSchedule,
+                        targetType: t,
+                        targetAction: t === 5 ? 1 : 1,
+                      });
+                    }}
+                    className="bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                  >
+                    <option value={0}>Relay CH1 ({configs[0]?.name})</option>
+                    <option value={1}>Relay CH2 ({configs[1]?.name})</option>
+                    <option value={2}>Relay CH3 ({configs[2]?.name})</option>
+                    <option value={3}>Relay CH4 ({configs[3]?.name})</option>
+                    <option value={4}>⚡ All Relays (CH1..CH4)</option>
+                    <option value={5}>🌈 WS2812B RGB Strip (GPIO 8)</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Trigger Action</label>
+                  {editingSchedule.targetType < 5 ? (
+                    <select
+                      value={editingSchedule.targetAction}
+                      onChange={(e) => setEditingSchedule({ ...editingSchedule, targetAction: parseInt(e.target.value, 10) })}
+                      className="bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    >
+                      <option value={1}>⚡ Turn LOAD ON</option>
+                      <option value={0}>🛑 Turn LOAD OFF</option>
+                    </select>
+                  ) : (
+                    <select
+                      value={editingSchedule.targetAction}
+                      onChange={(e) => setEditingSchedule({ ...editingSchedule, targetAction: parseInt(e.target.value, 10) })}
+                      className="bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    >
+                      {LED_MODES.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label} ({m.desc})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* RGB Brightness & Color if RGB Strip selected */}
+              {editingSchedule.targetType === 5 && (
+                <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex flex-col gap-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-mono text-zinc-400 uppercase font-bold">LED Brightness &amp; Color:</span>
+                    <span className="font-mono text-cyan-400 font-bold">{editingSchedule.rgbBri}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={editingSchedule.rgbBri}
+                    onChange={(e) => setEditingSchedule({ ...editingSchedule, rgbBri: parseInt(e.target.value, 10) })}
+                    className="w-full accent-cyan-500 h-2 bg-zinc-800 rounded-lg cursor-pointer"
+                  />
+                  <div className="flex items-center gap-3 pt-1">
+                    <span className="text-xs font-mono text-zinc-400">Target Color:</span>
+                    <input
+                      type="color"
+                      value={`#${((1 << 24) + (editingSchedule.rgbR << 16) + (editingSchedule.rgbG << 8) + editingSchedule.rgbB).toString(16).slice(1)}`}
+                      onChange={(e) => {
+                        const hex = e.target.value.slice(1);
+                        const r = parseInt(hex.slice(0, 2), 16);
+                        const g = parseInt(hex.slice(2, 4), 16);
+                        const b = parseInt(hex.slice(4, 6), 16);
+                        setEditingSchedule({ ...editingSchedule, rgbR: r, rgbG: g, rgbB: b });
+                      }}
+                      className="w-10 h-7 rounded border border-zinc-700 bg-transparent cursor-pointer"
+                    />
+                    <span className="text-[11px] font-mono text-zinc-500">
+                      RGB({editingSchedule.rgbR}, {editingSchedule.rgbG}, {editingSchedule.rgbB})
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Days of Week Mask */}
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Active Days of Week</label>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingSchedule({ ...editingSchedule, daysMask: 127 })}
+                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 cursor-pointer"
+                    >
+                      Everyday
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSchedule({ ...editingSchedule, daysMask: 62 })}
+                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 cursor-pointer"
+                    >
+                      Mon-Fri
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSchedule({ ...editingSchedule, daysMask: 65 })}
+                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 cursor-pointer"
+                    >
+                      Weekends
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1.5">
+                  {DAYS_OF_WEEK.map((day, dIdx) => {
+                    const active = Boolean(editingSchedule.daysMask & (1 << dIdx));
+                    return (
+                      <button
+                        key={dIdx}
+                        type="button"
+                        onClick={() =>
+                          setEditingSchedule({
+                            ...editingSchedule,
+                            daysMask: editingSchedule.daysMask ^ (1 << dIdx),
+                          })
+                        }
+                        className={`min-h-[36px] rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                          active
+                            ? "bg-cyan-500 text-zinc-950 shadow-md shadow-cyan-500/30 font-black"
+                            : "bg-zinc-950 text-zinc-400 border border-zinc-800 hover:border-zinc-700"
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Start Time */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Start Time (24h)</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2">
+                    <span className="text-xs font-mono text-zinc-500">Hour</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={editingSchedule.startHour}
+                      onChange={(e) =>
+                        setEditingSchedule({
+                          ...editingSchedule,
+                          startHour: Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)),
+                        })
+                      }
+                      className="w-12 bg-transparent text-sm font-mono text-white text-center focus:outline-none"
+                    />
+                  </div>
+                  <span className="text-lg font-bold text-zinc-500">:</span>
+                  <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2">
+                    <span className="text-xs font-mono text-zinc-500">Min</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="59"
+                      value={editingSchedule.startMin}
+                      onChange={(e) =>
+                        setEditingSchedule({
+                          ...editingSchedule,
+                          startMin: Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)),
+                        })
+                      }
+                      className="w-12 bg-transparent text-sm font-mono text-white text-center focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stop Condition: Duration vs Specific Stop Time vs None */}
+              <div className="flex flex-col gap-2 bg-zinc-950 p-3.5 rounded-xl border border-zinc-800">
+                <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Stop Behavior</label>
+                
+                {/* Radio 1: Duration */}
+                <label className="flex items-start gap-2 text-xs font-mono text-zinc-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="stopType"
+                    checked={editingSchedule.stopType === 1}
+                    onChange={() => setEditingSchedule({ ...editingSchedule, stopType: 1 })}
+                    className="mt-0.5 accent-cyan-500 cursor-pointer"
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="font-bold">Auto-Stop After Duration (Minutes / Hours)</span>
+                    {editingSchedule.stopType === 1 && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="24"
+                          value={Math.floor(editingSchedule.durationMin / 60)}
+                          onChange={(e) => {
+                            const h = Math.max(0, Math.min(24, parseInt(e.target.value, 10) || 0));
+                            const m = editingSchedule.durationMin % 60;
+                            setEditingSchedule({ ...editingSchedule, durationMin: Math.max(1, h * 60 + m) });
+                          }}
+                          className="w-12 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white text-center"
+                        />
+                        <span className="text-zinc-400">hours</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={editingSchedule.durationMin % 60}
+                          onChange={(e) => {
+                            const h = Math.floor(editingSchedule.durationMin / 60);
+                            const m = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0));
+                            setEditingSchedule({ ...editingSchedule, durationMin: Math.max(1, h * 60 + m) });
+                          }}
+                          className="w-12 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white text-center"
+                        />
+                        <span className="text-zinc-400">minutes</span>
+                      </div>
+                    )}
+                  </div>
+                </label>
+
+                {/* Radio 2: Specific Stop Time */}
+                <label className="flex items-start gap-2 text-xs font-mono text-zinc-300 cursor-pointer pt-2 border-t border-zinc-800">
+                  <input
+                    type="radio"
+                    name="stopType"
+                    checked={editingSchedule.stopType === 2}
+                    onChange={() => setEditingSchedule({ ...editingSchedule, stopType: 2 })}
+                    className="mt-0.5 accent-cyan-500 cursor-pointer"
+                  />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="font-bold">Auto-Stop at Specific Time of Day</span>
+                    {editingSchedule.stopType === 2 && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="23"
+                          value={editingSchedule.stopHour}
+                          onChange={(e) =>
+                            setEditingSchedule({
+                              ...editingSchedule,
+                              stopHour: Math.max(0, Math.min(23, parseInt(e.target.value, 10) || 0)),
+                            })
+                          }
+                          className="w-12 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white text-center"
+                        />
+                        <span className="text-zinc-400">h</span>
+                        <span className="text-zinc-500">:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={editingSchedule.stopMin}
+                          onChange={(e) =>
+                            setEditingSchedule({
+                              ...editingSchedule,
+                              stopMin: Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)),
+                            })
+                          }
+                          className="w-12 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs font-mono text-white text-center"
+                        />
+                        <span className="text-zinc-400">m</span>
+                      </div>
+                    )}
+                  </div>
+                </label>
+
+                {/* Radio 3: Continuous Run */}
+                <label className="flex items-center gap-2 text-xs font-mono text-zinc-300 cursor-pointer pt-2 border-t border-zinc-800">
+                  <input
+                    type="radio"
+                    name="stopType"
+                    checked={editingSchedule.stopType === 0}
+                    onChange={() => setEditingSchedule({ ...editingSchedule, stopType: 0 })}
+                    className="accent-cyan-500 cursor-pointer"
+                  />
+                  <span>Continuous Run (Does not auto-stop until next manual toggle)</span>
+                </label>
+              </div>
+
+              {/* Active Immediately Checkbox */}
+              <label className="flex items-center gap-2 text-xs font-mono text-zinc-300 cursor-pointer px-1">
+                <input
+                  type="checkbox"
+                  checked={editingSchedule.enabled}
+                  onChange={(e) => setEditingSchedule({ ...editingSchedule, enabled: e.target.checked })}
+                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
+                />
+                <span>Enable this schedule immediately upon saving</span>
+              </label>
+
+              {/* Dialog Actions */}
+              <div className="flex gap-2 justify-end pt-2 border-t border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveScheduleRule(editingSchedule);
+                    setShowScheduleModal(false);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-lg shadow-cyan-950/50 cursor-pointer"
+                >
+                  💾 Save to ESP32 Flash
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── LED CONTROLLER PANEL (16 MODES + SIMULATOR) ────────────────── */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
@@ -1884,6 +2909,8 @@ export default function SmartDeskPage() {
           </div>
         </section>
 
+        
+
         {/* ── DEVICE TELEMETRY / INFO ────────────────────────────────────── */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-2 shadow-xl">
           <div className="flex justify-between items-center">
@@ -1913,6 +2940,8 @@ export default function SmartDeskPage() {
             {infoString}
           </div>
         </section>
+
+        
 
         {/* ── LIVE BLE LOG CONSOLE ────────────────────────────────────────── */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-3 shadow-xl">
@@ -1990,6 +3019,100 @@ export default function SmartDeskPage() {
             )}
           </div>
         </section>
+
+        
+
+      {/* ── FLOATING CLIMATE, ACTIVE BUZZER & ESP32 HARDWARE WIDGET ────── */}
+      <div className="fixed bottom-4 right-4 z-40 max-w-xs sm:max-w-sm pointer-events-none">
+        <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 shadow-2xl rounded-2xl p-4 flex flex-col gap-3 text-xs">
+          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📡</span>
+              <span className="font-bold text-white tracking-wide">Desk Sensors &amp; Audio</span>
+            </div>
+            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/70 border border-cyan-800 px-2 py-0.5 rounded">
+              ESP32-S3 Live
+            </span>
+          </div>
+
+          {/* Climate DHT11 */}
+          <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🌡️</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono text-zinc-500 uppercase">DHT11 Climate (GPIO 9)</span>
+                <span className="font-mono text-white font-bold text-xs">
+                  {envData.valid ? `${envData.tempC.toFixed(1)}°C • ${envData.humidity.toFixed(0)}% RH` : connected ? "Sampling sensor..." : "Not connected"}
+                </span>
+              </div>
+            </div>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                envData.valid ? "bg-emerald-400 shadow-[0_0_8px_#10b981]" : "bg-zinc-600"
+              }`}
+            />
+          </div>
+
+          {/* Active Buzzer B27 */}
+          <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">{masterBuzzer ? "🔊" : "🔇"}</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono text-zinc-500 uppercase">Active Buzzer B27 (GPIO 10)</span>
+                <span className={`font-mono font-bold text-xs ${masterBuzzer ? "text-amber-300" : "text-zinc-500"}`}>
+                  {masterBuzzer ? "Active (HIGH/LOW Pulses)" : "Muted"}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleMasterBuzzer}
+              disabled={!connected}
+              className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold border transition-all active:scale-95 cursor-pointer disabled:opacity-40 ${
+                masterBuzzer
+                  ? "bg-amber-950/80 text-amber-300 border-amber-600 hover:bg-amber-900"
+                  : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white"
+              }`}
+            >
+              {masterBuzzer ? "Mute" : "Unmute"}
+            </button>
+          </div>
+
+          {/* ESP32 Real-Time Clock */}
+          <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🕒</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-mono text-zinc-500 uppercase">Internal ESP32 Clock</span>
+                <span className="font-mono text-cyan-300 font-bold text-xs">
+                  {espClock.synced
+                    ? `${String(espClock.hour).padStart(2, "0")}:${String(espClock.minute).padStart(2, "0")}:${String(espClock.second).padStart(2, "0")} (${DAYS_OF_WEEK[espClock.dayOfWeek]})`
+                    : "Not Synced"}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={syncRealTime}
+              disabled={!connected}
+              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-400 font-mono text-[10px] font-bold border border-zinc-700 transition-all active:scale-95 cursor-pointer disabled:opacity-40"
+              title="Sync ESP32 internal clock with Browser local time"
+            >
+              Sync
+            </button>
+          </div>
+
+          {/* GPIO Quick Reference Badge */}
+          <div className="text-[10px] font-mono text-zinc-400 bg-zinc-950/50 p-2 rounded-lg border border-zinc-800/60 leading-relaxed">
+            <div className="text-zinc-500 font-bold uppercase mb-0.5">ESP32-S3 Hardware Pinout:</div>
+            <div>• Relays 1-4: <span className="text-cyan-400 font-bold">GPIO 4, 5, 6, 7</span></div>
+            <div>• WS2812B: <span className="text-cyan-400 font-bold">GPIO 8</span> (8x Strip)</div>
+            <div>• DHT11 Climate: <span className="text-emerald-400 font-bold">GPIO 9</span> (3.3V)</div>
+            <div>• Active Buzzer (B27): <span className="text-amber-400 font-bold">GPIO 10</span> (DC)</div>
+          </div>
+        </div>
+      </div>
+
       </div>
     </div>
   );
@@ -2011,7 +3134,10 @@ interface RelayCardProps {
     offEn: boolean,
     offMd: number,
     offDu: number,
-    name: string
+    name: string,
+    beepOn: boolean,
+    beepOff: boolean,
+    beepEnd: boolean
   ) => void;
 }
 
@@ -2037,6 +3163,11 @@ function RelayCard({
   const [offAnimMode, setOffAnimMode] = useState(config.offAnimMode ?? 3);
   const [offAnimDuration, setOffAnimDuration] = useState(config.offAnimDuration ?? 2);
 
+  // Active Buzzer (B27) Triggers
+  const [beepOn, setBeepOn] = useState<boolean>(config.beepOn ?? true);
+  const [beepOff, setBeepOff] = useState<boolean>(config.beepOff ?? true);
+  const [beepTimerEnd, setBeepTimerEnd] = useState<boolean>(config.beepTimerEnd ?? true);
+
   // Custom Countdown Timer Inputs
   const [customHours, setCustomHours] = useState<number>(0);
   const [customMinutes, setCustomMinutes] = useState<number>(30);
@@ -2050,6 +3181,9 @@ function RelayCard({
     setOffAnimEnabled(config.offAnimEnabled ?? true);
     setOffAnimMode(config.offAnimMode ?? 3);
     setOffAnimDuration(config.offAnimDuration ?? 2);
+    setBeepOn(config.beepOn ?? true);
+    setBeepOff(config.beepOff ?? true);
+    setBeepTimerEnd(config.beepTimerEnd ?? true);
   }, [config]);
 
   const gpioPin = 4 + index;
@@ -2360,6 +3494,50 @@ function RelayCard({
               )}
             </div>
 
+            {/* Active Buzzer (B27) Beep Triggers */}
+            <div className="bg-zinc-900/80 p-3 rounded-xl border border-zinc-800 flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-amber-400 flex items-center gap-2">
+                  <span>🔔 Active Buzzer (B27) Beeps (GPIO 10)</span>
+                </label>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  {beepOn || beepOff || beepTimerEnd ? "Active" : "Silent"}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-1">
+                <label className="flex items-center gap-2 text-xs font-mono text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={beepOn}
+                    onChange={(e) => setBeepOn(e.target.checked)}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                  />
+                  <span>Beep on Turn ON (1 crisp pulse)</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-mono text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={beepOff}
+                    onChange={(e) => setBeepOff(e.target.checked)}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                  />
+                  <span>Beep on Turn OFF (2 short pulses)</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs font-mono text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={beepTimerEnd}
+                    onChange={(e) => setBeepTimerEnd(e.target.checked)}
+                    className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+                  />
+                  <span>Beep on Countdown Timer End (3 alert pulses)</span>
+                </label>
+              </div>
+            </div>
+
             <button
               type="button"
               disabled={disabled}
@@ -2372,7 +3550,10 @@ function RelayCard({
                   offAnimEnabled,
                   offAnimMode,
                   offAnimDuration,
-                  nameInput
+                  nameInput,
+                  beepOn,
+                  beepOff,
+                  beepTimerEnd
                 );
                 setShowConfig(false);
               }}

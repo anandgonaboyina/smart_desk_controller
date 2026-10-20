@@ -66,6 +66,15 @@
       * Byte 0: 0xFE (254)
       * Byte 1: Name Length L (1..20)
       * Bytes 2..1+L: Device Name string ASCII (max 20 chars)
+    - Write Master Buzzer Payload (2 bytes):
+      * Byte 0: 0xFD (253)
+      * Byte 1: Master Buzzer Enabled (0=Muted, 1=Enabled)
+    - Write Relay Buzzer Payload (5 bytes):
+      * Byte 0: 0xFC (252)
+      * Byte 1: Relay Index (0..3)
+      * Byte 2: Beep on ON (0=Off, 1=On)
+      * Byte 3: Beep on OFF (0=Off, 1=On)
+      * Byte 4: Beep on Timer End (0=Off, 1=On)
     - Read Payload (125 bytes):
       * 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75):
         - Byte 0: Index i (0..3)
@@ -84,7 +93,18 @@
 
  4. INFO Characteristic: f1f28a13-9725-4636-a073-0666057bd91b
     Properties: READ
-    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-PROD | Name: <devName> | Uptime: <seconds>s"
+    - Read Payload: UTF-8 string: "BUILD ... | Name: ... | Up: ...s | Temp: ...C | Hum: ...% | Buzz: ..."
+
+ 5. ENV Characteristic: 4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b
+    Properties: READ, NOTIFY
+    - Read / Notify Payload (8 bytes):
+      * Byte 0: Sensor Valid (0=Connecting/Disconnected, 1=Valid)
+      * Byte 1: Temp Integer (0..100 °C)
+      * Byte 2: Temp Decimal (0..9)
+      * Byte 3: Humidity Integer (0..100 % RH)
+      * Byte 4: Humidity Decimal (0..9)
+      * Byte 5: Master Buzzer State (0=Muted, 1=Enabled)
+      * Bytes 6..7: Reserved (0)
  ================================================================================
  */
 
@@ -102,14 +122,44 @@ static const uint8_t RELAY_PINS[RELAY_COUNT] = {4, 5, 6, 7};
 #define LED_COUNT           8
 #define LED_MAX_BRIGHT      80    // Hard ceiling for NeoPixel brightness (0-255 scale)
 
+#define DHT_PIN             9     // DHT11 Temperature & Humidity Sensor Data Pin
+#define BUZZER_PIN          10    // Active Buzzer Signal Pin (Big Buzzer B27: HIGH=Beep, LOW=Silent)
+
 #define DEFAULT_DEVICE_NAME "smartDesk Controller"
 #define SERVICE_UUID        "7f781e04-c0ee-47c9-a1e4-0aafa8ee316b"
 #define CHAR_RELAY_UUID     "385d4ec5-88c3-417e-8aa5-2a70db5d49fa"
 #define CHAR_LED_UUID       "1814a0cb-9d1f-4212-946a-72e78b64042e"
 #define CHAR_CONFIG_UUID    "11848579-c357-45cb-bdb2-88f560c11708"
 #define CHAR_INFO_UUID      "f1f28a13-9725-4636-a073-0666057bd91b"
+#define CHAR_ENV_UUID       "4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b"
 
 #define BUILD_MARKER        "BUILD " __DATE__ " " __TIME__ " TAG=V2-PROD"
+
+/* ── Fast Command Queue for Non-Blocking Callbacks ───────────────────────── */
+enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
+
+struct WriteCmd {
+    WriteType type;
+    uint8_t   len;
+    uint8_t   data[32];
+};
+
+#define CMD_QUEUE_SIZE 8
+static volatile uint8_t s_cmdHead = 0;
+static volatile uint8_t s_cmdTail = 0;
+static WriteCmd s_cmdQueue[CMD_QUEUE_SIZE];
+
+static inline bool enqueueCmd(WriteType type, const uint8_t* data, size_t len) {
+    uint8_t next = (s_cmdHead + 1) % CMD_QUEUE_SIZE;
+    if (next == s_cmdTail) return false; // Queue full
+    s_cmdQueue[s_cmdHead].type = type;
+    s_cmdQueue[s_cmdHead].len  = (len > 32) ? 32 : (uint8_t)len;
+    if (data && s_cmdQueue[s_cmdHead].len > 0) {
+        memcpy(s_cmdQueue[s_cmdHead].data, data, s_cmdQueue[s_cmdHead].len);
+    }
+    s_cmdHead = next;
+    return true;
+}
 
 /* ── Relay Configuration Structure ───────────────────────────────────────── */
 struct RelayConfig {
@@ -171,33 +221,192 @@ static NimBLECharacteristic* s_pRelayChar   = nullptr;
 static NimBLECharacteristic* s_pLedChar     = nullptr;
 static NimBLECharacteristic* s_pConfigChar  = nullptr;
 static NimBLECharacteristic* s_pInfoChar    = nullptr;
+static NimBLECharacteristic* s_pEnvChar     = nullptr;
 static bool                  s_connected    = false;
 
-/* ── Fast Command Queue for Non-Blocking Callbacks ───────────────────────── */
-enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
+// ── DHT11 Environmental State (GPIO 9) ──────────────────────────────────────
+static float    s_tempC         = 0.0f;
+static float    s_humidity      = 0.0f;
+static bool     s_sensorValid   = false;
+static uint32_t s_lastDhtReadMs = 0;
 
-struct WriteCmd {
-    WriteType type;
-    uint8_t   len;
-    uint8_t   data[32];
-};
+static bool readDHT11(float* outTemp, float* outHum) {
+    uint8_t data[5] = {0, 0, 0, 0, 0};
 
-#define CMD_QUEUE_SIZE 8
-static volatile uint8_t s_cmdHead = 0;
-static volatile uint8_t s_cmdTail = 0;
-static WriteCmd s_cmdQueue[CMD_QUEUE_SIZE];
+    // 1. Send start signal: pull LOW for 20ms
+    pinMode(DHT_PIN, OUTPUT);
+    digitalWrite(DHT_PIN, LOW);
+    delay(20);
+    digitalWrite(DHT_PIN, HIGH);
+    delayMicroseconds(30);
+    pinMode(DHT_PIN, INPUT_PULLUP);
 
-static inline bool enqueueCmd(WriteType type, const uint8_t* data, size_t len) {
-    uint8_t next = (s_cmdHead + 1) % CMD_QUEUE_SIZE;
-    if (next == s_cmdTail) return false; // Queue full
-    s_cmdQueue[s_cmdHead].type = type;
-    s_cmdQueue[s_cmdHead].len  = (len > 32) ? 32 : (uint8_t)len;
-    if (data && s_cmdQueue[s_cmdHead].len > 0) {
-        memcpy(s_cmdQueue[s_cmdHead].data, data, s_cmdQueue[s_cmdHead].len);
+    // 2. Wait for DHT response (80us LOW, 80us HIGH)
+    uint32_t timeout = micros();
+    while (digitalRead(DHT_PIN) == HIGH) {
+        if (micros() - timeout > 100) return false;
     }
-    s_cmdHead = next;
+    timeout = micros();
+    while (digitalRead(DHT_PIN) == LOW) {
+        if (micros() - timeout > 100) return false;
+    }
+    timeout = micros();
+    while (digitalRead(DHT_PIN) == HIGH) {
+        if (micros() - timeout > 100) return false;
+    }
+
+    // 3. Read 40 bits (5 bytes)
+    for (int i = 0; i < 40; i++) {
+        timeout = micros();
+        while (digitalRead(DHT_PIN) == LOW) {
+            if (micros() - timeout > 100) return false;
+        }
+        uint32_t startHigh = micros();
+        while (digitalRead(DHT_PIN) == HIGH) {
+            if (micros() - startHigh > 120) return false;
+        }
+        uint32_t pulseLen = micros() - startHigh;
+        if (pulseLen > 40) {
+            data[i / 8] |= (1 << (7 - (i % 8)));
+        }
+    }
+
+    // 4. Verify checksum
+    uint8_t sum = (data[0] + data[1] + data[2] + data[3]) & 0xFF;
+    if (data[4] != sum) return false;
+
+    *outHum = (float)data[0] + ((float)data[1] * 0.1f);
+    *outTemp = (float)data[2] + ((float)data[3] * 0.1f);
     return true;
 }
+
+// ── Active Buzzer Driver (Big Buzzer B27 on GPIO 10) ─────────────────────────
+static bool s_buzzerMasterEnabled = true;
+
+struct RelayBuzzerConfig {
+    bool beepOn;
+    bool beepOff;
+    bool beepTimerEnd;
+};
+static RelayBuzzerConfig s_buzzerConfigs[RELAY_COUNT] = {
+    { true, true, true },
+    { true, true, true },
+    { true, true, true },
+    { true, true, true }
+};
+
+// Non-blocking active buzzer pulse generator (HIGH = buzz, LOW = quiet)
+struct ActiveBuzzerState {
+    uint8_t  totalToggles;    // count * 2
+    uint8_t  currentToggle;   // 0 = idle
+    uint16_t onMs;
+    uint16_t offMs;
+    uint32_t nextToggleMs;
+    bool     pinHigh;
+};
+static ActiveBuzzerState s_activeBuzzer = { 0, 0, 0, 0, 0, false };
+
+static void triggerActiveBuzzerBeeps(uint8_t count, uint16_t onMs, uint16_t offMs) {
+    if (!s_buzzerMasterEnabled || count == 0) {
+        digitalWrite(BUZZER_PIN, LOW);
+        return;
+    }
+    s_activeBuzzer.totalToggles  = count * 2;
+    s_activeBuzzer.currentToggle = 1;
+    s_activeBuzzer.onMs          = onMs;
+    s_activeBuzzer.offMs         = offMs;
+    s_activeBuzzer.nextToggleMs  = millis() + onMs;
+    s_activeBuzzer.pinHigh       = true;
+    digitalWrite(BUZZER_PIN, HIGH);
+}
+
+static void updateActiveBuzzer(uint32_t now) {
+    if (s_activeBuzzer.currentToggle == 0) return;
+    if (!s_buzzerMasterEnabled) {
+        s_activeBuzzer.currentToggle = 0;
+        s_activeBuzzer.pinHigh = false;
+        digitalWrite(BUZZER_PIN, LOW);
+        return;
+    }
+    if ((long)(now - s_activeBuzzer.nextToggleMs) >= 0) {
+        s_activeBuzzer.currentToggle++;
+        if (s_activeBuzzer.currentToggle > s_activeBuzzer.totalToggles) {
+            s_activeBuzzer.currentToggle = 0;
+            s_activeBuzzer.pinHigh = false;
+            digitalWrite(BUZZER_PIN, LOW);
+        } else {
+            s_activeBuzzer.pinHigh = !s_activeBuzzer.pinHigh;
+            digitalWrite(BUZZER_PIN, s_activeBuzzer.pinHigh ? HIGH : LOW);
+            uint16_t wait = s_activeBuzzer.pinHigh ? s_activeBuzzer.onMs : s_activeBuzzer.offMs;
+            s_activeBuzzer.nextToggleMs = now + wait;
+        }
+    }
+}
+
+static void buzzerBeepRelayOn() {
+    triggerActiveBuzzerBeeps(1, 65, 0); // 1 crisp 65ms beep
+}
+
+static void buzzerBeepRelayOff() {
+    triggerActiveBuzzerBeeps(2, 45, 45); // 2 quick 45ms beeps
+}
+
+static void buzzerBeepTimerEnd() {
+    triggerActiveBuzzerBeeps(3, 140, 90); // 3 alert beeps
+}
+
+// ── Real-Time Clock & Day Synchronization ───────────────────────────────────
+struct TimeSyncState {
+    bool     synced;
+    uint32_t baseLocalSec;  // seconds in the week: (dayOfWeek * 86400) + (hour * 3600) + (min * 60) + sec
+    uint32_t syncMillis;    // millis() when base was synchronized
+};
+static TimeSyncState s_timeSync = { false, 0, 0 };
+
+static void getLocalTime(uint8_t* outHour, uint8_t* outMin, uint8_t* outSec, uint8_t* outDayOfWeek) {
+    if (!s_timeSync.synced) {
+        if (outHour) *outHour = 0;
+        if (outMin) *outMin = 0;
+        if (outSec) *outSec = 0;
+        if (outDayOfWeek) *outDayOfWeek = 0;
+        return;
+    }
+    uint32_t elapsedSec = (millis() - s_timeSync.syncMillis) / 1000UL;
+    uint32_t totalSec   = (s_timeSync.baseLocalSec + elapsedSec) % (7UL * 86400UL); // 7-day week
+    uint8_t  dow        = (uint8_t)(totalSec / 86400UL);
+    uint32_t secInDay   = totalSec % 86400UL;
+    uint8_t  h          = (uint8_t)(secInDay / 3600UL);
+    uint8_t  m          = (uint8_t)((secInDay % 3600UL) / 60UL);
+    uint8_t  s          = (uint8_t)(secInDay % 60UL);
+    if (outHour) *outHour = h;
+    if (outMin) *outMin = m;
+    if (outSec) *outSec = s;
+    if (outDayOfWeek) *outDayOfWeek = dow;
+}
+
+// ── Day Scheduler Engine (Up to 8 Rules Stored in NVS) ──────────────────────
+#define MAX_SCHEDULES 8
+
+struct ScheduleRule {
+    bool     enabled;
+    uint8_t  daysMask;     // Bit 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+    uint8_t  startHour;    // 0..23
+    uint8_t  startMin;     // 0..59
+    uint8_t  stopType;     // 0=None, 1=DurationMinutes, 2=DirectStopTime
+    uint16_t durationMin;  // for stopType == 1 (1..1440 min)
+    uint8_t  stopHour;     // for stopType == 2 (0..23)
+    uint8_t  stopMin;      // for stopType == 2 (0..59)
+    uint8_t  targetType;   // 0=CH1, 1=CH2, 2=CH3, 3=CH4, 4=All Relays, 5=RGB Strip
+    uint8_t  targetAction; // For Relay: 1=ON, 0=OFF. For RGB: Mode 0..15 (0=Off)
+    uint8_t  rgbR;
+    uint8_t  rgbG;
+    uint8_t  rgbB;
+    uint8_t  rgbBri;
+    // Runtime execution flags:
+    uint16_t lastFiredDayMinute; // (dayOfWeek * 1440) + (hour * 60) + min
+    uint32_t autoStopMs;         // millis() for duration stop (0 = inactive)
+};
+static ScheduleRule s_schedules[MAX_SCHEDULES];
 
 static volatile bool s_flagConnected    = false;
 static volatile bool s_flagDisconnected = false;
@@ -252,8 +461,14 @@ static void applyRelayPin(uint8_t idx, uint8_t load, const char* source) {
                   (pinLevel == HIGH) ? "3.3V" : "0V",
                   source ? source : "UNKNOWN");
 
-    // Check optional RGB feedback on turn ON or OFF
+    // Check buzzer audio feedback on state change
     if (prevLoad != s_relayLoads[idx]) {
+        if (s_relayLoads[idx] != 0 && s_buzzerConfigs[idx].beepOn) {
+            buzzerBeepRelayOn();
+        } else if (s_relayLoads[idx] == 0 && s_buzzerConfigs[idx].beepOff) {
+            buzzerBeepRelayOff();
+        }
+
         if (s_relayLoads[idx] != 0 && s_relayConfigs[idx].onAnimEnabled) {
             triggerRelayAnimation(idx, true, s_relayConfigs[idx].onAnimMode, s_relayConfigs[idx].onAnimDuration);
         } else if (s_relayLoads[idx] == 0 && s_relayConfigs[idx].offAnimEnabled) {
@@ -295,6 +510,32 @@ static void notifyLedState() {
     s_pLedChar->notify();
 }
 
+static void buildEnvPayload(uint8_t* out11) {
+    out11[0] = s_sensorValid ? 1 : 0;
+    int16_t t10 = (int16_t)(s_tempC * 10.0f);
+    out11[1] = (uint8_t)(t10 / 10);
+    out11[2] = (uint8_t)(abs(t10) % 10);
+    int16_t h10 = (int16_t)(s_humidity * 10.0f);
+    out11[3] = (uint8_t)(h10 / 10);
+    out11[4] = (uint8_t)(abs(h10) % 10);
+    out11[5] = s_buzzerMasterEnabled ? 1 : 0;
+    out11[6] = s_timeSync.synced ? 1 : 0;
+    uint8_t curH = 0, curM = 0, curS = 0, curDOW = 0;
+    getLocalTime(&curH, &curM, &curS, &curDOW);
+    out11[7] = curH;
+    out11[8] = curM;
+    out11[9] = curS;
+    out11[10] = curDOW;
+}
+
+static void notifyEnvState() {
+    if (!s_pEnvChar || !s_connected) return;
+    uint8_t payload[11];
+    buildEnvPayload(payload);
+    s_pEnvChar->setValue(payload, 11);
+    s_pEnvChar->notify();
+}
+
 /* ── NVS Configuration Storage ───────────────────────────────────────────── */
 static void loadConfigsFromNVS() {
     s_prefs.begin("desk_cfg", false);
@@ -328,7 +569,16 @@ static void loadConfigsFromNVS() {
         String savedRelayName = s_prefs.getString(kNam, defaultName);
         memset(s_relayConfigs[i].name, 0, sizeof(s_relayConfigs[i].name));
         strncpy(s_relayConfigs[i].name, savedRelayName.c_str(), 16);
+
+        char kOn[16], kOff[16], kEnd[16];
+        snprintf(kOn, sizeof(kOn), "bz_on_%d", i);
+        snprintf(kOff, sizeof(kOff), "bz_of_%d", i);
+        snprintf(kEnd, sizeof(kEnd), "bz_en_%d", i);
+        s_buzzerConfigs[i].beepOn       = s_prefs.getBool(kOn, true);
+        s_buzzerConfigs[i].beepOff      = s_prefs.getBool(kOff, true);
+        s_buzzerConfigs[i].beepTimerEnd = s_prefs.getBool(kEnd, true);
     }
+    s_buzzerMasterEnabled = s_prefs.getBool("buzz_en", true);
     s_prefs.end();
 }
 
@@ -402,6 +652,167 @@ static void allRelaysOff(const char* source) {
         applyRelayPin(i, 0, source);
     }
     notifyRelayState();
+}
+
+/* ── Day Scheduler Persistence & Evaluator ───────────────────────────────── */
+static void loadSchedulesFromNVS() {
+    s_prefs.begin("desk_sched", false);
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+        char kEn[12], kDays[12], kSh[12], kSm[12], kSt[12], kDur[12], kEh[12], kEm[12], kTt[12], kTa[12], kR[12], kG[12], kB[12], kBri[12];
+        snprintf(kEn, sizeof(kEn), "en_%d", i);
+        snprintf(kDays, sizeof(kDays), "dy_%d", i);
+        snprintf(kSh, sizeof(kSh), "sh_%d", i);
+        snprintf(kSm, sizeof(kSm), "sm_%d", i);
+        snprintf(kSt, sizeof(kSt), "st_%d", i);
+        snprintf(kDur, sizeof(kDur), "du_%d", i);
+        snprintf(kEh, sizeof(kEh), "eh_%d", i);
+        snprintf(kEm, sizeof(kEm), "em_%d", i);
+        snprintf(kTt, sizeof(kTt), "tt_%d", i);
+        snprintf(kTa, sizeof(kTa), "ta_%d", i);
+        snprintf(kR, sizeof(kR), "r_%d", i);
+        snprintf(kG, sizeof(kG), "g_%d", i);
+        snprintf(kB, sizeof(kB), "b_%d", i);
+        snprintf(kBri, sizeof(kBri), "br_%d", i);
+
+        s_schedules[i].enabled            = s_prefs.getBool(kEn, false);
+        s_schedules[i].daysMask           = (uint8_t)s_prefs.getUChar(kDays, 0x7F); // default everyday
+        s_schedules[i].startHour          = (uint8_t)s_prefs.getUChar(kSh, 9);
+        s_schedules[i].startMin           = (uint8_t)s_prefs.getUChar(kSm, 0);
+        s_schedules[i].stopType           = (uint8_t)s_prefs.getUChar(kSt, 0);
+        s_schedules[i].durationMin        = (uint16_t)s_prefs.getUShort(kDur, 60);
+        s_schedules[i].stopHour           = (uint8_t)s_prefs.getUChar(kEh, 18);
+        s_schedules[i].stopMin            = (uint8_t)s_prefs.getUChar(kEm, 0);
+        s_schedules[i].targetType         = (uint8_t)s_prefs.getUChar(kTt, 0);
+        s_schedules[i].targetAction       = (uint8_t)s_prefs.getUChar(kTa, 1);
+        s_schedules[i].rgbR               = (uint8_t)s_prefs.getUChar(kR, 0);
+        s_schedules[i].rgbG               = (uint8_t)s_prefs.getUChar(kG, 180);
+        s_schedules[i].rgbB               = (uint8_t)s_prefs.getUChar(kB, 255);
+        s_schedules[i].rgbBri             = (uint8_t)s_prefs.getUChar(kBri, 50);
+        s_schedules[i].lastFiredDayMinute = 0xFFFF;
+        s_schedules[i].autoStopMs         = 0;
+    }
+    s_prefs.end();
+}
+
+static void saveScheduleToNVS(uint8_t i) {
+    if (i >= MAX_SCHEDULES) return;
+    s_prefs.begin("desk_sched", false);
+    char kEn[12], kDays[12], kSh[12], kSm[12], kSt[12], kDur[12], kEh[12], kEm[12], kTt[12], kTa[12], kR[12], kG[12], kB[12], kBri[12];
+    snprintf(kEn, sizeof(kEn), "en_%d", i);
+    snprintf(kDays, sizeof(kDays), "dy_%d", i);
+    snprintf(kSh, sizeof(kSh), "sh_%d", i);
+    snprintf(kSm, sizeof(kSm), "sm_%d", i);
+    snprintf(kSt, sizeof(kSt), "st_%d", i);
+    snprintf(kDur, sizeof(kDur), "du_%d", i);
+    snprintf(kEh, sizeof(kEh), "eh_%d", i);
+    snprintf(kEm, sizeof(kEm), "em_%d", i);
+    snprintf(kTt, sizeof(kTt), "tt_%d", i);
+    snprintf(kTa, sizeof(kTa), "ta_%d", i);
+    snprintf(kR, sizeof(kR), "r_%d", i);
+    snprintf(kG, sizeof(kG), "g_%d", i);
+    snprintf(kB, sizeof(kB), "b_%d", i);
+    snprintf(kBri, sizeof(kBri), "br_%d", i);
+
+    s_prefs.putBool(kEn, s_schedules[i].enabled);
+    s_prefs.putUChar(kDays, s_schedules[i].daysMask);
+    s_prefs.putUChar(kSh, s_schedules[i].startHour);
+    s_prefs.putUChar(kSm, s_schedules[i].startMin);
+    s_prefs.putUChar(kSt, s_schedules[i].stopType);
+    s_prefs.putUShort(kDur, s_schedules[i].durationMin);
+    s_prefs.putUChar(kEh, s_schedules[i].stopHour);
+    s_prefs.putUChar(kEm, s_schedules[i].stopMin);
+    s_prefs.putUChar(kTt, s_schedules[i].targetType);
+    s_prefs.putUChar(kTa, s_schedules[i].targetAction);
+    s_prefs.putUChar(kR, s_schedules[i].rgbR);
+    s_prefs.putUChar(kG, s_schedules[i].rgbG);
+    s_prefs.putUChar(kB, s_schedules[i].rgbB);
+    s_prefs.putUChar(kBri, s_schedules[i].rgbBri);
+    s_prefs.end();
+}
+
+static void evaluateSchedules(uint32_t now) {
+    if (!s_timeSync.synced) return;
+    uint8_t h = 0, m = 0, s = 0, dow = 0;
+    getLocalTime(&h, &m, &s, &dow);
+    uint16_t curDayMin = ((uint16_t)dow * 1440) + ((uint16_t)h * 60) + m;
+
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+        if (!s_schedules[i].enabled) continue;
+
+        // Check if schedule is active for current day of week
+        if ((s_schedules[i].daysMask & (1 << dow)) != 0) {
+            // 1. Check Start Trigger
+            if (h == s_schedules[i].startHour && m == s_schedules[i].startMin) {
+                if (s_schedules[i].lastFiredDayMinute != curDayMin) {
+                    s_schedules[i].lastFiredDayMinute = curDayMin;
+                    Serial.printf(">>> [SCHEDULER] Rule %d FIRED! (Target: %d, Action: %d, DOW: %d, %02d:%02d)\n",
+                                  i + 1, s_schedules[i].targetType, s_schedules[i].targetAction, dow, h, m);
+
+                    // Execute target action
+                    if (s_schedules[i].targetType < RELAY_COUNT) {
+                        setRelayLoad(s_schedules[i].targetType, s_schedules[i].targetAction, "Scheduler Rule");
+                    } else if (s_schedules[i].targetType == 4) { // All Relays
+                        if (s_schedules[i].targetAction == 0) {
+                            allRelaysOff("Scheduler Rule");
+                        } else {
+                            for (int r = 0; r < RELAY_COUNT; r++) {
+                                setRelayLoad(r, 1, "Scheduler Rule");
+                            }
+                        }
+                    } else if (s_schedules[i].targetType == 5) { // RGB Strip
+                        if (s_schedules[i].targetAction == 0) {
+                            s_ledMode = 0;
+                        } else {
+                            s_ledMode = s_schedules[i].targetAction;
+                            s_ledR    = s_schedules[i].rgbR;
+                            s_ledG    = s_schedules[i].rgbG;
+                            s_ledB    = s_schedules[i].rgbB;
+                            s_ledBri  = s_schedules[i].rgbBri;
+                        }
+                        notifyLedState();
+                    }
+
+                    // Setup duration timer if stopType == 1
+                    if (s_schedules[i].stopType == 1 && s_schedules[i].durationMin > 0) {
+                        s_schedules[i].autoStopMs = now + ((uint32_t)s_schedules[i].durationMin * 60000UL);
+                    }
+                }
+            }
+
+            // 2. Check Direct Stop Time Trigger (stopType == 2)
+            if (s_schedules[i].stopType == 2 && h == s_schedules[i].stopHour && m == s_schedules[i].stopMin) {
+                uint16_t stopMarker = curDayMin + 20000;
+                if (s_schedules[i].lastFiredDayMinute != stopMarker) {
+                    s_schedules[i].lastFiredDayMinute = stopMarker;
+                    Serial.printf(">>> [SCHEDULER] Rule %d DIRECT STOP reached! Turning target OFF.\n", i + 1);
+                    if (s_schedules[i].targetType < RELAY_COUNT) {
+                        setRelayLoad(s_schedules[i].targetType, 0, "Scheduler Direct Stop");
+                    } else if (s_schedules[i].targetType == 4) {
+                        allRelaysOff("Scheduler Direct Stop");
+                    } else if (s_schedules[i].targetType == 5) {
+                        s_ledMode = 0;
+                        notifyLedState();
+                    }
+                }
+            }
+        }
+
+        // 3. Check Duration Auto-Stop (stopType == 1)
+        if (s_schedules[i].stopType == 1 && s_schedules[i].autoStopMs > 0) {
+            if ((long)(now - s_schedules[i].autoStopMs) >= 0) {
+                s_schedules[i].autoStopMs = 0;
+                Serial.printf(">>> [SCHEDULER] Rule %d DURATION EXPIRED! Turning target OFF.\n", i + 1);
+                if (s_schedules[i].targetType < RELAY_COUNT) {
+                    setRelayLoad(s_schedules[i].targetType, 0, "Scheduler Duration End");
+                } else if (s_schedules[i].targetType == 4) {
+                    allRelaysOff("Scheduler Duration End");
+                } else if (s_schedules[i].targetType == 5) {
+                    s_ledMode = 0;
+                    notifyLedState();
+                }
+            }
+        }
+    }
 }
 
 /* ── LED Math & Rendering Engine ─────────────────────────────────────────── */
@@ -1073,6 +1484,15 @@ class InfoCallbacks : public NimBLECharacteristicCallbacks {
     }
 };
 
+class EnvCallbacks : public NimBLECharacteristicCallbacks {
+    void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
+        (void)connInfo;
+        uint8_t payload[11];
+        buildEnvPayload(payload);
+        pChr->setValue(payload, 11);
+    }
+};
+
 /* ── Setup ───────────────────────────────────────────────────────────────── */
 void setup() {
     // 1. SAFETY LINE 1: Force all 4 relay pins to initial resting level (HIGH for active-LOW opto-isolated)
@@ -1086,8 +1506,14 @@ void setup() {
     Serial.begin(115200);
     delay(100);
 
-    // 3. Load runtime configuration from NVS (including device name and wiring)
+    // Initialize Buzzer and DHT pins
+    pinMode(BUZZER_PIN, OUTPUT);
+    digitalWrite(BUZZER_PIN, LOW);
+    pinMode(DHT_PIN, INPUT_PULLUP);
+
+    // 3. Load runtime configuration & schedules from NVS
     loadConfigsFromNVS();
+    loadSchedulesFromNVS();
 
     // Print Boot Banner with exact BUILD marker
     Serial.println("\n\n==================================================");
@@ -1096,6 +1522,9 @@ void setup() {
     Serial.println(">>> " BUILD_MARKER);
     Serial.printf("Relays: CH1=GPIO4, CH2=GPIO5, CH3=GPIO6, CH4=GPIO7\n");
     Serial.printf("LEDs  : 8x WS2812B on GPIO8 (16 Modes, Auto-Restore Relay Actions)\n");
+    Serial.printf("DHT11 : Data on GPIO%d (3.3V, GND)\n", DHT_PIN);
+    Serial.printf("Buzzer: Active Buzzer (B27) on GPIO%d (HIGH=Beep, LOW=Silent)\n", BUZZER_PIN);
+    Serial.println("Scheduler: 8 NVS Rules • Synchronized to Browser Real Time");
     Serial.printf("BLE   : Name=\"%s\"\n", s_deviceName);
     Serial.printf("Service UUID: %s\n", SERVICE_UUID);
     Serial.println("Serial Commands: Keys 1..4 = Toggle Relay | 0 = All Off");
@@ -1158,10 +1587,23 @@ void setup() {
     static InfoCallbacks infoCb;
     s_pInfoChar->setCallbacks(&infoCb);
 
+    // ENV: READ, NOTIFY (Temp, Humidity, Buzzer State, Clock Sync)
+    s_pEnvChar = pService->createCharacteristic(
+        CHAR_ENV_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+    );
+    static EnvCallbacks envCb;
+    s_pEnvChar->setCallbacks(&envCb);
+    uint8_t initEnv[11];
+    buildEnvPayload(initEnv);
+    s_pEnvChar->setValue(initEnv, 11);
+
     pService->start();
 
     // 7. Setup Advertising
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
+    pAdv->addServiceUUID(NimBLEUUID(SERVICE_UUID));
+
     NimBLEAdvertisementData advData;
     advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
     advData.setName(s_deviceName);
@@ -1315,12 +1757,92 @@ void loop() {
                     applyRelayPin(idx, s_relayLoads[idx], "Wiring/Config Updated");
                     notifyRelayState();
                 }
+            } else if (cmd.data[0] == 0xFD && cmd.len >= 2) { // 0xFD: Master Buzzer Toggle [0xFD, enabled 0/1]
+                s_buzzerMasterEnabled = (cmd.data[1] == 1);
+                s_prefs.begin("desk_cfg", false);
+                s_prefs.putBool("buzz_en", s_buzzerMasterEnabled);
+                s_prefs.end();
+                Serial.printf(">>> [BLE CMD] Master Buzzer %s\n", s_buzzerMasterEnabled ? "ENABLED" : "MUTED");
+                notifyEnvState();
+            } else if (cmd.data[0] == 0xFC && cmd.len >= 5) { // 0xFC: Relay Buzzer Config [0xFC, idx, beepOn, beepOff, beepEnd]
+                uint8_t idx = cmd.data[1];
+                if (idx < RELAY_COUNT) {
+                    s_buzzerConfigs[idx].beepOn       = (cmd.data[2] == 1);
+                    s_buzzerConfigs[idx].beepOff      = (cmd.data[3] == 1);
+                    s_buzzerConfigs[idx].beepTimerEnd = (cmd.data[4] == 1);
+                    s_prefs.begin("desk_cfg", false);
+                    char kOn[16], kOff[16], kEnd[16];
+                    snprintf(kOn, sizeof(kOn), "bz_on_%d", idx);
+                    snprintf(kOff, sizeof(kOff), "bz_of_%d", idx);
+                    snprintf(kEnd, sizeof(kEnd), "bz_en_%d", idx);
+                    s_prefs.putBool(kOn, s_buzzerConfigs[idx].beepOn);
+                    s_prefs.putBool(kOff, s_buzzerConfigs[idx].beepOff);
+                    s_prefs.putBool(kEnd, s_buzzerConfigs[idx].beepTimerEnd);
+                    s_prefs.end();
+                    Serial.printf(">>> [BLE CMD] Relay %d Buzzer: On=%d Off=%d End=%d\n",
+                                  idx + 1, s_buzzerConfigs[idx].beepOn, s_buzzerConfigs[idx].beepOff, s_buzzerConfigs[idx].beepTimerEnd);
+                }
+            } else if (cmd.data[0] == 0xFB && cmd.len >= 5) { // 0xFB: Time Sync [0xFB, hour, min, sec, dow]
+                uint8_t h   = cmd.data[1];
+                uint8_t m   = cmd.data[2];
+                uint8_t s   = cmd.data[3];
+                uint8_t dow = cmd.data[4];
+                s_timeSync.synced = true;
+                s_timeSync.baseLocalSec = ((uint32_t)dow * 86400UL) + ((uint32_t)h * 3600UL) + ((uint32_t)m * 60UL) + s;
+                s_timeSync.syncMillis = millis();
+                Serial.printf(">>> [TIME-SYNC] Synchronized: %02d:%02d:%02d, DayOfWeek=%d\n", h, m, s, dow);
+                notifyEnvState();
+            } else if (cmd.data[0] == 0xFA && cmd.len >= 15) { // 0xFA: Set Schedule Rule
+                // [0xFA, idx, enabled, daysMask, startH, startM, stopType, durOrStopH_Lo, durOrStopH_Hi, stopMin, targetType, targetAction, r, g, b, bri]
+                uint8_t idx = cmd.data[1];
+                if (idx < MAX_SCHEDULES) {
+                    s_schedules[idx].enabled            = (cmd.data[2] == 1);
+                    s_schedules[idx].daysMask           = cmd.data[3];
+                    s_schedules[idx].startHour          = cmd.data[4];
+                    s_schedules[idx].startMin           = cmd.data[5];
+                    s_schedules[idx].stopType           = cmd.data[6];
+                    uint16_t dur = cmd.data[7] | ((uint16_t)cmd.data[8] << 8);
+                    s_schedules[idx].durationMin        = dur;
+                    s_schedules[idx].stopHour           = cmd.data[7];
+                    s_schedules[idx].stopMin            = cmd.data[9];
+                    s_schedules[idx].targetType         = cmd.data[10];
+                    s_schedules[idx].targetAction       = cmd.data[11];
+                    s_schedules[idx].rgbR               = cmd.data[12];
+                    s_schedules[idx].rgbG               = cmd.data[13];
+                    s_schedules[idx].rgbB               = cmd.data[14];
+                    s_schedules[idx].rgbBri             = (cmd.len >= 16) ? cmd.data[15] : 50;
+                    s_schedules[idx].lastFiredDayMinute = 0xFFFF;
+                    s_schedules[idx].autoStopMs         = 0;
+                    saveScheduleToNVS(idx);
+                    Serial.printf(">>> [SCHEDULER] Updated Rule %d: Target=%d Action=%d Start=%02d:%02d StopType=%d\n",
+                                  idx + 1, s_schedules[idx].targetType, s_schedules[idx].targetAction,
+                                  s_schedules[idx].startHour, s_schedules[idx].startMin, s_schedules[idx].stopType);
+                }
+            } else if (cmd.data[0] == 0xF9 && cmd.len >= 2) { // 0xF9: Disable Schedule Rule [0xF9, idx]
+                uint8_t idx = cmd.data[1];
+                if (idx < MAX_SCHEDULES) {
+                    s_schedules[idx].enabled = false;
+                    s_schedules[idx].autoStopMs = 0;
+                    saveScheduleToNVS(idx);
+                    Serial.printf(">>> [SCHEDULER] Disabled Rule %d\n", idx + 1);
+                }
             }
         }
     }
 
-    // 3. Check Relay Countdown Timers
     uint32_t now = millis();
+
+    // Active Buzzer non-blocking updates (Big Buzzer B27)
+    updateActiveBuzzer(now);
+
+    // Evaluate Day Scheduler Rules every 1 second
+    static uint32_t lastSchedCheckMs = 0;
+    if (now - lastSchedCheckMs >= 1000) {
+        lastSchedCheckMs = now;
+        evaluateSchedules(now);
+    }
+
+    // 3. Check Relay Countdown Timers
     static uint32_t lastTimerTick = 0;
     bool timerExpired = false;
     for (int i = 0; i < RELAY_COUNT; i++) {
@@ -1330,6 +1852,9 @@ void loop() {
                 s_timerEndMs[i] = 0;
                 applyRelayPin(i, 0, "Timer Expiration");
                 timerExpired = true;
+                if (s_buzzerConfigs[i].beepTimerEnd) {
+                    buzzerBeepTimerEnd();
+                }
             }
         }
     }
@@ -1346,10 +1871,26 @@ void loop() {
         }
     }
 
-    // 4. Render LEDs (Modes 0..15 or transient animation)
+    // 4. Periodic DHT11 Sensor Reading (every 2.5s)
+    if (now - s_lastDhtReadMs >= 2500) {
+        s_lastDhtReadMs = now;
+        float t = 0.0f, h = 0.0f;
+        if (readDHT11(&t, &h)) {
+            s_tempC = t;
+            s_humidity = h;
+            s_sensorValid = true;
+            notifyEnvState();
+        } else {
+            if (!s_sensorValid) {
+                notifyEnvState();
+            }
+        }
+    }
+
+    // 5. Render LEDs (Modes 0..15 or transient animation)
     renderLeds();
 
-    // 5. Handle Serial Monitor Key Input (1..4 = toggle, 0 = all off)
+    // 6. Handle Serial Monitor Key Input (1..4 = toggle, 0 = all off)
     while (Serial.available()) {
         char c = (char)Serial.read();
         if (c >= '1' && c <= '4') {
