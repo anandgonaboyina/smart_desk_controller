@@ -8,7 +8,7 @@
  ================================================================================
  SMARTDESK-V2 BLE GATT PROTOCOL SPECIFICATION
  Service UUID: 7f781e04-c0ee-47c9-a1e4-0aafa8ee316b
- Advertised Name: SmartDeskV2
+ Advertised Name: smartDesk Controller (Configurable in NVS)
 
  1. RELAY Characteristic: 385d4ec5-88c3-417e-8aa5-2a70db5d49fa
     Properties: READ, WRITE (with response), NOTIFY
@@ -38,31 +38,40 @@
 
  3. CONFIG Characteristic: 11848579-c357-45cb-bdb2-88f560c11708
     Properties: READ, WRITE (with response)
-    - Write Payload (8 to 24 bytes):
+    - Write Relay Config Payload (9 to 25 bytes):
       * Byte 0: Relay Index (0..3)
-      * Byte 1: ON Anim Enabled (0=Disabled, 1=Enabled)
-      * Byte 2: ON Anim Mode (1..10)
-      * Byte 3: ON Anim Duration (seconds: 1..10)
-      * Byte 4: OFF Anim Enabled (0=Disabled, 1=Enabled)
-      * Byte 5: OFF Anim Mode (1..10)
-      * Byte 6: OFF Anim Duration (seconds: 1..10)
-      * Byte 7: Name Length L (0..16)
-      * Bytes 8..7+L: Name string ASCII (max 16 chars)
-    - Read Payload (96 bytes - 4 fixed 24-byte records for relays 0..3):
-      * Each record i (offset i*24):
+      * Byte 1: Wiring (0=Normally Open [NO], 1=Normally Closed [NC])
+      * Byte 2: ON Anim Enabled (0=Disabled, 1=Enabled)
+      * Byte 3: ON Anim Mode (1..10)
+      * Byte 4: ON Anim Duration (seconds: 1..10)
+      * Byte 5: OFF Anim Enabled (0=Disabled, 1=Enabled)
+      * Byte 6: OFF Anim Mode (1..10)
+      * Byte 7: OFF Anim Duration (seconds: 1..10)
+      * Byte 8: Name Length L (0..16)
+      * Bytes 9..8+L: Name string ASCII (max 16 chars)
+    - Write Rename Device Payload (3 to 22 bytes):
+      * Byte 0: 0xFE (254)
+      * Byte 1: Name Length L (1..20)
+      * Bytes 2..1+L: Device Name string ASCII (max 20 chars)
+    - Read Payload (125 bytes):
+      * 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75):
         - Byte 0: Index i (0..3)
-        - Byte 1: ON Anim Enabled (0 or 1)
-        - Byte 2: ON Anim Mode (1..10)
-        - Byte 3: ON Anim Duration (seconds: 1..10)
-        - Byte 4: OFF Anim Enabled (0 or 1)
-        - Byte 5: OFF Anim Mode (1..10)
-        - Byte 6: OFF Anim Duration (seconds: 1..10)
-        - Byte 7: Name Length L (0..16)
-        - Bytes 8..23: Name string (16 bytes, ASCII null-padded)
+        - Byte 1: Wiring (0=NO, 1=NC)
+        - Byte 2: ON Anim Enabled (0 or 1)
+        - Byte 3: ON Anim Mode (1..10)
+        - Byte 4: ON Anim Duration (seconds: 1..10)
+        - Byte 5: OFF Anim Enabled (0 or 1)
+        - Byte 6: OFF Anim Mode (1..10)
+        - Byte 7: OFF Anim Duration (seconds: 1..10)
+        - Byte 8: Name Length L (0..16)
+        - Bytes 9..24: Name string (16 bytes, ASCII null-padded)
+      * Device Name Record (25 bytes, offset 100):
+        - Byte 100: Device Name Length L (1..20)
+        - Bytes 101..124: Device Name string (24 bytes, ASCII null-padded)
 
  4. INFO Characteristic: f1f28a13-9725-4636-a073-0666057bd91b
     Properties: READ
-    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-PROD | Uptime: <seconds>s"
+    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-PROD | Name: <devName> | Uptime: <seconds>s"
  ================================================================================
  */
 
@@ -80,7 +89,7 @@ static const uint8_t RELAY_PINS[RELAY_COUNT] = {4, 5, 6, 7};
 #define LED_COUNT           8
 #define LED_MAX_BRIGHT      80    // Hard ceiling for NeoPixel brightness (0-255 scale)
 
-#define DEVICE_NAME         "SmartDeskV2"
+#define DEFAULT_DEVICE_NAME "smartDesk Controller"
 #define SERVICE_UUID        "7f781e04-c0ee-47c9-a1e4-0aafa8ee316b"
 #define CHAR_RELAY_UUID     "385d4ec5-88c3-417e-8aa5-2a70db5d49fa"
 #define CHAR_LED_UUID       "1814a0cb-9d1f-4212-946a-72e78b64042e"
@@ -91,6 +100,7 @@ static const uint8_t RELAY_PINS[RELAY_COUNT] = {4, 5, 6, 7};
 
 /* ── Relay Configuration Structure ───────────────────────────────────────── */
 struct RelayConfig {
+    uint8_t wiring;          // 0 = Normally Open (NO), 1 = Normally Closed (NC) (default: 0)
     uint8_t onAnimEnabled;   // 0 = Disabled, 1 = Enabled (default: 1)
     uint8_t onAnimMode;      // 1..10 (default: 1: Fade/Pulse)
     uint8_t onAnimDuration;  // 1..10 seconds (default: 2)
@@ -101,6 +111,7 @@ struct RelayConfig {
 };
 
 /* ── Global State ────────────────────────────────────────────────────────── */
+static char        s_deviceName[25]             = DEFAULT_DEVICE_NAME;
 static RelayConfig s_relayConfigs[RELAY_COUNT];
 static uint8_t     s_relayLoads[RELAY_COUNT]    = {0, 0, 0, 0}; // 0 = OFF, 1 = ON
 static uint32_t    s_lastSwitchMs[RELAY_COUNT]  = {0, 0, 0, 0};
@@ -144,7 +155,7 @@ enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
 struct WriteCmd {
     WriteType type;
     uint8_t   len;
-    uint8_t   data[28];
+    uint8_t   data[32];
 };
 
 #define CMD_QUEUE_SIZE 8
@@ -156,7 +167,7 @@ static inline bool enqueueCmd(WriteType type, const uint8_t* data, size_t len) {
     uint8_t next = (s_cmdHead + 1) % CMD_QUEUE_SIZE;
     if (next == s_cmdTail) return false; // Queue full
     s_cmdQueue[s_cmdHead].type = type;
-    s_cmdQueue[s_cmdHead].len  = (len > 28) ? 28 : (uint8_t)len;
+    s_cmdQueue[s_cmdHead].len  = (len > 32) ? 32 : (uint8_t)len;
     if (data && s_cmdQueue[s_cmdHead].len > 0) {
         memcpy(s_cmdQueue[s_cmdHead].data, data, s_cmdQueue[s_cmdHead].len);
     }
@@ -200,13 +211,18 @@ static void applyRelayPin(uint8_t idx, uint8_t load, const char* source) {
     s_relayLoads[idx]   = load ? 1 : 0;
     s_lastSwitchMs[idx] = millis();
 
-    // Opto-isolated relay modules: Active-LOW (0V=ON, 3.3V=OFF)
-    uint8_t pinLevel = s_relayLoads[idx] ? LOW : HIGH;
+    // Opto-isolated active-LOW relay driver with NO / NC contact mapping:
+    // NO (wiring=0): load ON requires coil energized (pin LOW); load OFF requires coil resting (pin HIGH).
+    // NC (wiring=1): load ON requires coil resting (pin HIGH); load OFF requires coil energized (pin LOW).
+    uint8_t coil = (s_relayConfigs[idx].wiring == 1) ? (!s_relayLoads[idx]) : s_relayLoads[idx];
+    uint8_t pinLevel = coil ? LOW : HIGH;
     digitalWrite(RELAY_PINS[idx], pinLevel);
 
-    Serial.printf("[RELAY %d] LOAD=%s | GPIO%d Level=%s (%s) | Trigger: %s\n",
+    Serial.printf("[RELAY %d] LOAD=%s | Contact=%s | Coil=%s | GPIO%d Level=%s (%s) | Trigger: %s\n",
                   idx + 1,
                   s_relayLoads[idx] ? "ON " : "OFF",
+                  (s_relayConfigs[idx].wiring == 1) ? "NC" : "NO",
+                  coil ? "ENERGIZED" : "RESTING  ",
                   RELAY_PINS[idx],
                   (pinLevel == HIGH) ? "HIGH" : "LOW",
                   (pinLevel == HIGH) ? "3.3V" : "0V",
@@ -258,8 +274,15 @@ static void notifyLedState() {
 /* ── NVS Configuration Storage ───────────────────────────────────────────── */
 static void loadConfigsFromNVS() {
     s_prefs.begin("desk_cfg", false);
+
+    // Device Name
+    String savedName = s_prefs.getString("dev_name", DEFAULT_DEVICE_NAME);
+    memset(s_deviceName, 0, sizeof(s_deviceName));
+    strncpy(s_deviceName, savedName.c_str(), sizeof(s_deviceName) - 1);
+
     for (int i = 0; i < RELAY_COUNT; i++) {
-        char kOnEn[12], kOnMd[12], kOnDu[12], kOffEn[12], kOffMd[12], kOffDu[12], kNam[12];
+        char kWir[12], kOnEn[12], kOnMd[12], kOnDu[12], kOffEn[12], kOffMd[12], kOffDu[12], kNam[12];
+        snprintf(kWir, sizeof(kWir), "wir_%d", i);
         snprintf(kOnEn, sizeof(kOnEn), "on_en_%d", i);
         snprintf(kOnMd, sizeof(kOnMd), "on_md_%d", i);
         snprintf(kOnDu, sizeof(kOnDu), "on_du_%d", i);
@@ -268,6 +291,7 @@ static void loadConfigsFromNVS() {
         snprintf(kOffDu, sizeof(kOffDu), "of_du_%d", i);
         snprintf(kNam, sizeof(kNam), "nam_%d", i);
 
+        s_relayConfigs[i].wiring          = (uint8_t)s_prefs.getUChar(kWir, 0);   // 0 = NO by default
         s_relayConfigs[i].onAnimEnabled   = (uint8_t)s_prefs.getUChar(kOnEn, 1);  // ON feedback enabled by default
         s_relayConfigs[i].onAnimMode      = (uint8_t)s_prefs.getUChar(kOnMd, 1);  // Mode 1: Breathe/Fade
         s_relayConfigs[i].onAnimDuration  = (uint8_t)s_prefs.getUChar(kOnDu, 2);  // 2s duration
@@ -277,9 +301,9 @@ static void loadConfigsFromNVS() {
 
         char defaultName[16];
         snprintf(defaultName, sizeof(defaultName), "Relay %d", i + 1);
-        String savedName = s_prefs.getString(kNam, defaultName);
+        String savedRelayName = s_prefs.getString(kNam, defaultName);
         memset(s_relayConfigs[i].name, 0, sizeof(s_relayConfigs[i].name));
-        strncpy(s_relayConfigs[i].name, savedName.c_str(), 16);
+        strncpy(s_relayConfigs[i].name, savedRelayName.c_str(), 16);
     }
     s_prefs.end();
 }
@@ -287,7 +311,8 @@ static void loadConfigsFromNVS() {
 static void saveConfigToNVS(uint8_t idx) {
     if (idx >= RELAY_COUNT) return;
     s_prefs.begin("desk_cfg", false);
-    char kOnEn[12], kOnMd[12], kOnDu[12], kOffEn[12], kOffMd[12], kOffDu[12], kNam[12];
+    char kWir[12], kOnEn[12], kOnMd[12], kOnDu[12], kOffEn[12], kOffMd[12], kOffDu[12], kNam[12];
+    snprintf(kWir, sizeof(kWir), "wir_%d", idx);
     snprintf(kOnEn, sizeof(kOnEn), "on_en_%d", idx);
     snprintf(kOnMd, sizeof(kOnMd), "on_md_%d", idx);
     snprintf(kOnDu, sizeof(kOnDu), "on_du_%d", idx);
@@ -296,6 +321,7 @@ static void saveConfigToNVS(uint8_t idx) {
     snprintf(kOffDu, sizeof(kOffDu), "of_du_%d", idx);
     snprintf(kNam, sizeof(kNam), "nam_%d", idx);
 
+    s_prefs.putUChar(kWir, s_relayConfigs[idx].wiring);
     s_prefs.putUChar(kOnEn, s_relayConfigs[idx].onAnimEnabled);
     s_prefs.putUChar(kOnMd, s_relayConfigs[idx].onAnimMode);
     s_prefs.putUChar(kOnDu, s_relayConfigs[idx].onAnimDuration);
@@ -304,8 +330,9 @@ static void saveConfigToNVS(uint8_t idx) {
     s_prefs.putUChar(kOffDu, s_relayConfigs[idx].offAnimDuration);
     s_prefs.putString(kNam, s_relayConfigs[idx].name);
     s_prefs.end();
-    Serial.printf("[NVS] Saved Relay %d: OnEn=%d OnMd=%d OnDu=%d OffEn=%d OffMd=%d OffDu=%d Name='%s'\n",
-                  idx + 1, s_relayConfigs[idx].onAnimEnabled, s_relayConfigs[idx].onAnimMode, s_relayConfigs[idx].onAnimDuration,
+    Serial.printf("[NVS] Saved Relay %d: Wiring=%s OnEn=%d OnMd=%d OnDu=%d OffEn=%d OffMd=%d OffDu=%d Name='%s'\n",
+                  idx + 1, (s_relayConfigs[idx].wiring == 1) ? "NC" : "NO",
+                  s_relayConfigs[idx].onAnimEnabled, s_relayConfigs[idx].onAnimMode, s_relayConfigs[idx].onAnimDuration,
                   s_relayConfigs[idx].offAnimEnabled, s_relayConfigs[idx].offAnimMode, s_relayConfigs[idx].offAnimDuration,
                   s_relayConfigs[idx].name);
 }
@@ -808,22 +835,33 @@ class LedCallbacks : public NimBLECharacteristicCallbacks {
 class ConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[96];
-        memset(payload, 0, 96);
+        uint8_t payload[125];
+        memset(payload, 0, sizeof(payload));
+
+        // 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75)
         for (int i = 0; i < RELAY_COUNT; i++) {
-            payload[i * 24 + 0] = (uint8_t)i;
-            payload[i * 24 + 1] = s_relayConfigs[i].onAnimEnabled;
-            payload[i * 24 + 2] = s_relayConfigs[i].onAnimMode;
-            payload[i * 24 + 3] = s_relayConfigs[i].onAnimDuration;
-            payload[i * 24 + 4] = s_relayConfigs[i].offAnimEnabled;
-            payload[i * 24 + 5] = s_relayConfigs[i].offAnimMode;
-            payload[i * 24 + 6] = s_relayConfigs[i].offAnimDuration;
+            int off = i * 25;
+            payload[off + 0] = (uint8_t)i;
+            payload[off + 1] = s_relayConfigs[i].wiring;
+            payload[off + 2] = s_relayConfigs[i].onAnimEnabled;
+            payload[off + 3] = s_relayConfigs[i].onAnimMode;
+            payload[off + 4] = s_relayConfigs[i].onAnimDuration;
+            payload[off + 5] = s_relayConfigs[i].offAnimEnabled;
+            payload[off + 6] = s_relayConfigs[i].offAnimMode;
+            payload[off + 7] = s_relayConfigs[i].offAnimDuration;
             size_t nlen = strlen(s_relayConfigs[i].name);
             if (nlen > 16) nlen = 16;
-            payload[i * 24 + 7] = (uint8_t)nlen;
-            memcpy(&payload[i * 24 + 8], s_relayConfigs[i].name, nlen);
+            payload[off + 8] = (uint8_t)nlen;
+            memcpy(&payload[off + 9], s_relayConfigs[i].name, nlen);
         }
-        pChr->setValue(payload, 96);
+
+        // Device Name Record (Offset 100)
+        size_t dlen = strlen(s_deviceName);
+        if (dlen > 20) dlen = 20;
+        payload[100] = (uint8_t)dlen;
+        memcpy(&payload[101], s_deviceName, dlen);
+
+        pChr->setValue(payload, sizeof(payload));
     }
 
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
@@ -836,15 +874,15 @@ class ConfigCallbacks : public NimBLECharacteristicCallbacks {
 class InfoCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        char buf[96];
-        snprintf(buf, sizeof(buf), "%s | Uptime: %lus", BUILD_MARKER, (unsigned long)(millis() / 1000UL));
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%s | Name: %s | Uptime: %lus", BUILD_MARKER, s_deviceName, (unsigned long)(millis() / 1000UL));
         pChr->setValue((uint8_t*)buf, strlen(buf));
     }
 };
 
 /* ── Setup ───────────────────────────────────────────────────────────────── */
 void setup() {
-    // 1. SAFETY LINE 1: Force all 4 relay pins to OFF level (HIGH for active-LOW opto-isolated)
+    // 1. SAFETY LINE 1: Force all 4 relay pins to initial resting level (HIGH for active-LOW opto-isolated)
     for (int i = 0; i < RELAY_COUNT; i++) {
         digitalWrite(RELAY_PINS[i], HIGH);
         pinMode(RELAY_PINS[i], OUTPUT);
@@ -855,22 +893,22 @@ void setup() {
     Serial.begin(115200);
     delay(100);
 
-    // 3. Print Boot Banner with exact BUILD marker
+    // 3. Load runtime configuration from NVS (including device name and wiring)
+    loadConfigsFromNVS();
+
+    // Print Boot Banner with exact BUILD marker
     Serial.println("\n\n==================================================");
     Serial.println("         SMARTDESK V2 CONTROLLER (ESP32-S3)       ");
     Serial.println("==================================================");
     Serial.println(">>> " BUILD_MARKER);
     Serial.printf("Relays: CH1=GPIO4, CH2=GPIO5, CH3=GPIO6, CH4=GPIO7\n");
     Serial.printf("LEDs  : 8x WS2812B on GPIO8 (16 Modes, Auto-Restore Relay Actions)\n");
-    Serial.printf("BLE   : Name=\"%s\"\n", DEVICE_NAME);
+    Serial.printf("BLE   : Name=\"%s\"\n", s_deviceName);
     Serial.printf("Service UUID: %s\n", SERVICE_UUID);
     Serial.println("Serial Commands: Keys 1..4 = Toggle Relay | 0 = All Off");
     Serial.println("==================================================\n");
 
-    // 4. Load runtime configuration from NVS
-    loadConfigsFromNVS();
-
-    // Re-apply physical pin level based on load=0
+    // 4. Re-apply physical pin level based on load=0 and loaded wiring contact
     for (int i = 0; i < RELAY_COUNT; i++) {
         applyRelayPin(i, 0, "Boot Init");
     }
@@ -881,7 +919,7 @@ void setup() {
     s_strip.show();
 
     // 6. Initialize NimBLE
-    NimBLEDevice::init(DEVICE_NAME);
+    NimBLEDevice::init(s_deviceName);
     NimBLEDevice::deleteAllBonds();
 
     s_pServer = NimBLEDevice::createServer();
@@ -933,7 +971,7 @@ void setup() {
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
     NimBLEAdvertisementData advData;
     advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
-    advData.setName(DEVICE_NAME);
+    advData.setName(s_deviceName);
     pAdv->setAdvertisementData(advData);
 
     NimBLEAdvertisementData scanData;
@@ -941,7 +979,7 @@ void setup() {
     pAdv->setScanResponseData(scanData);
 
     pAdv->start();
-    Serial.println(">>> [BLE] Advertising started. Ready for connections.");
+    Serial.printf(">>> [BLE] Advertising started as \"%s\". Ready for connections.\n", s_deviceName);
 }
 
 /* ── Main Loop ───────────────────────────────────────────────────────────── */
@@ -949,7 +987,7 @@ void loop() {
     // 1. Process deferred Connect/Disconnect events
     if (s_flagConnected) {
         s_flagConnected = false;
-        Serial.println(">>> [BLE CONNECT] Client connected to SmartDeskV2.");
+        Serial.printf(">>> [BLE CONNECT] Client connected to \"%s\".\n", s_deviceName);
     }
 
     if (s_flagDisconnected) {
@@ -1000,29 +1038,61 @@ void loop() {
             Serial.printf(">>> [BLE CMD] LED Update: Mode=%u RGB=(%u,%u,%u) Bri=%u%% Spd=%u\n",
                           s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd);
             notifyLedState();
-        } else if (cmd.type == WT_CONFIG && cmd.len >= 8) {
-            uint8_t idx         = cmd.data[0];
-            uint8_t onEn        = cmd.data[1];
-            uint8_t onMd        = cmd.data[2];
-            uint8_t onDu        = cmd.data[3];
-            uint8_t offEn       = cmd.data[4];
-            uint8_t offMd       = cmd.data[5];
-            uint8_t offDu       = cmd.data[6];
-            uint8_t nameLen     = cmd.data[7];
-            if (idx < RELAY_COUNT) {
-                s_relayConfigs[idx].onAnimEnabled   = onEn ? 1 : 0;
-                s_relayConfigs[idx].onAnimMode      = onMd;
-                s_relayConfigs[idx].onAnimDuration  = onDu ? onDu : 2;
-                s_relayConfigs[idx].offAnimEnabled  = offEn ? 1 : 0;
-                s_relayConfigs[idx].offAnimMode     = offMd;
-                s_relayConfigs[idx].offAnimDuration = offDu ? offDu : 2;
-                memset(s_relayConfigs[idx].name, 0, sizeof(s_relayConfigs[idx].name));
-                if (nameLen > 16) nameLen = 16;
-                if (cmd.len >= 8 + nameLen) {
-                    memcpy(s_relayConfigs[idx].name, &cmd.data[8], nameLen);
+        } else if (cmd.type == WT_CONFIG && cmd.len >= 2) {
+            if (cmd.data[0] == 0xFE) { // 0xFE = Device Rename [0xFE, len, ...nameBytes]
+                uint8_t nameLen = cmd.data[1];
+                if (nameLen > 20) nameLen = 20;
+                if (nameLen > 0 && cmd.len >= 2 + nameLen) {
+                    memset(s_deviceName, 0, sizeof(s_deviceName));
+                    memcpy(s_deviceName, &cmd.data[2], nameLen);
+
+                    s_prefs.begin("desk_cfg", false);
+                    s_prefs.putString("dev_name", s_deviceName);
+                    s_prefs.end();
+
+                    Serial.printf(">>> [BLE CMD] Device Renamed to: '%s'\n", s_deviceName);
+
+                    // Update live BLE advertising
+                    NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
+                    pAdv->stop();
+                    NimBLEAdvertisementData advData;
+                    advData.setFlags(0x06);
+                    advData.setName(s_deviceName);
+                    pAdv->setAdvertisementData(advData);
+                    NimBLEAdvertisementData scanData;
+                    scanData.setCompleteServices(NimBLEUUID(SERVICE_UUID));
+                    pAdv->setScanResponseData(scanData);
+                    pAdv->start();
+                    Serial.printf(">>> [BLE] Advertising updated with new name: \"%s\"\n", s_deviceName);
                 }
-                saveConfigToNVS(idx);
-                notifyRelayState();
+            } else if (cmd.len >= 9) { // Relay Config [idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, nameLen, ...name]
+                uint8_t idx         = cmd.data[0];
+                uint8_t wiring      = cmd.data[1];
+                uint8_t onEn        = cmd.data[2];
+                uint8_t onMd        = cmd.data[3];
+                uint8_t onDu        = cmd.data[4];
+                uint8_t offEn       = cmd.data[5];
+                uint8_t offMd       = cmd.data[6];
+                uint8_t offDu       = cmd.data[7];
+                uint8_t nameLen     = cmd.data[8];
+                if (idx < RELAY_COUNT) {
+                    s_relayConfigs[idx].wiring          = wiring ? 1 : 0;
+                    s_relayConfigs[idx].onAnimEnabled   = onEn ? 1 : 0;
+                    s_relayConfigs[idx].onAnimMode      = onMd;
+                    s_relayConfigs[idx].onAnimDuration  = onDu ? onDu : 2;
+                    s_relayConfigs[idx].offAnimEnabled  = offEn ? 1 : 0;
+                    s_relayConfigs[idx].offAnimMode     = offMd;
+                    s_relayConfigs[idx].offAnimDuration = offDu ? offDu : 2;
+                    memset(s_relayConfigs[idx].name, 0, sizeof(s_relayConfigs[idx].name));
+                    if (nameLen > 16) nameLen = 16;
+                    if (cmd.len >= 9 + nameLen) {
+                        memcpy(s_relayConfigs[idx].name, &cmd.data[9], nameLen);
+                    }
+                    saveConfigToNVS(idx);
+                    // Re-apply physical pin level based on updated wiring contact
+                    applyRelayPin(idx, s_relayLoads[idx], "Wiring/Config Updated");
+                    notifyRelayState();
+                }
             }
         }
     }

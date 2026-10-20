@@ -4,7 +4,7 @@
  ================================================================================
  SMARTDESK-V2 BLE GATT PROTOCOL SPECIFICATION
  Service UUID: 7f781e04-c0ee-47c9-a1e4-0aafa8ee316b
- Advertised Name: SmartDeskV2
+ Advertised Name: smartDesk Controller (Configurable in NVS)
 
  1. RELAY Characteristic: 385d4ec5-88c3-417e-8aa5-2a70db5d49fa
     Properties: READ, WRITE (with response), NOTIFY
@@ -34,31 +34,40 @@
 
  3. CONFIG Characteristic: 11848579-c357-45cb-bdb2-88f560c11708
     Properties: READ, WRITE (with response)
-    - Write Payload (8 to 24 bytes):
+    - Write Relay Config Payload (9 to 25 bytes):
       * Byte 0: Relay Index (0..3)
-      * Byte 1: ON Anim Enabled (0=Disabled, 1=Enabled)
-      * Byte 2: ON Anim Mode (1..10)
-      * Byte 3: ON Anim Duration (seconds: 1..10)
-      * Byte 4: OFF Anim Enabled (0=Disabled, 1=Enabled)
-      * Byte 5: OFF Anim Mode (1..10)
-      * Byte 6: OFF Anim Duration (seconds: 1..10)
-      * Byte 7: Name Length L (0..16)
-      * Bytes 8..7+L: Name string ASCII (max 16 chars)
-    - Read Payload (96 bytes - 4 fixed 24-byte records for relays 0..3):
-      * Each record i (offset i*24):
+      * Byte 1: Wiring (0=Normally Open [NO], 1=Normally Closed [NC])
+      * Byte 2: ON Anim Enabled (0=Disabled, 1=Enabled)
+      * Byte 3: ON Anim Mode (1..10)
+      * Byte 4: ON Anim Duration (seconds: 1..10)
+      * Byte 5: OFF Anim Enabled (0=Disabled, 1=Enabled)
+      * Byte 6: OFF Anim Mode (1..10)
+      * Byte 7: OFF Anim Duration (seconds: 1..10)
+      * Byte 8: Name Length L (0..16)
+      * Bytes 9..8+L: Name string ASCII (max 16 chars)
+    - Write Rename Device Payload (3 to 22 bytes):
+      * Byte 0: 0xFE (254)
+      * Byte 1: Name Length L (1..20)
+      * Bytes 2..1+L: Device Name string ASCII (max 20 chars)
+    - Read Payload (125 bytes):
+      * 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75):
         - Byte 0: Index i (0..3)
-        - Byte 1: ON Anim Enabled (0 or 1)
-        - Byte 2: ON Anim Mode (1..10)
-        - Byte 3: ON Anim Duration (seconds: 1..10)
-        - Byte 4: OFF Anim Enabled (0 or 1)
-        - Byte 5: OFF Anim Mode (1..10)
-        - Byte 6: OFF Anim Duration (seconds: 1..10)
-        - Byte 7: Name Length L (0..16)
-        - Bytes 8..23: Name string (16 bytes, ASCII null-padded)
+        - Byte 1: Wiring (0=NO, 1=NC)
+        - Byte 2: ON Anim Enabled (0 or 1)
+        - Byte 3: ON Anim Mode (1..10)
+        - Byte 4: ON Anim Duration (seconds: 1..10)
+        - Byte 5: OFF Anim Enabled (0 or 1)
+        - Byte 6: OFF Anim Mode (1..10)
+        - Byte 7: OFF Anim Duration (seconds: 1..10)
+        - Byte 8: Name Length L (0..16)
+        - Bytes 9..24: Name string (16 bytes, ASCII null-padded)
+      * Device Name Record (25 bytes, offset 100):
+        - Byte 100: Device Name Length L (1..20)
+        - Bytes 101..124: Device Name string (24 bytes, ASCII null-padded)
 
  4. INFO Characteristic: f1f28a13-9725-4636-a073-0666057bd91b
     Properties: READ
-    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-PROD | Uptime: <seconds>s"
+    - Read Payload: UTF-8 string: "BUILD <__DATE__> <__TIME__> TAG=V2-PROD | Name: <devName> | Uptime: <seconds>s"
  ================================================================================
  */
 
@@ -128,6 +137,7 @@ interface RelayState {
 
 interface RelayConfigItem {
   name: string;
+  wiring: number; // 0 = Normally Open (NO), 1 = Normally Closed (NC)
   onAnimEnabled: boolean;
   onAnimMode: number;
   onAnimDuration: number;
@@ -200,7 +210,10 @@ export default function SmartDeskPage() {
   const [bluetoothSupported, setBluetoothSupported] = useState<boolean>(true);
   const [connected, setConnected] = useState<boolean>(false);
   const [connecting, setConnecting] = useState<boolean>(false);
-  const [deviceName, setDeviceName] = useState<string>("");
+  const [deviceName, setDeviceName] = useState<string>("smartDesk Controller");
+  const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
+  const [renameInput, setRenameInput] = useState<string>("smartDesk Controller");
+  const [showAllDevices, setShowAllDevices] = useState<boolean>(false);
 
   const [relays, setRelays] = useState<RelayState[]>([
     { load: false, remainingMin: 0 },
@@ -210,10 +223,10 @@ export default function SmartDeskPage() {
   ]);
 
   const [configs, setConfigs] = useState<RelayConfigItem[]>([
-    { name: "Relay 1", onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
-    { name: "Relay 2", onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
-    { name: "Relay 3", onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
-    { name: "Relay 4", onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
+    { name: "Relay 1", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
+    { name: "Relay 2", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
+    { name: "Relay 3", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
+    { name: "Relay 4", wiring: 0, onAnimEnabled: true, onAnimMode: 1, onAnimDuration: 2, offAnimEnabled: true, offAnimMode: 3, offAnimDuration: 2 },
   ]);
 
   const [led, setLed] = useState<LedState>({
@@ -388,25 +401,27 @@ export default function SmartDeskPage() {
     [addLog]
   );
 
-  /* ── Parse Config Characteristic Payload (96 Bytes) ────────────────────── */
+  /* ── Parse Config Characteristic Payload (125 Bytes) ───────────────────── */
   const parseConfigData = useCallback(
     (dataView: DataView) => {
-      if (dataView.byteLength < 96) return;
+      if (dataView.byteLength < 100) return;
       const decoder = new TextDecoder();
       const newConfigs: RelayConfigItem[] = [];
       for (let i = 0; i < 4; i++) {
-        const offset = i * 24;
-        const onEn = dataView.getUint8(offset + 1) === 1;
-        const onMd = dataView.getUint8(offset + 2) || 1;
-        const onDu = dataView.getUint8(offset + 3) || 2;
-        const offEn = dataView.getUint8(offset + 4) === 1;
-        const offMd = dataView.getUint8(offset + 5) || 3;
-        const offDu = dataView.getUint8(offset + 6) || 2;
-        const nameLen = Math.min(16, dataView.getUint8(offset + 7));
-        const nameBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + offset + 8, nameLen);
+        const offset = i * 25;
+        const wiring = dataView.getUint8(offset + 1) || 0;
+        const onEn = dataView.getUint8(offset + 2) === 1;
+        const onMd = dataView.getUint8(offset + 3) || 1;
+        const onDu = dataView.getUint8(offset + 4) || 2;
+        const offEn = dataView.getUint8(offset + 5) === 1;
+        const offMd = dataView.getUint8(offset + 6) || 3;
+        const offDu = dataView.getUint8(offset + 7) || 2;
+        const nameLen = Math.min(16, dataView.getUint8(offset + 8));
+        const nameBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + offset + 9, nameLen);
         const name = decoder.decode(nameBytes).replace(/\0/g, "").trim() || `Relay ${i + 1}`;
         newConfigs.push({
           name,
+          wiring,
           onAnimEnabled: onEn,
           onAnimMode: onMd,
           onAnimDuration: onDu,
@@ -416,7 +431,21 @@ export default function SmartDeskPage() {
         });
       }
       setConfigs(newConfigs);
-      addLog(`[RX CONFIG] Loaded configurations & RGB actions for all 4 relays.`, "rx");
+
+      // Parse Device Name from offset 100 if present
+      if (dataView.byteLength >= 102) {
+        const devNameLen = Math.min(20, dataView.getUint8(100));
+        if (devNameLen > 0) {
+          const devNameBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + 101, devNameLen);
+          const devName = decoder.decode(devNameBytes).replace(/\0/g, "").trim();
+          if (devName) {
+            setDeviceName(devName);
+            setRenameInput(devName);
+          }
+        }
+      }
+
+      addLog(`[RX CONFIG] Loaded configurations & NO/NC settings for all 4 relays.`, "rx");
     },
     [addLog]
   );
@@ -426,7 +455,6 @@ export default function SmartDeskPage() {
     addLog("Device disconnected from host.", "warn");
     setConnected(false);
     setConnecting(false);
-    setDeviceName("");
     relayCharRef.current = null;
     ledCharRef.current = null;
     configCharRef.current = null;
@@ -445,15 +473,29 @@ export default function SmartDeskPage() {
 
     try {
       setConnecting(true);
-      addLog("Step 1: Requesting Bluetooth device with filter [{namePrefix: 'SmartDesk'}]...", "info");
+      addLog("Step 1: Requesting Bluetooth device...", "info");
 
-      const dev = await nav.bluetooth.requestDevice({
-        filters: [{ namePrefix: "SmartDesk" }],
-        optionalServices: [SERVICE_UUID],
-      });
+      const reqOptions: RequestDeviceOptions = showAllDevices
+        ? {
+            acceptAllDevices: true,
+            optionalServices: [SERVICE_UUID],
+          }
+        : {
+            filters: [
+              { namePrefix: "smartDesk" },
+              { namePrefix: "SmartDesk" },
+              { namePrefix: "smart" },
+              { namePrefix: "Smart" },
+              ...(deviceName ? [{ name: deviceName }] : []),
+            ],
+            optionalServices: [SERVICE_UUID],
+          };
+
+      const dev = await nav.bluetooth.requestDevice(reqOptions);
 
       deviceRef.current = dev;
-      setDeviceName(dev.name || "SmartDeskV2");
+      setDeviceName(dev.name || "smartDesk Controller");
+      setRenameInput(dev.name || "smartDesk Controller");
       dev.addEventListener("gattserverdisconnected", handleDisconnected);
       addLog(`Step 2: Selected device '${dev.name}' (${dev.id}). Connecting to GATT server...`, "info");
 
@@ -598,6 +640,7 @@ export default function SmartDeskPage() {
   /* ── Config Commands ───────────────────────────────────────────────────── */
   const saveRelayConfig = (
     idx: number,
+    wiring: number,
     onEn: boolean,
     onMd: number,
     onDu: number,
@@ -609,24 +652,26 @@ export default function SmartDeskPage() {
     if (!configCharRef.current) return;
     const enc = new TextEncoder();
     const nameBytes = enc.encode(newName.slice(0, 16));
-    const payload = new Uint8Array(8 + nameBytes.length);
+    const payload = new Uint8Array(9 + nameBytes.length);
     payload[0] = idx;
-    payload[1] = onEn ? 1 : 0;
-    payload[2] = onMd;
-    payload[3] = onDu;
-    payload[4] = offEn ? 1 : 0;
-    payload[5] = offMd;
-    payload[6] = offDu;
-    payload[7] = nameBytes.length;
-    payload.set(nameBytes, 8);
+    payload[1] = wiring ? 1 : 0;
+    payload[2] = onEn ? 1 : 0;
+    payload[3] = onMd;
+    payload[4] = onDu;
+    payload[5] = offEn ? 1 : 0;
+    payload[6] = offMd;
+    payload[7] = offDu;
+    payload[8] = nameBytes.length;
+    payload.set(nameBytes, 9);
 
     enqueueWrite(`Save Config Relay ${idx + 1}`, async () => {
-      addLog(`[TX CONFIG] ${bytesToHex(payload)} (Save Relay ${idx + 1} Settings)`, "tx");
+      addLog(`[TX CONFIG] ${bytesToHex(payload)} (Save Relay ${idx + 1}: Contact=${wiring ? "NC" : "NO"})`, "tx");
       await configCharRef.current?.writeValueWithResponse(payload);
       setConfigs((prev) => {
         const copy = [...prev];
         copy[idx] = {
           name: newName,
+          wiring,
           onAnimEnabled: onEn,
           onAnimMode: onMd,
           onAnimDuration: onDu,
@@ -636,7 +681,30 @@ export default function SmartDeskPage() {
         };
         return copy;
       });
-      alert(`Settings saved for ${newName}!\n- ON RGB Action: ${onEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === onMd)?.label}, ${onDu}s)` : "Disabled"}\n- OFF RGB Action: ${offEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === offMd)?.label}, ${offDu}s)` : "Disabled"}`);
+      alert(`Settings saved for ${newName}!\n\n- Contact Wiring: ${wiring ? "NC (Normally Closed)" : "NO (Normally Open)"}\n- ON RGB Action: ${onEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === onMd)?.label}, ${onDu}s)` : "Disabled"}\n- OFF RGB Action: ${offEn ? `Enabled (${RELAY_ANIM_OPTIONS.find((a) => a.id === offMd)?.label}, ${offDu}s)` : "Disabled"}`);
+    });
+  };
+
+  const renameDevice = (newName: string) => {
+    if (!configCharRef.current) return;
+    const clean = newName.trim().slice(0, 20);
+    if (!clean) {
+      alert("Device name cannot be empty!");
+      return;
+    }
+    const enc = new TextEncoder();
+    const nameBytes = enc.encode(clean);
+    const payload = new Uint8Array(2 + nameBytes.length);
+    payload[0] = 0xfe;
+    payload[1] = nameBytes.length;
+    payload.set(nameBytes, 2);
+
+    enqueueWrite(`Rename Device -> "${clean}"`, async () => {
+      addLog(`[TX CONFIG] ${bytesToHex(payload)} (Rename Device -> "${clean}")`, "tx");
+      await configCharRef.current?.writeValueWithResponse(payload);
+      setDeviceName(clean);
+      setShowRenameModal(false);
+      alert(`Bluetooth Device Name successfully updated to: "${clean}"!\n\nSaved to ESP32 NVS. Live BLE advertising updated.`);
     });
   };
 
@@ -913,7 +981,7 @@ export default function SmartDeskPage() {
         {/* ── HEADER ─────────────────────────────────────────────────────── */}
         <header className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-xl">
           <div className="flex flex-col">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
                 <span className="text-cyan-400">SmartDesk</span>
                 <span className="text-xs font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
@@ -940,42 +1008,124 @@ export default function SmartDeskPage() {
                 />
                 {connected ? `Connected: ${deviceName}` : connecting ? "Connecting..." : "Disconnected"}
               </div>
+
+              {connected && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenameInput(deviceName);
+                    setShowRenameModal(true);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-cyan-400 hover:text-cyan-300 text-xs font-mono font-semibold border border-zinc-700 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                  title="Change Bluetooth Device Name"
+                >
+                  ✏️ Rename Device
+                </button>
+              )}
             </div>
             <p className="text-xs text-zinc-400 font-mono mt-1">
-              ESP32-S3 Controller • 16 LED Modes • Auto-Restore Relay Actions
+              ESP32-S3 Controller • 16 LED Modes • Auto-Restore Relay Actions • Configurable NO/NC Contacts
             </p>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            {!connected ? (
-              <button
-                type="button"
-                onClick={handleConnect}
-                disabled={connecting || !bluetoothSupported}
-                className="flex-1 sm:flex-none min-h-[44px] px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:scale-95 disabled:opacity-50 text-white font-bold text-sm tracking-wide shadow-lg shadow-cyan-900/30 transition-all cursor-pointer"
-              >
-                {connecting ? "Connecting..." : "⚡ Connect SmartDesk"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                className="flex-1 sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-300 font-bold text-sm border border-zinc-700 transition-all cursor-pointer"
-              >
-                Disconnect
-              </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            {!connected && (
+              <label className="flex items-center gap-2 text-xs font-mono text-zinc-400 cursor-pointer select-none px-1">
+                <input
+                  type="checkbox"
+                  checked={showAllDevices}
+                  onChange={(e) => setShowAllDevices(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-cyan-500 rounded cursor-pointer"
+                />
+                <span>Show all nearby Bluetooth devices</span>
+              </label>
             )}
 
-            <button
-              type="button"
-              onClick={handleAllOff}
-              disabled={!connected}
-              className="flex-1 sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 disabled:opacity-40 text-white font-bold text-sm shadow-lg shadow-rose-950/40 transition-all cursor-pointer"
-            >
-              🛑 All OFF
-            </button>
+            <div className="flex items-center gap-3">
+              {!connected ? (
+                <button
+                  type="button"
+                  onClick={handleConnect}
+                  disabled={connecting || !bluetoothSupported}
+                  className="flex-1 sm:flex-none min-h-[44px] px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:scale-95 disabled:opacity-50 text-white font-bold text-sm tracking-wide shadow-lg shadow-cyan-900/30 transition-all cursor-pointer"
+                >
+                  {connecting ? "Connecting..." : "⚡ Connect SmartDesk"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  className="flex-1 sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-300 font-bold text-sm border border-zinc-700 transition-all cursor-pointer"
+                >
+                  Disconnect
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleAllOff}
+                disabled={!connected}
+                className="flex-1 sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 disabled:opacity-40 text-white font-bold text-sm shadow-lg shadow-rose-950/40 transition-all cursor-pointer"
+              >
+                🛑 All OFF
+              </button>
+            </div>
           </div>
         </header>
+
+        {/* ── RENAME DEVICE MODAL ────────────────────────────────────────── */}
+        {showRenameModal && (
+          <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl flex flex-col gap-4">
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+                <h3 className="font-bold text-white text-base flex items-center gap-2">
+                  <span>✏️ Rename Bluetooth Device</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowRenameModal(false)}
+                  className="text-zinc-400 hover:text-white font-mono text-sm px-2 py-1 rounded"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Set a custom Bluetooth name for your desk controller (max 20 characters). This updates both the live BLE advertising and saves permanently to ESP32 NVS flash.
+              </p>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Bluetooth Device Name</label>
+                <input
+                  type="text"
+                  maxLength={20}
+                  value={renameInput}
+                  onChange={(e) => setRenameInput(e.target.value)}
+                  placeholder="smartDesk Controller"
+                  className="bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-cyan-500"
+                />
+                <span className="text-[10px] font-mono text-zinc-500 text-right">{renameInput.length} / 20 chars</span>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRenameModal(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => renameDevice(renameInput)}
+                  className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-lg shadow-cyan-950/50 cursor-pointer"
+                >
+                  Save New Name
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── BROWSER SUPPORT ALERT ──────────────────────────────────────── */}
         {!bluetoothSupported && (
@@ -992,7 +1142,7 @@ export default function SmartDeskPage() {
         <section className="flex flex-col gap-3">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-sm font-mono font-bold tracking-wider text-zinc-400 uppercase">
-              1. Relays, Custom Timers &amp; RGB Actions (CH1..CH4)
+              1. Relays, NO/NC Contacts, Custom Timers &amp; RGB Actions (CH1..CH4)
             </h2>
             <span className="text-xs text-zinc-500 font-mono">1 min to 24 hrs Timers</span>
           </div>
@@ -1007,8 +1157,8 @@ export default function SmartDeskPage() {
                 disabled={!connected}
                 onToggle={() => toggleRelay(idx)}
                 onSetTimer={(min) => setTimer(idx, min)}
-                onSaveConfig={(onEn, onMd, onDu, offEn, offMd, offDu, name) =>
-                  saveRelayConfig(idx, onEn, onMd, onDu, offEn, offMd, offDu, name)
+                onSaveConfig={(wiring, onEn, onMd, onDu, offEn, offMd, offDu, name) =>
+                  saveRelayConfig(idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, name)
                 }
               />
             ))}
@@ -1282,6 +1432,7 @@ interface RelayCardProps {
   onToggle: () => void;
   onSetTimer: (minutes: number) => void;
   onSaveConfig: (
+    wiring: number,
     onEn: boolean,
     onMd: number,
     onDu: number,
@@ -1303,6 +1454,7 @@ function RelayCard({
 }: RelayCardProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [nameInput, setNameInput] = useState(config.name);
+  const [wiring, setWiring] = useState(config.wiring ?? 0);
 
   // Separate ON & OFF RGB Settings
   const [onAnimEnabled, setOnAnimEnabled] = useState(config.onAnimEnabled ?? true);
@@ -1319,6 +1471,7 @@ function RelayCard({
 
   useEffect(() => {
     setNameInput(config.name);
+    setWiring(config.wiring ?? 0);
     setOnAnimEnabled(config.onAnimEnabled ?? true);
     setOnAnimMode(config.onAnimMode ?? 1);
     setOnAnimDuration(config.onAnimDuration ?? 2);
@@ -1354,10 +1507,19 @@ function RelayCard({
       {/* Card Header */}
       <div className="flex justify-between items-start gap-2">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-bold text-base text-white">{config.name}</h3>
             <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
               CH{index + 1} • GPIO {gpioPin}
+            </span>
+            <span
+              className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                config.wiring === 1
+                  ? "bg-purple-950/80 text-purple-300 border-purple-800"
+                  : "bg-cyan-950/80 text-cyan-300 border-cyan-800"
+              }`}
+            >
+              {config.wiring === 1 ? "NC Contact" : "NO Contact"}
             </span>
           </div>
           <div className="text-xs text-zinc-500 font-mono mt-0.5">
@@ -1475,7 +1637,7 @@ function RelayCard({
           onClick={() => setShowConfig(!showConfig)}
           className="text-xs font-mono text-zinc-400 hover:text-zinc-200 flex items-center justify-between py-1 cursor-pointer"
         >
-          <span>⚙️ Rename &amp; Turn ON/OFF RGB Actions</span>
+          <span>⚙️ Configure NO/NC, Rename &amp; RGB Actions</span>
           <span>{showConfig ? "▲ Hide" : "▼ Configure"}</span>
         </button>
 
@@ -1491,6 +1653,37 @@ function RelayCard({
                 onChange={(e) => setNameInput(e.target.value)}
                 className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
               />
+            </div>
+
+            {/* NO / NC Contact Wiring */}
+            <div className="bg-zinc-900/80 p-3 rounded-xl border border-zinc-800 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-cyan-400">
+                  Relay Contact Wiring (NO / NC)
+                </label>
+                <span
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded border font-semibold ${
+                    wiring === 1
+                      ? "bg-purple-950/80 text-purple-300 border-purple-800"
+                      : "bg-cyan-950/80 text-cyan-300 border-cyan-800"
+                  }`}
+                >
+                  {wiring === 1 ? "NC (Normally Closed)" : "NO (Normally Open)"}
+                </span>
+              </div>
+              <select
+                value={wiring}
+                onChange={(e) => setWiring(parseInt(e.target.value, 10))}
+                className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+              >
+                <option value={0}>Normally Open (NO - Default) • Unpowered when relay is resting</option>
+                <option value={1}>Normally Closed (NC) • Powered when relay is resting</option>
+              </select>
+              <span className="text-[10px] text-zinc-400 font-mono leading-relaxed">
+                {wiring === 0
+                  ? "Appliance wired to NO terminal. Turning ON energizes the relay coil (GPIO LOW) to connect power."
+                  : "Appliance wired to NC terminal. Turning ON de-energizes the relay coil (GPIO HIGH) so power passes naturally."}
+              </span>
             </div>
 
             {/* Turn ON RGB Action */}
@@ -1517,7 +1710,7 @@ function RelayCard({
                     <select
                       value={onAnimMode}
                       onChange={(e) => setOnAnimMode(parseInt(e.target.value, 10))}
-                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
                     >
                       {RELAY_ANIM_OPTIONS.map((opt) => (
                         <option key={opt.id} value={opt.id}>
@@ -1532,7 +1725,7 @@ function RelayCard({
                     <select
                       value={onAnimDuration}
                       onChange={(e) => setOnAnimDuration(parseInt(e.target.value, 10))}
-                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
                     >
                       <option value={1}>1 Second</option>
                       <option value={2}>2 Seconds</option>
@@ -1568,7 +1761,7 @@ function RelayCard({
                     <select
                       value={offAnimMode}
                       onChange={(e) => setOffAnimMode(parseInt(e.target.value, 10))}
-                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
                     >
                       {RELAY_ANIM_OPTIONS.map((opt) => (
                         <option key={opt.id} value={opt.id}>
@@ -1583,7 +1776,7 @@ function RelayCard({
                     <select
                       value={offAnimDuration}
                       onChange={(e) => setOffAnimDuration(parseInt(e.target.value, 10))}
-                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                      className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
                     >
                       <option value={1}>1 Second</option>
                       <option value={2}>2 Seconds</option>
@@ -1600,6 +1793,7 @@ function RelayCard({
               disabled={disabled}
               onClick={() => {
                 onSaveConfig(
+                  wiring,
                   onAnimEnabled,
                   onAnimMode,
                   onAnimDuration,
