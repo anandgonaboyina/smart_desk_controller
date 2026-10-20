@@ -431,7 +431,7 @@ struct PresenceConfig {
 };
 
 static PresenceConfig s_presenceConfig = {
-    true,   // enabled
+    false,  // enabled (inactive by default until master device designated)
     5,      // 5 min away delay
     0x0F,   // awayRelayMask: CH1..CH4
     true,   // awayRgbOff: turn RGB off
@@ -806,7 +806,7 @@ static void loadTimeBaseFromNVS() {
 
 static void loadPresenceFromNVS() {
     s_prefs.begin("desk_pres", true);
-    s_presenceConfig.enabled          = s_prefs.getBool("en", true);
+    s_presenceConfig.enabled          = s_prefs.getBool("en", false);
     s_presenceConfig.awayDelayMin     = s_prefs.getUShort("delay", 5);
     s_presenceConfig.awayRelayMask    = s_prefs.getUChar("away_mask", 0x0F);
     s_presenceConfig.awayRgbOff       = s_prefs.getBool("away_rgb", true);
@@ -894,7 +894,9 @@ static void registerClientDevice(const char* macAddr, const char* friendlyName) 
 }
 
 static void handleClientConnected(const char* macAddr) {
-    registerClientDevice(macAddr, s_connectedClientName);
+    if (macAddr && strlen(macAddr) > 0) {
+        strncpy(s_connectedClientAddr, macAddr, sizeof(s_connectedClientAddr) - 1);
+    }
 
     // Look up whether this device is tracked for presence
     int clientIdx = -1;
@@ -2046,7 +2048,7 @@ void loop() {
                               s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd);
                 notifyLedState();
             }
-        } else if (cmd.type == WT_CONFIG && cmd.len >= 2) {
+        } else if (cmd.type == WT_CONFIG && cmd.len >= 1) {
             if (cmd.data[0] == 0xFE) { // 0xFE = Device Rename [0xFE, len, ...nameBytes]
                 uint8_t nameLen = cmd.data[1];
                 if (nameLen > 20) nameLen = 20;
@@ -2207,7 +2209,26 @@ void loop() {
                     }
                     Serial.printf(">>> [BLE CMD] Registered Client Name: '%s'\n", s_connectedClientName);
                 }
-            } else if (cmd.data[0] == 0xF6) { // 0xF6: Clear Known Clients
+            } else if (cmd.data[0] == 0xF6) { // 0xF6: Delete Stored Slot [0xF6, slotIdx] or Clear All [0xF6]
+                if (cmd.len >= 2) {
+                    uint8_t slotIdx = cmd.data[1];
+                    if (slotIdx < MAX_PAIRED_CLIENTS) {
+                        memset(&s_knownClients[slotIdx], 0, sizeof(PairedClient));
+                        s_prefs.begin("desk_clients", false);
+                        char kVal[16], kAddr[16], kName[16], kTrk[16];
+                        snprintf(kVal, sizeof(kVal), "val_%d", slotIdx);
+                        snprintf(kAddr, sizeof(kAddr), "addr_%d", slotIdx);
+                        snprintf(kName, sizeof(kName), "name_%d", slotIdx);
+                        snprintf(kTrk, sizeof(kTrk), "trk_%d", slotIdx);
+                        s_prefs.remove(kVal);
+                        s_prefs.remove(kAddr);
+                        s_prefs.remove(kName);
+                        s_prefs.remove(kTrk);
+                        s_prefs.end();
+                        Serial.printf(">>> [BLE CMD] Deleted paired client slot #%d from flash.\n", slotIdx + 1);
+                        notifyEnvState();
+                    }
+                } else {
                 s_prefs.begin("desk_clients", false);
                 s_prefs.clear();
                 s_prefs.end();
@@ -2215,6 +2236,8 @@ void loop() {
                     memset(&s_knownClients[i], 0, sizeof(PairedClient));
                 }
                 Serial.println(">>> [BLE CMD] Cleared all known clients from flash.");
+                notifyEnvState();
+            }
             } else if (cmd.data[0] == 0xF5 && cmd.len >= 3) { // 0xF5: Test Schedule Rule [0xF5, ruleIdx, isStart 1/0]
                 uint8_t idx = cmd.data[1];
                 bool isStart = (cmd.data[2] == 1);
@@ -2251,6 +2274,26 @@ void loop() {
                                   slotIdx + 1, s_knownClients[slotIdx].name, s_knownClients[slotIdx].trackPresence ? "TRACKED" : "EXCLUDED");
                     notifyEnvState();
                 }
+            }
+        }
+    }
+#if 0
+                    }
+                }
+            } else if (cmd.data[0] == 0xF4 && cmd.len >= 3) { // 0xF4: Set Client Presence Tracking [0xF4, slotIdx, trackPresence 1/0]
+                uint8_t slotIdx = cmd.data[1];
+                uint8_t trackEn = cmd.data[2];
+                if (slotIdx < MAX_PAIRED_CLIENTS && s_knownClients[slotIdx].valid) {
+                    s_knownClients[slotIdx].trackPresence = (trackEn == 1);
+                    s_prefs.begin("desk_clients", false);
+                    char kTrk[16];
+                    snprintf(kTrk, sizeof(kTrk), "trk_%d", slotIdx);
+                    s_prefs.putBool(kTrk, s_knownClients[slotIdx].trackPresence);
+                    s_prefs.end();
+                    Serial.printf(">>> [PRESENCE] Slot #%d (\"%s\") Presence Tracking set to %s\n",
+                                  slotIdx + 1, s_knownClients[slotIdx].name, s_knownClients[slotIdx].trackPresence ? "TRACKED" : "EXCLUDED");
+                    notifyEnvState();
+                }
             } else if (cmd.data[0] == 0xF4 && cmd.len >= 3) { // 0xF4: Set Client Presence Tracking [0xF4, slotIdx, trackPresence 1/0]
                 uint8_t slotIdx = cmd.data[1];
                 uint8_t trackEn = cmd.data[2];
@@ -2269,6 +2312,10 @@ void loop() {
             }
         }
     }
+
+    uint32_t now = millis();
+
+#endif
 
     uint32_t now = millis();
 
