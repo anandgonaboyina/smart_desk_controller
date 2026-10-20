@@ -110,6 +110,7 @@
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <NimBLEHIDDevice.h>
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
 
@@ -217,6 +218,7 @@ static Adafruit_NeoPixel s_strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 static Preferences       s_prefs;
 
 static NimBLEServer*         s_pServer      = nullptr;
+static NimBLEHIDDevice*      s_pHid         = nullptr;
 static NimBLECharacteristic* s_pRelayChar   = nullptr;
 static NimBLECharacteristic* s_pLedChar     = nullptr;
 static NimBLECharacteristic* s_pConfigChar  = nullptr;
@@ -415,6 +417,7 @@ struct PairedClient {
     char     addr[18];     // "XX:XX:XX:XX:XX:XX"
     char     name[24];     // Friendly device name (e.g. "Anand's Laptop")
     bool     valid;
+    bool     trackPresence; // true = Track presence for Away/Arrival; false = Excluded (Idle Desk Device)
 };
 
 struct PresenceConfig {
@@ -814,10 +817,11 @@ static void loadPresenceFromNVS() {
 
     s_prefs.begin("desk_clients", true);
     for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
-        char kAddr[16], kName[16], kVal[16];
+        char kAddr[16], kName[16], kVal[16], kTrk[16];
         snprintf(kAddr, sizeof(kAddr), "addr_%d", i);
         snprintf(kName, sizeof(kName), "name_%d", i);
         snprintf(kVal, sizeof(kVal), "val_%d", i);
+        snprintf(kTrk, sizeof(kTrk), "trk_%d", i);
 
         s_knownClients[i].valid = s_prefs.getBool(kVal, false);
         if (s_knownClients[i].valid) {
@@ -825,8 +829,10 @@ static void loadPresenceFromNVS() {
             String n = s_prefs.getString(kName, "");
             strncpy(s_knownClients[i].addr, a.c_str(), sizeof(s_knownClients[i].addr) - 1);
             strncpy(s_knownClients[i].name, n.c_str(), sizeof(s_knownClients[i].name) - 1);
+            s_knownClients[i].trackPresence = s_prefs.getBool(kTrk, true);
         } else {
             memset(&s_knownClients[i], 0, sizeof(PairedClient));
+            s_knownClients[i].trackPresence = true;
         }
     }
     s_prefs.end();
@@ -867,29 +873,55 @@ static void registerClientDevice(const char* macAddr, const char* friendlyName) 
     } else if (strlen(s_knownClients[targetIdx].name) == 0) {
         snprintf(s_knownClients[targetIdx].name, sizeof(s_knownClients[targetIdx].name), "Device %d", targetIdx + 1);
     }
+    if (foundIdx == -1) {
+        s_knownClients[targetIdx].trackPresence = true;
+    }
 
     s_prefs.begin("desk_clients", false);
-    char kAddr[16], kName[16], kVal[16];
+    char kAddr[16], kName[16], kVal[16], kTrk[16];
     snprintf(kAddr, sizeof(kAddr), "addr_%d", targetIdx);
     snprintf(kName, sizeof(kName), "name_%d", targetIdx);
     snprintf(kVal, sizeof(kVal), "val_%d", targetIdx);
+    snprintf(kTrk, sizeof(kTrk), "trk_%d", targetIdx);
     s_prefs.putBool(kVal, true);
     s_prefs.putString(kAddr, s_knownClients[targetIdx].addr);
     s_prefs.putString(kName, s_knownClients[targetIdx].name);
+    s_prefs.putBool(kTrk, s_knownClients[targetIdx].trackPresence);
     s_prefs.end();
 
-    Serial.printf(">>> [PRESENCE] Known device stored (#%d): MAC=%s, Name=%s\n",
-                  targetIdx + 1, s_knownClients[targetIdx].addr, s_knownClients[targetIdx].name);
+    Serial.printf(">>> [PRESENCE] Known device stored (#%d): MAC=%s, Name=%s, Tracked=%d\n",
+                  targetIdx + 1, s_knownClients[targetIdx].addr, s_knownClients[targetIdx].name, s_knownClients[targetIdx].trackPresence);
 }
 
 static void handleClientConnected(const char* macAddr) {
+    registerClientDevice(macAddr, s_connectedClientName);
+
+    // Look up whether this device is tracked for presence
+    int clientIdx = -1;
+    for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
+        if (s_knownClients[i].valid && strcasecmp(s_knownClients[i].addr, macAddr) == 0) {
+            clientIdx = i;
+            break;
+        }
+    }
+
+    bool isTracked = true;
+    if (clientIdx != -1) {
+        isTracked = s_knownClients[clientIdx].trackPresence;
+    }
+
+    if (!isTracked) {
+        Serial.printf(">>> [PRESENCE] Device connected (%s: \"%s\"), but is EXCLUDED from presence tracking (Idle Desk Device). Away/Arrival unaffected.\n",
+                      macAddr, (clientIdx != -1) ? s_knownClients[clientIdx].name : "Unknown");
+        return;
+    }
+
     s_awayTimerEndMs = 0; // cancel away countdown
     bool wasAway = s_isAwayTriggered;
     s_isAwayTriggered = false;
 
-    registerClientDevice(macAddr, s_connectedClientName);
-
-    Serial.printf(">>> [PRESENCE] Client arrived: %s | Away countdown cancelled.\n", macAddr);
+    Serial.printf(">>> [PRESENCE] Tracked Client arrived: %s (\"%s\") | Away countdown cancelled.\n",
+                  macAddr, (clientIdx != -1) ? s_knownClients[clientIdx].name : "Unknown");
 
     if (wasAway && s_presenceConfig.enabled) {
         Serial.println(">>> [PRESENCE] Arrival triggered! Executing configured arrival actions...");
@@ -909,9 +941,29 @@ static void handleClientConnected(const char* macAddr) {
 }
 
 static void handleClientDisconnected() {
-    if (s_presenceConfig.enabled && s_presenceConfig.awayDelayMin > 0) {
+    if (!s_presenceConfig.enabled || s_presenceConfig.awayDelayMin == 0) return;
+
+    // Check if any tracked client remains connected
+    bool anyTrackedConnected = false;
+    if (s_pServer) {
+        std::vector<uint16_t> peers = s_pServer->getPeerDevices();
+        for (uint16_t connId : peers) {
+            NimBLEConnInfo info = s_pServer->getPeerInfo(connId);
+            std::string addr = info.getAddress().toString();
+            for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
+                if (s_knownClients[i].valid && s_knownClients[i].trackPresence && strcasecmp(s_knownClients[i].addr, addr.c_str()) == 0) {
+                    anyTrackedConnected = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (anyTrackedConnected) {
+        Serial.println(">>> [PRESENCE] Client disconnected, but another tracked device is still connected. Presence active.");
+    } else {
         s_awayTimerEndMs = millis() + ((uint32_t)s_presenceConfig.awayDelayMin * 60000UL);
-        Serial.printf(">>> [PRESENCE] Client departed. Away timer started: %d minutes countdown.\n", s_presenceConfig.awayDelayMin);
+        Serial.printf(">>> [PRESENCE] No tracked devices present. Away timer started: %d minutes countdown.\n", s_presenceConfig.awayDelayMin);
     }
 }
 
@@ -1664,7 +1716,7 @@ class LedCallbacks : public NimBLECharacteristicCallbacks {
 class ConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[135];
+        uint8_t payload[335];
         memset(payload, 0, sizeof(payload));
 
         // 4 Relay Records (25 bytes each, offsets 0, 25, 50, 75)
@@ -1699,6 +1751,17 @@ class ConfigCallbacks : public NimBLECharacteristicCallbacks {
         payload[130] = s_presenceConfig.arrivalRelayMask;
         payload[131] = s_presenceConfig.arrivalRgbOn ? 1 : 0;
         payload[132] = s_presenceConfig.arrivalRgbMode;
+
+        // 10 Known Paired Client Records (20 bytes each, starting at offset 135)
+        for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
+            int off = 135 + i * 20;
+            payload[off + 0] = s_knownClients[i].valid ? 1 : 0;
+            payload[off + 1] = s_knownClients[i].trackPresence ? 1 : 0;
+            size_t nlen = strlen(s_knownClients[i].name);
+            if (nlen > 17) nlen = 17;
+            payload[off + 2] = (uint8_t)nlen;
+            memcpy(&payload[off + 3], s_knownClients[i].name, nlen);
+        }
 
         pChr->setValue(payload, sizeof(payload));
     }
@@ -1784,6 +1847,34 @@ void setup() {
     NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
     s_pServer = NimBLEDevice::createServer();
+    // Setup BLE HID Device (Consumer Control / Media Remote) for OS background auto-connect
+    static const uint8_t hidReportDesc[] = {
+        0x05, 0x0C,        // Usage Page (Consumer)
+        0x09, 0x01,        // Usage (Consumer Control)
+        0xA1, 0x01,        // Collection (Application)
+        0x85, 0x01,        //   Report ID (1)
+        0x09, 0xE9,        //   Usage (Volume Increment)
+        0x09, 0xEA,        //   Usage (Volume Decrement)
+        0x09, 0xE2,        //   Usage (Mute)
+        0x09, 0xCD,        //   Usage (Play/Pause)
+        0x09, 0xB5,        //   Usage (Scan Next Track)
+        0x09, 0xB6,        //   Usage (Scan Previous Track)
+        0x15, 0x00,        //   Logical Minimum (0)
+        0x25, 0x01,        //   Logical Maximum (1)
+        0x75, 0x01,        //   Report Size (1)
+        0x95, 0x06,        //   Report Count (6)
+        0x81, 0x02,        //   Input (Data,Var,Abs)
+        0x75, 0x01,        //   Report Size (1)
+        0x95, 0x02,        //   Report Count (2)
+        0x81, 0x03,        //   Input (Const,Var,Abs)
+        0xC0               // End Collection
+    };
+    s_pHid = new NimBLEHIDDevice(s_pServer);
+    s_pHid->setManufacturer("SmartDesk");
+    s_pHid->setPnp(0x02, 0x02e5, 0xabcd, 0x0110);
+    s_pHid->setHidInfo(0x00, 0x01);
+    s_pHid->setReportMap((uint8_t*)hidReportDesc, sizeof(hidReportDesc));
+    s_pHid->setBatteryLevel(100);
     static ServerCallbacks srvCb;
     s_pServer->setCallbacks(&srvCb);
 
@@ -1841,7 +1932,11 @@ void setup() {
 
     // 7. Setup Advertising
     NimBLEAdvertising* pAdv = NimBLEDevice::getAdvertising();
+    pAdv->setAppearance(GENERIC_HID);
     pAdv->addServiceUUID(NimBLEUUID(SERVICE_UUID));
+    if (s_pHid) {
+        pAdv->addServiceUUID(s_pHid->getHidService()->getUUID());
+    }
 
     NimBLEAdvertisementData advData;
     advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
@@ -2089,6 +2184,11 @@ void loop() {
                 s_presenceConfig.arrivalRelayMask = (cmd.len >= 7) ? cmd.data[6] : 0x0F;
                 s_presenceConfig.arrivalRgbOn     = (cmd.len >= 8) ? (cmd.data[7] == 1) : true;
                 s_presenceConfig.arrivalRgbMode   = (cmd.len >= 9) ? cmd.data[8] : 1;
+                if (!s_presenceConfig.enabled) {
+                    s_awayTimerEndMs = 0;
+                    s_isAwayTriggered = false;
+                    Serial.println(">>> [PRESENCE] Master Switch turned OFF -> All countdowns & presence actions stopped.");
+                }
                 savePresenceConfigToNVS();
                 Serial.printf(">>> [BLE CMD] Presence Config: Enabled=%d, AwayDelay=%dm, AwayRelays=0x%02X, AwayRGB=%d, ArrRelays=0x%02X, ArrRGB=%d (Mode %d)\n",
                               s_presenceConfig.enabled, s_presenceConfig.awayDelayMin,
@@ -2135,6 +2235,35 @@ void loop() {
                         if (s_schedules[idx].targetType < RELAY_COUNT) setRelayLoad(s_schedules[idx].targetType, 0, "Manual Test Stop");
                         else if (s_schedules[idx].targetType == 4) allRelaysOff("Manual Test Stop");
                         else if (s_schedules[idx].targetType == 5) { s_ledMode = 0; notifyLedState(); }
+                    }
+                }
+            } else if (cmd.data[0] == 0xF4 && cmd.len >= 3) { // 0xF4: Set Client Presence Tracking [0xF4, slotIdx, trackPresence 1/0]
+                uint8_t slotIdx = cmd.data[1];
+                uint8_t trackEn = cmd.data[2];
+                if (slotIdx < MAX_PAIRED_CLIENTS && s_knownClients[slotIdx].valid) {
+                    s_knownClients[slotIdx].trackPresence = (trackEn == 1);
+                    s_prefs.begin("desk_clients", false);
+                    char kTrk[16];
+                    snprintf(kTrk, sizeof(kTrk), "trk_%d", slotIdx);
+                    s_prefs.putBool(kTrk, s_knownClients[slotIdx].trackPresence);
+                    s_prefs.end();
+                    Serial.printf(">>> [PRESENCE] Slot #%d (\"%s\") Presence Tracking set to %s\n",
+                                  slotIdx + 1, s_knownClients[slotIdx].name, s_knownClients[slotIdx].trackPresence ? "TRACKED" : "EXCLUDED");
+                    notifyEnvState();
+                }
+            } else if (cmd.data[0] == 0xF4 && cmd.len >= 3) { // 0xF4: Set Client Presence Tracking [0xF4, slotIdx, trackPresence 1/0]
+                uint8_t slotIdx = cmd.data[1];
+                uint8_t trackEn = cmd.data[2];
+                if (slotIdx < MAX_PAIRED_CLIENTS && s_knownClients[slotIdx].valid) {
+                    s_knownClients[slotIdx].trackPresence = (trackEn == 1);
+                    s_prefs.begin("desk_clients", false);
+                    char kTrk[16];
+                    snprintf(kTrk, sizeof(kTrk), "trk_%d", slotIdx);
+                    s_prefs.putBool(kTrk, s_knownClients[slotIdx].trackPresence);
+                    s_prefs.end();
+                    Serial.printf(">>> [PRESENCE] Slot #%d (\"%s\") Presence Tracking set to %s\n",
+                                  slotIdx + 1, s_knownClients[slotIdx].name, s_knownClients[slotIdx].trackPresence ? "TRACKED" : "EXCLUDED");
+                    notifyEnvState();
                     }
                 }
             }

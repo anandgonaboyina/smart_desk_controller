@@ -106,7 +106,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-/* ── Minimal Web Bluetooth Type Declarations ─────────────────────────────── */
+/*  Minimal Web Bluetooth Type Declarations  */
 interface BluetoothDevice extends EventTarget {
   id: string;
   name?: string;
@@ -155,7 +155,7 @@ interface NavigatorWithBluetooth extends Navigator {
   };
 }
 
-/* ── UUID Constants ──────────────────────────────────────────────────────── */
+/*  UUID Constants  */
 const SERVICE_UUID = "7f781e04-c0ee-47c9-a1e4-0aafa8ee316b";
 const CHAR_RELAY_UUID = "385d4ec5-88c3-417e-8aa5-2a70db5d49fa";
 const CHAR_LED_UUID = "1814a0cb-9d1f-4212-946a-72e78b64042e";
@@ -163,7 +163,7 @@ const CHAR_CONFIG_UUID = "11848579-c357-45cb-bdb2-88f560c11708";
 const CHAR_INFO_UUID = "f1f28a13-9725-4636-a073-0666057bd91b";
 const CHAR_ENV_UUID = "4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b";
 
-/* ── Data Interfaces ─────────────────────────────────────────────────────── */
+/*  Data Interfaces  */
 interface RelayState {
   load: boolean;
   remainingMin: number;
@@ -226,15 +226,15 @@ const LED_MODES = [
   { id: 2, label: "Breathe", desc: "Fade In & Out" },
   { id: 3, label: "Rainbow", desc: "Full Spectrum Wave" },
   { id: 4, label: "Blink", desc: "Clean Pulse (<3Hz)" },
-  { id: 5, label: "Chase L→R", desc: "Left to Right Trail" },
-  { id: 6, label: "Chase R→L", desc: "Right to Left Trail" },
+  { id: 5, label: "Chase Lâ†’R", desc: "Left to Right Trail" },
+  { id: 6, label: "Chase Râ†’L", desc: "Right to Left Trail" },
   { id: 7, label: "Color Cycle", desc: "Synchronized Spectrum" },
   { id: 8, label: "Scanner", desc: "Knight Rider Ping-Pong" },
   { id: 9, label: "Sparkle", desc: "Twinkling Pixels" },
   { id: 10, label: "Center Pulse", desc: "Middle Outward Expansion" },
   { id: 11, label: "Dual Chase", desc: "Crossing Light Beams" },
-  { id: 12, label: "Wipe L→R", desc: "Progressive Fill Left" },
-  { id: 13, label: "Wipe R→L", desc: "Progressive Fill Right" },
+  { id: 12, label: "Wipe Lâ†’R", desc: "Progressive Fill Left" },
+  { id: 13, label: "Wipe Râ†’L", desc: "Progressive Fill Right" },
   { id: 14, label: "Fireplace", desc: "Organic Flame Flicker" },
   { id: 15, label: "Aurora", desc: "Two-Tone Ambient Shift" },
 ];
@@ -242,10 +242,10 @@ const LED_MODES = [
 const RELAY_ANIM_OPTIONS = [
   { id: 1, label: "Fade In-Out / Breathe" },
   { id: 2, label: "Fast Pulse" },
-  { id: 3, label: "Wipe Left → Right" },
-  { id: 4, label: "Wipe Right → Left" },
-  { id: 5, label: "Chase Left → Right" },
-  { id: 6, label: "Chase Right → Left" },
+  { id: 3, label: "Wipe Left â†’ Right" },
+  { id: 4, label: "Wipe Right â†’ Left" },
+  { id: 5, label: "Chase Left â†’ Right" },
+  { id: 6, label: "Chase Right â†’ Left" },
   { id: 7, label: "Knight Rider / Scanner" },
   { id: 8, label: "Double Blink" },
   { id: 9, label: "Center Outward Pulse" },
@@ -253,16 +253,16 @@ const RELAY_ANIM_OPTIONS = [
 ];
 
 const MUSIC_DISCO_MODES = [
-  { id: 0, label: "🕺 Disco Party", desc: "Rotating club lights & beat jumps" },
-  { id: 1, label: "💥 Bass Burst", desc: "Center-outward explosion on kicks" },
-  { id: 2, label: "⚡ Neon Strobe", desc: "High-contrast nightclub beat flashes" },
-  { id: 3, label: "🌊 Rhythm Ripple", desc: "Flowing light wave driven by tempo" },
-  { id: 4, label: "✨ Disco Sparkle", desc: "Shimmering random starbursts on beats" },
-  { id: 5, label: "🌈 Beat Pump", desc: "Color wheel pumping brightness with bass" },
-  { id: 6, label: "⚔️ Dual Clash", desc: "Beams colliding at center on beat" },
-  { id: 7, label: "🎶 Cyber Spectrum", desc: "8-band dancing cyberpunk equalizer" },
-  { id: 8, label: "🔥 Fire Dance", desc: "Flaring flames on heavy bass/drums" },
-  { id: 9, label: "🎯 Solo Beat Sync", desc: "Custom color pulsing to the song" },
+  { id: 0, label: "ðŸ•º Disco Party", desc: "Rotating club lights & beat jumps" },
+  { id: 1, label: "ðŸ’¥ Bass Burst", desc: "Center-outward explosion on kicks" },
+  { id: 2, label: " Neon Strobe", desc: "High-contrast nightclub beat flashes" },
+  { id: 3, label: "ðŸŒŠ Rhythm Ripple", desc: "Flowing light wave driven by tempo" },
+  { id: 4, label: "âœ¨ Disco Sparkle", desc: "Shimmering random starbursts on beats" },
+  { id: 5, label: "ðŸŒˆ Beat Pump", desc: "Color wheel pumping brightness with bass" },
+  { id: 6, label: "” Dual Clash", desc: "Beams colliding at center on beat" },
+  { id: 7, label: "ðŸŽ¶ Cyber Spectrum", desc: "8-band dancing cyberpunk equalizer" },
+  { id: 8, label: "ðŸ”¥ Fire Dance", desc: "Flaring flames on heavy bass/drums" },
+  { id: 9, label: "ðŸŽ¯ Solo Beat Sync", desc: "Custom color pulsing to the song" },
 ];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -277,7 +277,7 @@ const bytesToHex = (arr: Uint8Array | DataView): string => {
 };
 
 export default function SmartDeskPage() {
-  /* ── Component State ───────────────────────────────────────────────────── */
+  /*  Component State  */
   const [bluetoothSupported, setBluetoothSupported] = useState<boolean>(true);
   const [connected, setConnected] = useState<boolean>(false);
   const [connecting, setConnecting] = useState<boolean>(false);
@@ -443,6 +443,8 @@ export default function SmartDeskPage() {
   });
 
   const [clientNickname, setClientNickname] = useState<string>("");
+  const [storedClients, setStoredClients] = useState<{ slot: number; valid: boolean; trackPresence: boolean; name: string }[]>([]);
+  const [customDelayInput, setCustomDelayInput] = useState<string>("5");
   const [mounted, setMounted] = useState<boolean>(false);
   const [persistedDeviceName, setPersistedDeviceName] = useState<string>("smartDesk Controller");
 
@@ -473,7 +475,7 @@ export default function SmartDeskPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [previewTick, setPreviewTick] = useState<number>(0);
 
-  /* ── Hardware / BLE References ─────────────────────────────────────────── */
+  /*  Hardware / BLE References  */
   const deviceRef = useRef<BluetoothDevice | null>(null);
   const relayCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
   const ledCharRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
@@ -485,7 +487,7 @@ export default function SmartDeskPage() {
   const ledDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const logBoxRef = useRef<HTMLDivElement | null>(null);
 
-  /* ── Animation Tick for 8-Dot Visualizer ────────────────────────────────── */
+  /*  Animation Tick for 8-Dot Visualizer  */
   useEffect(() => {
     const timer = setInterval(() => {
       setPreviewTick((prev) => (prev + 1) % 720);
@@ -507,7 +509,7 @@ export default function SmartDeskPage() {
     return () => clearTimeout(timeout);
   }, [uiAnim]);
 
-  /* ── Logging Helper ────────────────────────────────────────────────────── */
+  /*  Logging Helper  */
   const addLog = useCallback(
     (text: string, type: "info" | "tx" | "rx" | "warn" | "err" = "info") => {
       const now = new Date();
@@ -531,7 +533,7 @@ export default function SmartDeskPage() {
     }
   }, [logs]);
 
-  /* ── Check Web Bluetooth Support & Auto-Connect on Mount ───────────────── */
+  /*  Check Web Bluetooth Support & Auto-Connect on Mount  */
   useEffect(() => {
     // 1. Load saved configs, schedules & presence from localStorage
     setMounted(true);
@@ -609,7 +611,7 @@ export default function SmartDeskPage() {
               if ("watchAdvertisements" in matched) {
                 try {
                   const abortController = new AbortController();
-                  await (matched as any).watchAdvertisements({ signal: abortController.signal });
+                  (matched as any).watchAdvertisements({ signal: abortController.signal }).catch(() => {});
                   matched.addEventListener(
                     "advertisementreceived",
                     async () => {
@@ -633,13 +635,13 @@ export default function SmartDeskPage() {
                   }
                 } catch (autoErr) {
                   if (attempt < 2) {
-                    await sleep(1500);
+                    await sleep(400);
                   }
                 }
               }
 
               if (!connectedOk) {
-                addLog("Auto-reconnect ready: tap '⚡ 1-Click Connect' to resume session.", "info");
+                addLog("Auto-reconnect ready: tap ' 1-Click Connect' to resume session.", "info");
                 // Fallback: 1st tap anywhere auto-connects
                 const onOneTouchConnect = async () => {
                   window.removeEventListener("pointerdown", onOneTouchConnect);
@@ -661,7 +663,7 @@ export default function SmartDeskPage() {
 
     timeoutId = setTimeout(() => {
       checkPersistentDevices();
-    }, 1200);
+    }, 250);
 
     return () => {
       clearTimeout(timeoutId);
@@ -670,7 +672,7 @@ export default function SmartDeskPage() {
     };
   }, [addLog]);
 
-  /* ── Serialized Write Queue ────────────────────────────────────────────── */
+  /*  Serialized Write Queue  */
   const enqueueWrite = useCallback(
     (label: string, task: () => Promise<void>) => {
       writeQueueRef.current = writeQueueRef.current
@@ -688,7 +690,7 @@ export default function SmartDeskPage() {
     [addLog]
   );
 
-  /* ── Trigger UI Animation on Relay Switch ──────────────────────────────── */
+  /*  Trigger UI Animation on Relay Switch  */
   const triggerUiAnimation = useCallback((idx: number, isTurnOn: boolean) => {
     const cfg = configs[idx];
     if (!cfg) return;
@@ -709,7 +711,7 @@ export default function SmartDeskPage() {
     });
   }, [configs]);
 
-  /* ── Parse Relay Characteristic Payload (12 Bytes) ─────────────────────── */
+  /*  Parse Relay Characteristic Payload (12 Bytes)  */
   const parseRelayData = useCallback(
     (dataView: DataView) => {
       if (dataView.byteLength < 12) return;
@@ -734,7 +736,7 @@ export default function SmartDeskPage() {
     [addLog, triggerUiAnimation]
   );
 
-  /* ── Parse LED Characteristic Payload (6 Bytes) ────────────────────────── */
+  /*  Parse LED Characteristic Payload (6 Bytes)  */
   const parseLedData = useCallback(
     (dataView: DataView) => {
       if (dataView.byteLength < 6) return;
@@ -751,7 +753,7 @@ export default function SmartDeskPage() {
     [addLog]
   );
 
-  /* ── Parse Config Characteristic Payload (125 Bytes) ───────────────────── */
+  /*  Parse Config Characteristic Payload (125 Bytes)  */
   const parseConfigData = useCallback(
     (dataView: DataView) => {
       if (dataView.byteLength < 100) return;
@@ -805,12 +807,63 @@ export default function SmartDeskPage() {
         }
       }
 
+      // Parse Presence Config from offset 125
+      if (dataView.byteLength >= 133) {
+        const pEn = dataView.getUint8(125) === 1;
+        const pDelay = dataView.getUint8(126) | (dataView.getUint8(127) << 8);
+        const pAwayMask = dataView.getUint8(128);
+        const pAwayRgb = dataView.getUint8(129) === 1;
+        const pArrMask = dataView.getUint8(130);
+        const pArrRgb = dataView.getUint8(131) === 1;
+        const pArrMode = dataView.getUint8(132);
+
+        setPresenceConfig((prev) => ({
+          ...prev,
+          enabled: pEn,
+          awayDelayMin: pDelay > 0 ? pDelay : prev.awayDelayMin,
+          awayRelayMask: pAwayMask,
+          awayRgbOff: pAwayRgb,
+          arrivalRelayMask: pArrMask,
+          arrivalRgbOn: pArrRgb,
+          arrivalRgbMode: pArrMode > 0 ? pArrMode : prev.arrivalRgbMode,
+        }));
+        if (pDelay > 0) {
+          setCustomDelayInput(pDelay.toString());
+        }
+      }
+
+      // Parse 10 Known Paired Devices from offset 135
+      if (dataView.byteLength >= 155) {
+        const clients: { slot: number; valid: boolean; trackPresence: boolean; name: string }[] = [];
+        for (let i = 0; i < 10; i++) {
+          const off = 135 + i * 20;
+          if (off + 2 >= dataView.byteLength) break;
+          const valid = dataView.getUint8(off + 0) === 1;
+          const trackPresence = dataView.getUint8(off + 1) === 1;
+          const nlen = Math.min(17, dataView.getUint8(off + 2));
+          let devName = `Device ${i + 1}`;
+          if (nlen > 0 && off + 3 + nlen <= dataView.byteLength) {
+            const nameBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + off + 3, nlen);
+            devName = decoder.decode(nameBytes).replace(/\0/g, "").trim() || `Device ${i + 1}`;
+          }
+          if (valid) {
+            clients.push({
+              slot: i,
+              valid,
+              trackPresence,
+              name: devName,
+            });
+          }
+        }
+        setStoredClients(clients);
+      }
+
       addLog(`[RX CONFIG] Loaded configurations & NO/NC settings for all 4 relays.`, "rx");
     },
     [addLog]
   );
 
-  /* ── Parse Environment, Buzzer & Clock (11 Bytes) ───────────────────────── */
+  /*  Parse Environment, Buzzer & Clock (11 Bytes)  */
   const parseEnvData = useCallback(
     (dataView: DataView) => {
       if (dataView.byteLength < 6) return;
@@ -851,7 +904,7 @@ export default function SmartDeskPage() {
     []
   );
 
-  /* ── Synchronize Real-Time Clock to ESP32 (0xFB) ────────────────────────── */
+  /*  Synchronize Real-Time Clock to ESP32 (0xFB)  */
   const syncRealTime = useCallback(() => {
     if (!configCharRef.current) return;
     const now = new Date();
@@ -868,7 +921,7 @@ export default function SmartDeskPage() {
     });
   }, [enqueueWrite, addLog]);
 
-  /* ── Sync Schedule Rule to ESP32 (0xFA) ─────────────────────────────────── */
+  /*  Sync Schedule Rule to ESP32 (0xFA)  */
   const saveScheduleRule = useCallback(
     (rule: ScheduleRule) => {
       const payload = new Uint8Array(16);
@@ -916,7 +969,7 @@ export default function SmartDeskPage() {
     [enqueueWrite, addLog]
   );
 
-  /* ── Delete / Disable Schedule Rule (0xF9) ──────────────────────────────── */
+  /*  Delete / Disable Schedule Rule (0xF9)  */
   const deleteScheduleRule = useCallback(
     (ruleId: number) => {
       setSchedules((prev) => {
@@ -939,7 +992,7 @@ export default function SmartDeskPage() {
     [enqueueWrite, addLog]
   );
 
-  /* ── Manual Test Schedule Rule on Hardware (0xF5) ───────────────────────── */
+  /*  Manual Test Schedule Rule on Hardware (0xF5)  */
   const handleTestScheduleRule = useCallback(
     (ruleId: number, isStart: boolean = true) => {
       if (!configCharRef.current) {
@@ -955,7 +1008,7 @@ export default function SmartDeskPage() {
     [enqueueWrite, addLog]
   );
 
-  /* ── Presence & Away Configuration Handlers ──────────────────────────────── */
+  /*  Presence & Away Configuration Handlers  */
   const savePresenceConfig = useCallback(
     (nextCfg: typeof presenceConfig) => {
       setPresenceConfig(nextCfg);
@@ -1019,6 +1072,22 @@ export default function SmartDeskPage() {
     }
   }, [enqueueWrite, addLog]);
 
+  const toggleDevicePresenceTracking = useCallback(
+    (slotIdx: number, currentTracked: boolean) => {
+      if (!configCharRef.current) return;
+      const nextTrack = currentTracked ? 0 : 1;
+      const payload = new Uint8Array([0xF4, slotIdx, nextTrack]);
+      enqueueWrite(`Set Slot ${slotIdx + 1} Tracking`, async () => {
+        addLog(`[TX CONFIG] ${bytesToHex(payload)} (Set Device Slot #${slotIdx + 1} Tracking: ${nextTrack ? "TRACKED" : "EXCLUDED"})`, "tx");
+        await configCharRef.current?.writeValueWithResponse(payload);
+        setStoredClients((prev) =>
+          prev.map((c) => (c.slot === slotIdx ? { ...c, trackPresence: nextTrack === 1 } : c))
+        );
+      });
+    },
+    [enqueueWrite, addLog]
+  );
+
   const handleAddNewSchedule = useCallback(() => {
     const nextId = [0, 1, 2, 3, 4, 5, 6, 7].find((id) => !schedules.some((s) => s.id === id)) ?? schedules.length;
     if (nextId >= 8) {
@@ -1046,7 +1115,7 @@ export default function SmartDeskPage() {
     setShowScheduleModal(true);
   }, [schedules]);
 
-  /* ── Master Buzzer Toggle (0xFD) ────────────────────────────────────────── */
+  /*  Master Buzzer Toggle (0xFD)  */
   const toggleMasterBuzzer = useCallback(() => {
     if (!configCharRef.current) return;
     const nextState = !masterBuzzer;
@@ -1058,7 +1127,7 @@ export default function SmartDeskPage() {
     });
   }, [masterBuzzer, enqueueWrite, addLog]);
 
-  /* ── Save Individual Relay Buzzer Config (0xFC) ────────────────────────── */
+  /*  Save Individual Relay Buzzer Config (0xFC)  */
   const saveRelayBuzzerConfig = useCallback(
     (idx: number, beepOn: boolean, beepOff: boolean, beepTimerEnd: boolean) => {
       if (!configCharRef.current) return;
@@ -1077,7 +1146,7 @@ export default function SmartDeskPage() {
     [enqueueWrite, addLog]
   );
 
-  /* ── Disconnect Cleanup ────────────────────────────────────────────────── */
+  /*  Disconnect Cleanup  */
   const handleDisconnected = useCallback(() => {
     addLog("Device disconnected from host.", "warn");
     setConnected(false);
@@ -1093,7 +1162,7 @@ export default function SmartDeskPage() {
     stopMusicSyncRef.current();
   }, [addLog]);
 
-  /* ── Connect Flow (One-by-One GATT Setup) ───────────────────────────────── */
+  /*  Connect Flow (One-by-One GATT Setup)  */
   const handleConnect = async (targetDevice?: BluetoothDevice, isAuto: boolean = false) => {
     const nav = window.navigator as NavigatorWithBluetooth;
     if (!nav.bluetooth) {
@@ -1360,7 +1429,7 @@ export default function SmartDeskPage() {
     handleDisconnected();
   };
 
-  /* ── Relay Commands ────────────────────────────────────────────────────── */
+  /*  Relay Commands  */
   const toggleRelay = (idx: number) => {
     if (!relayCharRef.current) return;
     const nextVal = relays[idx].load ? 0 : 1;
@@ -1408,7 +1477,7 @@ export default function SmartDeskPage() {
     });
   };
 
-  /* ── Config Commands ───────────────────────────────────────────────────── */
+  /*  Config Commands  */
   const saveRelayConfig = (
     idx: number,
     wiring: number,
@@ -1490,7 +1559,7 @@ export default function SmartDeskPage() {
     });
   };
 
-  /* ── LED Commands ──────────────────────────────────────────────────────── */
+  /*  LED Commands  */
   const dispatchLedUpdate = useCallback(
     (newState: LedState) => {
       if (!ledCharRef.current) return;
@@ -1531,7 +1600,7 @@ export default function SmartDeskPage() {
     dispatchLedUpdate(preset);
   };
 
-  /* ── Music Sync Functions (Microphone Live Audio Reactivity) ────────────── */
+  /*  Music Sync Functions (Microphone Live Audio Reactivity)  */
   const stopMusicSync = useCallback(() => {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
@@ -1599,7 +1668,7 @@ export default function SmartDeskPage() {
       analyserRef.current = analyser;
 
       setMusicSyncActive(true);
-      addLog("🎙️ Microphone listening started for Music Sync.", "info");
+      addLog("ðŸŽ™ Microphone listening started for Music Sync.", "info");
 
       const bufferLength = analyser.frequencyBinCount; // 32 bins
       const dataArray = new Uint8Array(bufferLength);
@@ -1675,7 +1744,7 @@ export default function SmartDeskPage() {
     }
   };
 
-  /* ── Hex Color Converter ───────────────────────────────────────────────── */
+  /*  Hex Color Converter  */
   const rgbToHex = (r: number, g: number, b: number) => {
     return "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
   };
@@ -1690,7 +1759,7 @@ export default function SmartDeskPage() {
     };
   };
 
-  /* ── 8-Dot Interactive LED Visualizer (Simulates all 16 modes & Relay Transient) ── */
+  /*  8-Dot Interactive LED Visualizer (Simulates all 16 modes & Relay Transient)  */
   const render8DotPreview = () => {
     const dots = [];
     const t = previewTick;
@@ -1818,7 +1887,7 @@ export default function SmartDeskPage() {
         let shadow = "none";
 
         switch (musicSubMode) {
-          case 0: { // 0. 🕺 Disco Party: Rotating party hues jumping on beats
+          case 0: { // 0. ðŸ•º Disco Party: Rotating party hues jumping on beats
             const shift = (t * 6 + (beat > 120 ? 120 : 0)) % 360;
             const hue = (shift + i * 45) % 360;
             const bBri = Math.max(0.2, normBeat * alpha);
@@ -1827,7 +1896,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 1: { // 1. 💥 Bass Burst: Center 2 LEDs (3 & 4) explode outward
+          case 1: { // 1. ðŸ’¥ Bass Burst: Center 2 LEDs (3 & 4) explode outward
             const dist = i < 4 ? 3 - i : i - 4;
             const radius = Math.floor(normBeat * 4);
             if (dist <= radius) {
@@ -1839,7 +1908,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 2: { // 2. ⚡ Neon Strobe: High-contrast nightclub flash on beats
+          case 2: { // 2.  Neon Strobe: High-contrast nightclub flash on beats
             if (beat > 120) {
               bg = `rgba(245, 250, 255, ${alpha})`;
               shadow = `0 0 24px rgba(245, 250, 255, 1)`;
@@ -1851,7 +1920,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 3: { // 3. 🌊 Rhythm Ripple: Flowing light wave driven by tempo
+          case 3: { // 3. ðŸŒŠ Rhythm Ripple: Flowing light wave driven by tempo
             const head = Math.floor((t * (0.2 + normBeat * 0.5)) % 8);
             const diff = Math.abs(i - head);
             const rippleBri = diff === 0 ? alpha : diff === 1 ? alpha * 0.5 : alpha * 0.15;
@@ -1861,7 +1930,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 4: { // 4. ✨ Disco Sparkle: Shimmering random starbursts on beats & treble
+          case 4: { // 4. âœ¨ Disco Sparkle: Shimmering random starbursts on beats & treble
             const hi = (levels[5] + levels[6] + levels[7]) / 3;
             const isSparkle = levels[i] > 110 || (hi > 90 && ((t + i * 3) % 4 === 0));
             if (isSparkle) {
@@ -1874,7 +1943,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 5: { // 5. 🌈 Beat Pump: Color wheel pumping brightness to the bass
+          case 5: { // 5. ðŸŒˆ Beat Pump: Color wheel pumping brightness to the bass
             const hue = (t * 4 + i * 45) % 360;
             const pump = Math.max(0.18, normBeat * alpha);
             bg = `hsl(${hue}, 100%, ${Math.min(65, 25 + pump * 40)}%)`;
@@ -1882,7 +1951,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 6: { // 6. ⚔️ Dual Clash: Beams colliding at center on beat
+          case 6: { // 6. ” Dual Clash: Beams colliding at center on beat
             const pos = Math.floor(normBeat * 4);
             const isCyan = i <= pos;
             const isMagenta = (7 - i) <= pos;
@@ -1902,7 +1971,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 7: { // 7. 🎶 Cyber Spectrum: 8-band dancing cyberpunk equalizer
+          case 7: { // 7. ðŸŽ¶ Cyber Spectrum: 8-band dancing cyberpunk equalizer
             const lvl = levels[i] || 0;
             const intensity = (lvl / 255) * alpha;
             if (intensity > 0.05) {
@@ -1913,7 +1982,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 8: { // 8. 🔥 Fire Dance: Flames flaring into white-hot peaks
+          case 8: { // 8. ðŸ”¥ Fire Dance: Flames flaring into white-hot peaks
             const fVal = Math.max(levels[i] || 0, Math.round(normBeat * 200));
             const intensity = (fVal / 255) * alpha;
             if (intensity > 0.7) {
@@ -1929,7 +1998,7 @@ export default function SmartDeskPage() {
             break;
           }
 
-          case 9: { // 9. 🎯 Solo Beat Sync: User's custom color pulsing & breathing to the song
+          case 9: { // 9. ðŸŽ¯ Solo Beat Sync: User's custom color pulsing & breathing to the song
             const pulse = Math.max(0.12, normBeat * alpha);
             bg = `rgba(${soloColor.r}, ${soloColor.g}, ${soloColor.b}, ${pulse})`;
             shadow = `0 0 ${Math.round(22 * pulse)}px rgba(${soloColor.r}, ${soloColor.g}, ${soloColor.b}, 0.9)`;
@@ -2051,16 +2120,16 @@ export default function SmartDeskPage() {
     return dots;
   };
 
-  /* ── Render Main App UI ────────────────────────────────────────────────── */
+  /*  Render Main App UI  */
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans p-3 sm:p-6 lg:p-8 flex flex-col items-center select-none">
       <div className="w-full max-w-5xl flex flex-col gap-6">
 
-        {/* ── AUTO-RECONNECT BANNER ────────────────────────────────────────── */}
+        {/*  AUTO-RECONNECT BANNER  */}
         {!connected && (
           <div className="bg-gradient-to-r from-cyan-950 via-zinc-900 to-cyan-950 border border-cyan-500/70 p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xl shadow-cyan-950/50">
             <div className="flex items-center gap-3">
-              <span className="text-2xl animate-pulse">⚡</span>
+              <span className="text-2xl animate-pulse"></span>
               <div>
                 <div className="text-sm font-bold text-white flex items-center gap-2">
                   <span>Target SmartDesk Controller:</span>
@@ -2086,12 +2155,12 @@ export default function SmartDeskPage() {
               disabled={connecting}
               className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-95 text-zinc-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-cyan-500/30 cursor-pointer whitespace-nowrap"
             >
-              {connecting ? "Connecting..." : "⚡ 1-Click Connect"}
+              {connecting ? "Connecting..." : " 1-Click Connect"}
             </button>
           </div>
         )}
 
-        {/* ── HEADER ─────────────────────────────────────────────────────── */}
+        {/*  HEADER  */}
         <header className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-xl">
           <div className="flex flex-col">
             <div className="flex flex-wrap items-center gap-3">
@@ -2133,7 +2202,7 @@ export default function SmartDeskPage() {
                     className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-cyan-400 hover:text-cyan-300 text-xs font-mono font-semibold border border-zinc-700 flex items-center gap-1 cursor-pointer transition-all active:scale-95"
                     title="Change Bluetooth Device Name"
                   >
-                    ✏️ Rename
+                    âœ Rename
                   </button>
 
                   <button
@@ -2146,20 +2215,20 @@ export default function SmartDeskPage() {
                     }`}
                     title="Active Buzzer B27 (GPIO 10) Master Toggle"
                   >
-                    {masterBuzzer ? "🔊 Buzzer ON" : "🔇 Muted"}
+                    {masterBuzzer ? "ðŸ”Š Buzzer ON" : "ðŸ”‡ Muted"}
                   </button>
 
                   {envData.valid && (
                     <div className="hidden sm:inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-zinc-800/90 border border-zinc-700 text-xs font-mono text-emerald-300">
-                      <span>🌡️ {envData.tempC.toFixed(1)}°C</span>
-                      <span className="text-zinc-600">•</span>
-                      <span>💧 {envData.humidity.toFixed(0)}%</span>
+                      <span>ðŸŒ¡ {envData.tempC.toFixed(1)}Â°C</span>
+                      <span className="text-zinc-600"></span>
+                      <span>ðŸ’§ {envData.humidity.toFixed(0)}%</span>
                     </div>
                   )}
 
                   {espClock.synced && (
                     <div className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/90 border border-zinc-700 text-xs font-mono text-cyan-300" title="ESP32 Autonomous Real-Time Clock">
-                      <span>🕒</span>
+                      <span>ðŸ•’</span>
                       <span>{String(espClock.hour).padStart(2, "0")}:{String(espClock.minute).padStart(2, "0")}:{String(espClock.second).padStart(2, "0")}</span>
                     </div>
                   )}
@@ -2167,7 +2236,7 @@ export default function SmartDeskPage() {
               )}
             </div>
             <p className="text-xs text-zinc-400 font-mono mt-1">
-              ESP32-S3 Controller • 16 LED Modes • Auto-Restore Relay Actions • Configurable NO/NC Contacts
+              ESP32-S3 Controller  16 LED Modes  Auto-Restore Relay Actions  Configurable NO/NC Contacts
             </p>
           </div>
 
@@ -2192,7 +2261,7 @@ export default function SmartDeskPage() {
                   disabled={connecting || !bluetoothSupported}
                   className="flex-1 sm:flex-none min-h-[44px] px-6 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:scale-95 disabled:opacity-50 text-white font-bold text-sm tracking-wide shadow-lg shadow-cyan-900/30 transition-all cursor-pointer"
                 >
-                  {connecting ? "Connecting..." : "⚡ Connect SmartDesk"}
+                  {connecting ? "Connecting..." : " Connect SmartDesk"}
                 </button>
               ) : (
                 <button
@@ -2210,26 +2279,26 @@ export default function SmartDeskPage() {
                 disabled={!connected}
                 className="flex-1 sm:flex-none min-h-[44px] px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 disabled:opacity-40 text-white font-bold text-sm shadow-lg shadow-rose-950/40 transition-all cursor-pointer"
               >
-                🛑 All OFF
+                ðŸ›‘ All OFF
               </button>
             </div>
           </div>
         </header>
 
-        {/* ── RENAME DEVICE MODAL ────────────────────────────────────────── */}
+        {/*  RENAME DEVICE MODAL  */}
         {showRenameModal && (
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl flex flex-col gap-4">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
-                  <span>✏️ Rename Bluetooth Device</span>
+                  <span>âœ Rename Bluetooth Device</span>
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowRenameModal(false)}
                   className="text-zinc-400 hover:text-white font-mono text-sm px-2 py-1 rounded"
                 >
-                  ✕
+                  âœ•
                 </button>
               </div>
 
@@ -2270,10 +2339,10 @@ export default function SmartDeskPage() {
           </div>
         )}
 
-        {/* ── BROWSER SUPPORT ALERT ──────────────────────────────────────── */}
+        {/*  BROWSER SUPPORT ALERT  */}
         {!bluetoothSupported && (
           <div className="bg-red-950/70 border border-red-700 text-red-200 p-4 rounded-xl text-sm flex flex-col gap-1">
-            <span className="font-bold">⚠️ Web Bluetooth Not Available</span>
+            <span className="font-bold">  Web Bluetooth Not Available</span>
             <span>
               Your browser does not expose <code>navigator.bluetooth</code>. Please open this page in Google Chrome or
               Microsoft Edge over <code>http://localhost:3000</code> or HTTPS.
@@ -2281,7 +2350,7 @@ export default function SmartDeskPage() {
           </div>
         )}
 
-        {/* ── 4 RELAY CARDS ──────────────────────────────────────────────── */}
+        {/*  4 RELAY CARDS  */}
         <section className="flex flex-col gap-3">
           <div className="flex justify-between items-center px-1">
             <h2 className="text-sm font-mono font-bold tracking-wider text-zinc-400 uppercase">
@@ -2308,12 +2377,12 @@ export default function SmartDeskPage() {
           </div>
         </section>
 
-        {/* ── 2. AUTONOMOUS REAL-TIME DAY SCHEDULER (ESP32 NVS) ────────────── */}
+        {/* 2. AUTONOMOUS REAL-TIME DAY SCHEDULER (ESP32 NVS) */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-800 pb-3">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>📅 2. Autonomous Day Scheduler</span>
+                <span>ðŸ“… 2. Autonomous Day Scheduler</span>
                 <span className="text-xs font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800">
                   ESP32 Real-Time Clock &amp; NVS
                 </span>
@@ -2325,13 +2394,13 @@ export default function SmartDeskPage() {
 
             <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs font-mono text-cyan-300">
-                <span>🕒</span>
+                <span>ðŸ•’</span>
                 <span>
                   {espClock.synced
                     ? `${String(espClock.hour).padStart(2, "0")}:${String(espClock.minute).padStart(2, "0")}:${String(espClock.second).padStart(2, "0")} (${DAYS_OF_WEEK[espClock.dayOfWeek]})`
                     : "Clock Unsynced"}
                 </span>
-                {espClock.synced && <span className="text-[10px] text-emerald-400 font-bold">✓</span>}
+                {espClock.synced && <span className="text-[10px] text-emerald-400 font-bold">âœ“</span>}
               </div>
 
               <button
@@ -2341,7 +2410,7 @@ export default function SmartDeskPage() {
                 className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-cyan-400 text-xs font-mono font-semibold border border-zinc-700 transition-all active:scale-95 cursor-pointer disabled:opacity-40"
                 title="Sync ESP32 Clock to Current Browser Time"
               >
-                ⏱️ Sync Clock
+                â± Sync Clock
               </button>
 
               <button
@@ -2350,7 +2419,7 @@ export default function SmartDeskPage() {
                 disabled={schedules.length >= 8}
                 className="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-md shadow-cyan-950/50 active:scale-95 cursor-pointer disabled:opacity-40"
               >
-                ➕ Add Rule
+                âž• Add Rule
               </button>
             </div>
           </div>
@@ -2358,7 +2427,7 @@ export default function SmartDeskPage() {
           {/* Schedule Rules Grid */}
           {schedules.length === 0 ? (
             <div className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-8 text-center flex flex-col items-center justify-center gap-3">
-              <span className="text-3xl">📅</span>
+              <span className="text-3xl">ðŸ“…</span>
               <p className="text-sm font-semibold text-zinc-300">No autonomous schedules configured yet</p>
               <p className="text-xs text-zinc-500 max-w-md">
                 Create scheduled rules to automatically power your desk appliances, turn relays on/off, or trigger ambient WS2812B lighting at specific times of day.
@@ -2441,10 +2510,10 @@ export default function SmartDeskPage() {
                         <span className="text-zinc-400">Stop Condition:</span>
                         <span className="text-amber-300">
                           {rule.stopType === 1
-                            ? `⏳ Duration: ${Math.floor(rule.durationMin / 60)}h ${rule.durationMin % 60}m`
+                            ? `â³ Duration: ${Math.floor(rule.durationMin / 60)}h ${rule.durationMin % 60}m`
                             : rule.stopType === 2
-                            ? `🛑 Stops at ${String(rule.stopHour).padStart(2, "0")}:${String(rule.stopMin).padStart(2, "0")}`
-                            : "♾️ Continuous Run"}
+                            ? `ðŸ›‘ Stops at ${String(rule.stopHour).padStart(2, "0")}:${String(rule.stopMin).padStart(2, "0")}`
+                            : "â™¾ Continuous Run"}
                         </span>
                       </div>
                     </div>
@@ -2476,7 +2545,7 @@ export default function SmartDeskPage() {
                           title="Trigger this schedule rule action immediately on ESP32 hardware"
                           className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-emerald-950/60 text-emerald-400 text-xs font-mono transition-all active:scale-95 cursor-pointer"
                         >
-                          ▶️ Test
+                          â–¶ Test
                         </button>
                         <button
                           type="button"
@@ -2486,14 +2555,14 @@ export default function SmartDeskPage() {
                           }}
                           className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-750 text-cyan-400 text-xs font-mono transition-all active:scale-95 cursor-pointer"
                         >
-                          ✏️ Edit
+                          âœ Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => deleteScheduleRule(rule.id)}
                           className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-rose-950/60 text-rose-400 text-xs font-mono transition-all active:scale-95 cursor-pointer"
                         >
-                          🗑️
+                          ðŸ—‘
                         </button>
                       </div>
                     </div>
@@ -2504,20 +2573,20 @@ export default function SmartDeskPage() {
           )}
         </section>
 
-        {/* ── SCHEDULE EDIT / CREATE MODAL ───────────────────────────────── */}
+        {/*  SCHEDULE EDIT / CREATE MODAL  */}
         {showScheduleModal && editingSchedule && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 sm:p-6 max-w-lg w-full shadow-2xl flex flex-col gap-4 my-8">
               <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
-                  <span>📅 Configure Autonomous Schedule Rule #{editingSchedule.id + 1}</span>
+                  <span>ðŸ“… Configure Autonomous Schedule Rule #{editingSchedule.id + 1}</span>
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowScheduleModal(false)}
                   className="text-zinc-400 hover:text-white font-mono text-sm px-2 py-1 rounded cursor-pointer"
                 >
-                  ✕
+                  âœ•
                 </button>
               </div>
 
@@ -2554,8 +2623,8 @@ export default function SmartDeskPage() {
                     <option value={1}>Relay CH2 ({configs[1]?.name})</option>
                     <option value={2}>Relay CH3 ({configs[2]?.name})</option>
                     <option value={3}>Relay CH4 ({configs[3]?.name})</option>
-                    <option value={4}>⚡ All Relays (CH1..CH4)</option>
-                    <option value={5}>🌈 WS2812B RGB Strip (GPIO 8)</option>
+                    <option value={4}> All Relays (CH1..CH4)</option>
+                    <option value={5}>ðŸŒˆ WS2812B RGB Strip (GPIO 8)</option>
                   </select>
                 </div>
 
@@ -2567,8 +2636,8 @@ export default function SmartDeskPage() {
                       onChange={(e) => setEditingSchedule({ ...editingSchedule, targetAction: parseInt(e.target.value, 10) })}
                       className="bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
                     >
-                      <option value={1}>⚡ Turn LOAD ON</option>
-                      <option value={0}>🛑 Turn LOAD OFF</option>
+                      <option value={1}> Turn LOAD ON</option>
+                      <option value={0}>ðŸ›‘ Turn LOAD OFF</option>
                     </select>
                   ) : (
                     <select
@@ -2853,21 +2922,21 @@ export default function SmartDeskPage() {
                   }}
                   className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-lg shadow-cyan-950/50 cursor-pointer"
                 >
-                  💾 Save to ESP32 Flash
+                  ðŸ’¾ Save to ESP32 Flash
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── 3. SMART PRESENCE & AWAY MODE (ESP32 HARDWARE LISTENER) ─────── */}
+        {/*  3. SMART PRESENCE & AWAY MODE (ESP32 HARDWARE LISTENER)  */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-zinc-800 pb-3">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>📡 Smart Presence &amp; Away Mode</span>
+                <span>ðŸ“¡ Smart Presence &amp; Away Mode</span>
                 <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                  10 Stored Devices • ESP32 Autonomy
+                  10 Stored Devices  ESP32 Autonomy
                 </span>
               </h2>
               <p className="text-xs text-zinc-400 mt-0.5">
@@ -2888,10 +2957,10 @@ export default function SmartDeskPage() {
               >
                 <span>
                   {connected
-                    ? "🟢 Home / Present"
+                    ? "ðŸŸ¢ Home / Present"
                     : presenceData.state === 2
-                    ? `⏳ Away: ${presenceData.remainingMin}m left`
-                    : "⚪ Away Standby"}
+                    ? `â³ Away: ${presenceData.remainingMin}m left`
+                    : "ª Away Standby"}
                 </span>
               </div>
 
@@ -2951,6 +3020,69 @@ export default function SmartDeskPage() {
                       {mins}m
                     </button>
                   ))}
+                </div>
+
+                {/* Custom Delay Input */}
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-zinc-900">
+                  <span className="text-[11px] font-mono text-zinc-400">Custom:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={customDelayInput}
+                    onChange={(e) => setCustomDelayInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const val = Math.max(1, Math.min(1440, Number(customDelayInput) || 1));
+                        savePresenceConfig({ ...presenceConfig, awayDelayMin: val });
+                      }
+                    }}
+                    placeholder="Min"
+                    className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-amber-500"
+                  />
+                  <span className="text-[11px] font-mono text-zinc-500">min</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = Math.max(1, Math.min(1440, Number(customDelayInput) || 1));
+                      savePresenceConfig({ ...presenceConfig, awayDelayMin: val });
+                    }}
+                    className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[11px] font-mono font-bold cursor-pointer transition-all active:scale-95"
+                  >
+                    Set
+                  </button>
+                </div>
+              </div>
+
+                {/* Custom Delay Input */}
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-zinc-900">
+                  <span className="text-[11px] font-mono text-zinc-400">Custom:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={customDelayInput}
+                    onChange={(e) => setCustomDelayInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const val = Math.max(1, Math.min(1440, Number(customDelayInput) || 1));
+                        savePresenceConfig({ ...presenceConfig, awayDelayMin: val });
+                      }
+                    }}
+                    placeholder="Min"
+                    className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-amber-500"
+                  />
+                  <span className="text-[11px] font-mono text-zinc-500">min</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = Math.max(1, Math.min(1440, Number(customDelayInput) || 1));
+                      savePresenceConfig({ ...presenceConfig, awayDelayMin: val });
+                    }}
+                    className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[11px] font-mono font-bold cursor-pointer transition-all active:scale-95"
+                  >
+                    Set
+                  </button>
                 </div>
               </div>
 
@@ -3024,7 +3156,7 @@ export default function SmartDeskPage() {
                         }`}
                         title={configs[idx]?.name || `CH${idx + 1}`}
                       >
-                        CH{idx + 1} {isTurnOff ? "OFF" : "—"}
+                        CH{idx + 1} {isTurnOff ? "OFF" : "ON"}
                       </button>
                     );
                   })}
@@ -3045,7 +3177,7 @@ export default function SmartDeskPage() {
                       : "bg-zinc-900 text-zinc-500 border-zinc-800"
                   }`}
                 >
-                  <span>🌈 WS2812B RGB Strip:</span>
+                  <span>ðŸŒˆ WS2812B RGB Strip:</span>
                   <span>{presenceConfig.awayRgbOff ? "TURN OFF" : "KEEP AS IS"}</span>
                 </button>
               </div>
@@ -3133,14 +3265,14 @@ export default function SmartDeskPage() {
                         }`}
                         title={configs[idx]?.name || `CH${idx + 1}`}
                       >
-                        CH{idx + 1} {isTurnOn ? "ON" : "—"}
+                        CH{idx + 1} {isTurnOn ? "ON" : "OFF"}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-zinc-800/80 flex flex-col gap-2">
+                <div className="pt-2 border-t border-zinc-800/80 flex flex-col gap-2">
                 {/* RGB Strip On Toggle */}
                 <button
                   type="button"
@@ -3156,7 +3288,7 @@ export default function SmartDeskPage() {
                       : "bg-zinc-900 text-zinc-500 border-zinc-800"
                   }`}
                 >
-                  <span>🌈 WS2812B RGB Strip:</span>
+                  <span>ðŸŒˆ WS2812B RGB Strip:</span>
                   <span>{presenceConfig.arrivalRgbOn ? "TURN ON" : "DO NOTHING"}</span>
                 </button>
 
@@ -3183,41 +3315,84 @@ export default function SmartDeskPage() {
               </div>
             </div>
 
-            {/* Card 3: Paired Devices & Bonding */}
+            {/* Card 3: Paired Devices & Exclusion */}
             <div className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-4 flex flex-col justify-between gap-3">
               <div>
-                <h3 className="text-xs font-mono uppercase text-zinc-400 font-bold">3. Device Identification</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-mono uppercase text-zinc-400 font-bold">3. Devices &amp; Exclusion</h3>
+                  <span className="text-[10px] font-mono text-cyan-400 font-bold">
+                    {storedClients.length} Registered
+                  </span>
+                </div>
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  ESP32 stores up to 10 device MACs. Give this device a friendly name for presence detection.
+                  Exclude permanent desk devices (e.g. idle laptop) so leaving with your phone triggers Away auto-off.
                 </p>
 
-                <div className="mt-3 flex flex-col gap-2">
+                {/* Nickname Input for Current Device */}
+                <div className="mt-2.5 flex flex-col gap-1.5">
                   <div className="flex gap-2">
                     <input
                       type="text"
                       maxLength={20}
                       value={clientNickname}
                       onChange={(e) => setClientNickname(e.target.value)}
-                      placeholder="e.g. Anand's Laptop"
-                      className="bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 flex-1"
+                      placeholder="Current Device Nickname"
+                      className="bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1 text-xs text-white font-mono focus:outline-none focus:border-cyan-500 flex-1"
                     />
                     <button
                       type="button"
                       onClick={() => registerClientName(clientNickname)}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs font-mono cursor-pointer transition-all active:scale-95"
+                      className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs font-mono cursor-pointer transition-all active:scale-95"
                     >
                       Save
                     </button>
                   </div>
                 </div>
+
+                {/* Stored Devices List with Track / Exclude Toggles */}
+                <div className="mt-2.5 flex flex-col gap-1.5 max-h-40 overflow-y-auto pr-0.5">
+                  {storedClients.length === 0 ? (
+                    <div className="text-[11px] font-mono text-zinc-600 italic py-1">
+                      No devices stored yet. Connect via Bluetooth to register!
+                    </div>
+                  ) : (
+                    storedClients.map((dev) => (
+                      <div
+                        key={dev.slot}
+                        className="flex items-center justify-between p-1.5 rounded bg-zinc-900/90 border border-zinc-800 text-xs font-mono gap-1"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="text-[10px] text-zinc-500 font-bold">#{dev.slot + 1}</span>
+                          <span className="text-zinc-200 font-medium truncate">{dev.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleDevicePresenceTracking(dev.slot, dev.trackPresence)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer whitespace-nowrap ${
+                            dev.trackPresence
+                              ? "bg-emerald-950/70 border-emerald-600/70 text-emerald-300 hover:bg-emerald-900/80"
+                              : "bg-zinc-800/80 border-zinc-700 text-zinc-400 hover:bg-zinc-700"
+                          }`}
+                          title={
+                            dev.trackPresence
+                              ? "Click to exclude (Idle Desk Device - departure ignored)"
+                              : "Click to track presence (Carried Master Device)"
+                          }
+                        >
+                          {dev.trackPresence ? "Tracked (Master)" : "Excluded (Idle)"}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
 
               <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
-                <span className="text-[11px] text-zinc-500 font-mono">10 Slots in NVS</span>
+                <span className="text-[10px] text-zinc-500 font-mono">Max 10 Slots in ESP32</span>
                 <button
                   type="button"
                   onClick={clearKnownClients}
-                  className="px-2.5 py-1 rounded bg-zinc-900 hover:bg-rose-950/60 text-rose-400 text-[11px] font-mono border border-zinc-800 transition-all cursor-pointer"
+                  className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-rose-950/60 text-rose-400 text-[10px] font-mono border border-zinc-800 transition-all cursor-pointer"
                 >
                   Clear Stored Slots
                 </button>
@@ -3226,23 +3401,23 @@ export default function SmartDeskPage() {
           </div>
         </section>
 
-        {/* ── 4. LED CONTROLLER PANEL (16 MODES + SIMULATOR) ────────────────── */}
+        {/*  4. LED CONTROLLER PANEL (16 MODES + SIMULATOR)  */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 flex flex-col gap-5 shadow-xl">
           <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>🌈 WS2812B 8-LED Array</span>
+                <span>ðŸŒˆ WS2812B 8-LED Array</span>
                 <span className="text-xs font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800">
-                  GPIO 8 • Live Simulation
+                  GPIO 8  Live Simulation
                 </span>
               </h2>
               <p className="text-xs text-zinc-400 mt-0.5">
                 {uiAnim?.active ? (
                   <span className="text-emerald-400 font-bold animate-pulse">
-                    ⚡ {uiAnim.label} (Simulating...)
+                     {uiAnim.label} (Simulating...)
                   </span>
                 ) : (
-                  "16 Visual Modes • Safe Photosensitivity Cap • Auto-Restores Previous State"
+                  "16 Visual Modes  Safe Photosensitivity Cap  Auto-Restores Previous State"
                 )}
               </p>
             </div>
@@ -3250,7 +3425,7 @@ export default function SmartDeskPage() {
               {uiAnim?.active
                 ? "Relay Action Triggered"
                 : musicSyncActive
-                ? `🎙️ ${MUSIC_DISCO_MODES.find((m) => m.id === musicSubMode)?.label || "Music Sync"}`
+                ? `ðŸŽ™ ${MUSIC_DISCO_MODES.find((m) => m.id === musicSubMode)?.label || "Music Sync"}`
                 : LED_MODES.find((m) => m.id === led.mode)?.label || `Mode ${led.mode}`}
             </div>
           </div>
@@ -3260,7 +3435,7 @@ export default function SmartDeskPage() {
             {render8DotPreview()}
           </div>
 
-          {/* ── MUSIC SYNC (LIVE MICROPHONE AUDIO REACTIVITY) ───────────── */}
+          {/*  MUSIC SYNC (LIVE MICROPHONE AUDIO REACTIVITY)  */}
           <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-4 ${
             musicSyncActive
               ? "bg-gradient-to-b from-purple-950/40 via-zinc-900 to-zinc-900 border-purple-500/80 shadow-[0_0_24px_rgba(168,85,247,0.2)]"
@@ -3268,7 +3443,7 @@ export default function SmartDeskPage() {
           }`}>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div className="flex items-center gap-2.5">
-                <span className="text-xl">🎙️</span>
+                <span className="text-xl">ðŸŽ™</span>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-white tracking-wide">
@@ -3282,7 +3457,7 @@ export default function SmartDeskPage() {
                     )}
                   </div>
                   <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
-                    Live browser microphone input • 10 Disco Party Sync Modes • Auto-restores normal LED mode on stop
+                    Live browser microphone input  10 Disco Party Sync Modes  Auto-restores normal LED mode on stop
                   </p>
                 </div>
               </div>
@@ -3306,12 +3481,12 @@ export default function SmartDeskPage() {
               >
                 {musicSyncActive ? (
                   <>
-                    <span>⏹️</span>
+                    <span>â¹</span>
                     <span>Stop Music Sync</span>
                   </>
                 ) : (
                   <>
-                    <span>🎙️</span>
+                    <span>ðŸŽ™</span>
                     <span>Start Music Sync</span>
                   </>
                 )}
@@ -3326,7 +3501,7 @@ export default function SmartDeskPage() {
                     <span className="text-zinc-400 font-bold uppercase">Live Audio Volume</span>
                     {beatPulse && (
                       <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/40 animate-pulse">
-                        💥 BEAT
+                        ðŸ’¥ BEAT
                       </span>
                     )}
                   </div>
@@ -3347,7 +3522,7 @@ export default function SmartDeskPage() {
             <div className="flex flex-col gap-2">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-mono uppercase text-zinc-400 font-bold flex items-center gap-1.5">
-                  <span>🕺</span>
+                  <span>ðŸ•º</span>
                   <span>10 Disco Music Sync Styles</span>
                 </label>
                 <span className="text-[11px] font-mono text-purple-400 font-bold">
@@ -3378,7 +3553,7 @@ export default function SmartDeskPage() {
               <div className="bg-zinc-950 p-3.5 rounded-xl border border-purple-500/50 flex flex-col gap-3">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-mono uppercase text-purple-300 font-bold flex items-center gap-1.5">
-                    <span>🎯</span>
+                    <span>ðŸŽ¯</span>
                     <span>Solo Beat Sync Color</span>
                   </label>
                   <span className="text-[11px] font-mono text-zinc-400">
@@ -3505,14 +3680,14 @@ export default function SmartDeskPage() {
             <label className="text-xs font-mono uppercase text-zinc-400 font-bold">Curated Presets</label>
             <div className="flex flex-wrap gap-2">
               {[
-                { name: "💡 Desk Work", p: { mode: 1, r: 255, g: 255, b: 255, bri: 85, spd: 5 } },
-                { name: "🌅 Relaxing Glow", p: { mode: 2, r: 255, g: 130, b: 20, bri: 60, spd: 3 } },
-                { name: "🌌 Cyberpunk", p: { mode: 8, r: 0, g: 240, b: 255, bri: 80, spd: 7 } },
-                { name: "🔥 Campfire", p: { mode: 14, r: 255, g: 80, b: 10, bri: 75, spd: 5 } },
-                { name: "🌈 Aurora Wave", p: { mode: 15, r: 0, g: 255, b: 180, bri: 80, spd: 5 } },
-                { name: "🎉 Party Rainbow", p: { mode: 3, r: 0, g: 255, b: 200, bri: 90, spd: 8 } },
-                { name: "🌙 Night Light", p: { mode: 1, r: 180, g: 15, b: 0, bri: 15, spd: 2 } },
-                { name: "🔌 Dark Off", p: { mode: 0, r: 0, g: 0, b: 0, bri: 0, spd: 5 } },
+                { name: "ðŸ’¡ Desk Work", p: { mode: 1, r: 255, g: 255, b: 255, bri: 85, spd: 5 } },
+                { name: "ðŸŒ… Relaxing Glow", p: { mode: 2, r: 255, g: 130, b: 20, bri: 60, spd: 3 } },
+                { name: "ðŸŒŒ Cyberpunk", p: { mode: 8, r: 0, g: 240, b: 255, bri: 80, spd: 7 } },
+                { name: "ðŸ”¥ Campfire", p: { mode: 14, r: 255, g: 80, b: 10, bri: 75, spd: 5 } },
+                { name: "ðŸŒˆ Aurora Wave", p: { mode: 15, r: 0, g: 255, b: 180, bri: 80, spd: 5 } },
+                { name: "ðŸŽ‰ Party Rainbow", p: { mode: 3, r: 0, g: 255, b: 200, bri: 90, spd: 8 } },
+                { name: "ðŸŒ™ Night Light", p: { mode: 1, r: 180, g: 15, b: 0, bri: 15, spd: 2 } },
+                { name: "ðŸ”Œ Dark Off", p: { mode: 0, r: 0, g: 0, b: 0, bri: 0, spd: 5 } },
               ].map((preset) => (
                 <button
                   key={preset.name}
@@ -3591,7 +3766,7 @@ export default function SmartDeskPage() {
 
         
 
-        {/* ── DEVICE TELEMETRY / INFO ────────────────────────────────────── */}
+        {/*  DEVICE TELEMETRY / INFO  */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-2 shadow-xl">
           <div className="flex justify-between items-center">
             <h2 className="text-xs font-mono font-bold tracking-wider text-zinc-400 uppercase">
@@ -3613,7 +3788,7 @@ export default function SmartDeskPage() {
               }}
               className="text-xs font-mono px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 cursor-pointer disabled:opacity-40"
             >
-              🔄 Refresh
+              ðŸ”„ Refresh
             </button>
           </div>
           <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 font-mono text-xs text-cyan-300 break-all">
@@ -3623,7 +3798,7 @@ export default function SmartDeskPage() {
 
         
 
-        {/* ── LIVE BLE LOG CONSOLE ────────────────────────────────────────── */}
+        {/*  LIVE BLE LOG CONSOLE  */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-3 shadow-xl">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -3644,7 +3819,7 @@ export default function SmartDeskPage() {
                 }}
                 className="text-xs font-mono px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 cursor-pointer"
               >
-                📋 Copy
+                ðŸ“‹ Copy
               </button>
               <button
                 type="button"
@@ -3702,12 +3877,12 @@ export default function SmartDeskPage() {
 
         
 
-      {/* ── FLOATING CLIMATE, ACTIVE BUZZER & ESP32 HARDWARE WIDGET ────── */}
+      {/*  FLOATING CLIMATE, ACTIVE BUZZER & ESP32 HARDWARE WIDGET  */}
       <div className="fixed bottom-4 right-4 z-40 max-w-xs sm:max-w-sm pointer-events-none">
         <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur-md border border-zinc-700/80 shadow-2xl rounded-2xl p-4 flex flex-col gap-3 text-xs">
           <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
             <div className="flex items-center gap-2">
-              <span className="text-base">📡</span>
+              <span className="text-base">ðŸ“¡</span>
               <span className="font-bold text-white tracking-wide">Desk Sensors &amp; Audio</span>
             </div>
             <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/70 border border-cyan-800 px-2 py-0.5 rounded">
@@ -3718,11 +3893,11 @@ export default function SmartDeskPage() {
           {/* Climate DHT11 */}
           <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-base">🌡️</span>
+              <span className="text-base">ðŸŒ¡</span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-mono text-zinc-500 uppercase">DHT11 Climate (GPIO 9)</span>
                 <span className="font-mono text-white font-bold text-xs">
-                  {envData.valid ? `${envData.tempC.toFixed(1)}°C • ${envData.humidity.toFixed(0)}% RH` : connected ? "Sampling sensor..." : "Not connected"}
+                  {envData.valid ? `${envData.tempC.toFixed(1)}Â°C  ${envData.humidity.toFixed(0)}% RH` : connected ? "Sampling sensor..." : "Not connected"}
                 </span>
               </div>
             </div>
@@ -3736,7 +3911,7 @@ export default function SmartDeskPage() {
           {/* Active Buzzer B27 */}
           <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-base">{masterBuzzer ? "🔊" : "🔇"}</span>
+              <span className="text-base">{masterBuzzer ? "ðŸ”Š" : "ðŸ”‡"}</span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-mono text-zinc-500 uppercase">Active Buzzer B27 (GPIO 10)</span>
                 <span className={`font-mono font-bold text-xs ${masterBuzzer ? "text-amber-300" : "text-zinc-500"}`}>
@@ -3761,7 +3936,7 @@ export default function SmartDeskPage() {
           {/* ESP32 Real-Time Clock */}
           <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-base">🕒</span>
+              <span className="text-base">ðŸ•’</span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-mono text-zinc-500 uppercase">Internal ESP32 Clock</span>
                 <span className="font-mono text-cyan-300 font-bold text-xs">
@@ -3785,10 +3960,10 @@ export default function SmartDeskPage() {
           {/* GPIO Quick Reference Badge */}
           <div className="text-[10px] font-mono text-zinc-400 bg-zinc-950/50 p-2 rounded-lg border border-zinc-800/60 leading-relaxed">
             <div className="text-zinc-500 font-bold uppercase mb-0.5">ESP32-S3 Hardware Pinout:</div>
-            <div>• Relays 1-4: <span className="text-cyan-400 font-bold">GPIO 4, 5, 6, 7</span></div>
-            <div>• WS2812B: <span className="text-cyan-400 font-bold">GPIO 8</span> (8x Strip)</div>
-            <div>• DHT11 Climate: <span className="text-emerald-400 font-bold">GPIO 9</span> (3.3V)</div>
-            <div>• Active Buzzer (B27): <span className="text-amber-400 font-bold">GPIO 10</span> (DC)</div>
+            <div> Relays 1-4: <span className="text-cyan-400 font-bold">GPIO 4, 5, 6, 7</span></div>
+            <div> WS2812B: <span className="text-cyan-400 font-bold">GPIO 8</span> (8x Strip)</div>
+            <div> DHT11 Climate: <span className="text-emerald-400 font-bold">GPIO 9</span> (3.3V)</div>
+            <div> Active Buzzer (B27): <span className="text-amber-400 font-bold">GPIO 10</span> (DC)</div>
           </div>
         </div>
       </div>
@@ -3798,7 +3973,7 @@ export default function SmartDeskPage() {
   );
 }
 
-/* ── Individual Relay Card Component ─────────────────────────────────────── */
+/*  Individual Relay Card Component  */
 interface RelayCardProps {
   index: number;
   state: RelayState;
@@ -3896,7 +4071,7 @@ function RelayCard({
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-bold text-base text-white">{config.name}</h3>
             <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-              CH{index + 1} • GPIO {gpioPin}
+              CH{index + 1}  GPIO {gpioPin}
             </span>
             <span
               className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${
@@ -3909,7 +4084,7 @@ function RelayCard({
             </span>
           </div>
           <div className="text-xs text-zinc-500 font-mono mt-0.5">
-            ON Anim: {config.onAnimEnabled ? `${RELAY_ANIM_OPTIONS.find((a) => a.id === config.onAnimMode)?.label} (${config.onAnimDuration}s)` : "Off"} •{" "}
+            ON Anim: {config.onAnimEnabled ? `${RELAY_ANIM_OPTIONS.find((a) => a.id === config.onAnimMode)?.label} (${config.onAnimDuration}s)` : "Off"} {" "}
             OFF Anim: {config.offAnimEnabled ? `${RELAY_ANIM_OPTIONS.find((a) => a.id === config.offAnimMode)?.label} (${config.offAnimDuration}s)` : "Off"}
           </div>
         </div>
@@ -3945,7 +4120,7 @@ function RelayCard({
           <span className="font-mono text-zinc-400 font-semibold">Countdown Timer:</span>
           {state.remainingMin > 0 ? (
             <span className="font-mono font-bold text-amber-400 bg-amber-950/70 border border-amber-800/80 px-2 py-0.5 rounded">
-              ⏳ {formatRemainingTime(state.remainingMin)} remaining
+              â³ {formatRemainingTime(state.remainingMin)} remaining
             </span>
           ) : (
             <span className="font-mono text-zinc-500">None active</span>
@@ -4023,8 +4198,8 @@ function RelayCard({
           onClick={() => setShowConfig(!showConfig)}
           className="text-xs font-mono text-zinc-400 hover:text-zinc-200 flex items-center justify-between py-1 cursor-pointer"
         >
-          <span>⚙️ Configure NO/NC, Rename &amp; RGB Actions</span>
-          <span>{showConfig ? "▲ Hide" : "▼ Configure"}</span>
+          <span>™ Configure NO/NC, Rename &amp; RGB Actions</span>
+          <span>{showConfig ? "â–² Hide" : "â–¼ Configure"}</span>
         </button>
 
         {showConfig && (
@@ -4062,8 +4237,8 @@ function RelayCard({
                 onChange={(e) => setWiring(parseInt(e.target.value, 10))}
                 className="bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
               >
-                <option value={0}>Normally Open (NO - Default) • Unpowered when relay is resting</option>
-                <option value={1}>Normally Closed (NC) • Powered when relay is resting</option>
+                <option value={0}>Normally Open (NO - Default)  Unpowered when relay is resting</option>
+                <option value={1}>Normally Closed (NC)  Powered when relay is resting</option>
               </select>
               <span className="text-[10px] text-zinc-400 font-mono leading-relaxed">
                 {wiring === 0
@@ -4178,7 +4353,7 @@ function RelayCard({
             <div className="bg-zinc-900/80 p-3 rounded-xl border border-zinc-800 flex flex-col gap-2.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-amber-400 flex items-center gap-2">
-                  <span>🔔 Active Buzzer (B27) Beeps (GPIO 10)</span>
+                  <span>ðŸ”” Active Buzzer (B27) Beeps (GPIO 10)</span>
                 </label>
                 <span className="text-[10px] font-mono text-zinc-400">
                   {beepOn || beepOff || beepTimerEnd ? "Active" : "Silent"}
@@ -4239,7 +4414,7 @@ function RelayCard({
               }}
               className="min-h-[44px] rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-mono font-bold tracking-wide transition-all cursor-pointer disabled:opacity-40"
             >
-              💾 Save Settings to ESP32 NVS
+              ðŸ’¾ Save Settings to ESP32 NVS
             </button>
           </div>
         )}
