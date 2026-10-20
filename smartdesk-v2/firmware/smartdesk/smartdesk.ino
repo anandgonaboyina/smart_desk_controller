@@ -25,16 +25,29 @@
 
  2. LED Characteristic: 1814a0cb-9d1f-4212-946a-72e78b64042e
     Properties: READ, WRITE (with response), NOTIFY
-    - Read / Write / Notify Payload (6 bytes):
-      * Byte 0: Mode (0..15: 0=Off, 1=Solid, 2=Breathe/Fade, 3=Rainbow, 4=Blink,
-                5=Chase L->R, 6=Chase R->L, 7=Color Cycle, 8=Scanner, 9=Sparkle,
-                10=Center Pulse, 11=Dual Chase, 12=Wipe L->R, 13=Wipe R->L,
-                14=Fire Flicker, 15=Aurora Wave)
-      * Byte 1: Red (0..255)
-      * Byte 2: Green (0..255)
-      * Byte 3: Blue (0..255)
-      * Byte 4: Brightness (0..100%, capped internally to LED_MAX_BRIGHT=80)
-      * Byte 5: Speed (1..10)
+    - Read / Write / Notify Payload (6 to 10 bytes):
+      * Standard Modes (0..15 - 6 bytes):
+        - Byte 0: Mode (0..15: 0=Off, 1=Solid, 2=Breathe/Fade, 3=Rainbow, 4=Blink,
+                  5=Chase L->R, 6=Chase R->L, 7=Color Cycle, 8=Scanner, 9=Sparkle,
+                  10=Center Pulse, 11=Dual Chase, 12=Wipe L->R, 13=Wipe R->L,
+                  14=Fire Flicker, 15=Aurora Wave)
+        - Byte 1: Red (0..255)
+        - Byte 2: Green (0..255)
+        - Byte 3: Blue (0..255)
+        - Byte 4: Brightness (0..100%, capped internally to LED_MAX_BRIGHT=80)
+        - Byte 5: Speed (1..10)
+      * Music Reactive Mode (Mode 16 - 6 to 15 bytes):
+        - Byte 0: Mode = 16 (Music Reactive)
+        - Byte 1: Music Brightness Cap (0..100%, independent of normal brightness)
+        - 15-byte frame:
+          * Byte 2: Disco SubMode (0..9: 0=Disco Party, 1=Bass Burst, 2=Neon Strobe,
+                    3=Rhythm Ripple, 4=Disco Sparkle, 5=Beat Pump, 6=Dual Clash,
+                    7=Cyber Spectrum, 8=Fire Dance, 9=Solo Beat Sync)
+          * Byte 3: Beat / Bass Kick Intensity (0..255)
+          * Bytes 4..6: RGB Color (0..255 each, used in Solo Beat Sync & Disco)
+          * Bytes 7..14: Frequency Bands 0..7 (0..255 each)
+        - 10-byte fallback: Bytes 2..9 = Intensity levels for LEDs 0..7 (0..255 each)
+        - 6-byte fallback : Byte 2 = VU level (0..8), Bytes 3..5 = RGB color
 
  3. CONFIG Characteristic: 11848579-c357-45cb-bdb2-88f560c11708
     Properties: READ, WRITE (with response)
@@ -124,6 +137,17 @@ static uint8_t  s_ledG      = 180;
 static uint8_t  s_ledB      = 255;
 static uint8_t  s_ledBri    = 50;   // 0..100%
 static uint8_t  s_ledSpd    = 5;    // 1..10
+
+// Dedicated Music Sync State (Independent brightness cap & 10 Disco Styles)
+static uint8_t  s_musicBri       = 80;   // 0..100% independent brightness cap
+static uint8_t  s_musicSubMode   = 0;    // 0..9 for the 10 Disco Styles
+static uint8_t  s_musicBeatVal   = 0;    // 0..255 beat/bass kick energy
+static uint8_t  s_musicColorR    = 0;    // Single color for Mode 9 (Solo Beat Sync)
+static uint8_t  s_musicColorG    = 180;
+static uint8_t  s_musicColorB    = 255;
+static uint8_t  s_musicLevels[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+static uint8_t  s_musicStyle     = 0;    // Legacy fallback: 0 = Spectrum 8-band, 1 = VU level
+static uint8_t  s_musicVuLevel   = 0;    // Legacy fallback: 0..8
 
 // Transient Relay Switch Animation State (Restores previous mode automatically)
 static bool     s_animActive     = false;
@@ -780,6 +804,175 @@ static void renderLeds() {
             break;
         }
 
+        case 16: { // 16. Music Reactive 10 Disco Styles (Dedicated independent brightness cap)
+            uint8_t mBri = scaleBrightness(s_musicBri);
+            if (mBri == 0) {
+                s_strip.clear();
+                s_strip.show();
+                break;
+            }
+
+            uint8_t beat = s_musicBeatVal; // 0..255
+            uint32_t now = millis();
+
+            switch (s_musicSubMode) {
+                case 0: { // 0. 🕺 Disco Club Party: Rotating party hues, beats trigger energetic color jumps
+                    static uint16_t partyShift = 0;
+                    static uint32_t lastBeatMs = 0;
+                    if (beat > 140 && (now - lastBeatMs > 160)) {
+                        partyShift = (partyShift + 13107) % 65536; // Jump 72 degrees on beat
+                        lastBeatMs = now;
+                    }
+                    uint8_t pulseBri = (uint8_t)((beat * (uint16_t)mBri) / 255);
+                    uint8_t minGlow = mBri / 5;
+                    uint8_t activeBri = (pulseBri > minGlow) ? pulseBri : minGlow;
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        uint16_t hue = (partyShift + (i * 65536UL / LED_COUNT)) % 65536;
+                        uint32_t c = s_strip.ColorHSV(hue, 255, activeBri);
+                        s_strip.setPixelColor(i, c);
+                    }
+                    break;
+                }
+
+                case 1: { // 1. 💥 Bass Burst: Outward explosion from center 2 LEDs (3 & 4) on kick drum
+                    int radius = (beat * 4) / 255; // 0..3
+                    uint8_t expBri = (uint8_t)((beat * (uint16_t)mBri) / 255);
+                    s_strip.clear();
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        int dist = (i < 4) ? (3 - i) : (i - 4);
+                        if (dist <= radius) {
+                            uint8_t fade = mBri - (dist * (mBri / 4));
+                            // Center hot-pink / outer neon-cyan explosion
+                            uint32_t col = (dist == 0) ? gammaCorrect(255, 0, 180, expBri) : gammaCorrect(0, 240, 255, fade);
+                            s_strip.setPixelColor(i, col);
+                        }
+                    }
+                    break;
+                }
+
+                case 2: { // 2. ⚡ Neon Beat Strobe: Club strobe flash on drum/bass hit, dims between beats
+                    if (beat > 130) {
+                        for (int i = 0; i < LED_COUNT; i++) {
+                            s_strip.setPixelColor(i, gammaCorrect(245, 250, 255, mBri));
+                        }
+                    } else {
+                        uint8_t dimBri = (uint8_t)((beat * (uint16_t)mBri) / 360);
+                        for (int i = 0; i < LED_COUNT; i++) {
+                            s_strip.setPixelColor(i, gammaCorrect(130, 0, 255, dimBri));
+                        }
+                    }
+                    break;
+                }
+
+                case 3: { // 3. 🌊 Rhythm Ripple: Flowing light wave whose speed & glow are driven by music tempo
+                    static uint16_t waveHead = 0;
+                    uint8_t waveSpeed = 1 + (beat / 35);
+                    waveHead = (waveHead + waveSpeed) % 80;
+                    int headPos = waveHead / 10;
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        int diff = abs(i - headPos);
+                        uint8_t bri = (diff == 0) ? mBri : (diff == 1 ? mBri / 2 : (mBri / 6));
+                        uint16_t hue = (28000 + (i * 4500)) % 65536; // Cyan -> Electric Blue -> Purple
+                        s_strip.setPixelColor(i, s_strip.ColorHSV(hue, 255, bri));
+                    }
+                    break;
+                }
+
+                case 4: { // 4. ✨ Disco Sparkle: High frequency beats cause shimmering random starbursts
+                    s_strip.clear();
+                    uint8_t hiEnergy = (s_musicLevels[5] + s_musicLevels[6] + s_musicLevels[7]) / 3;
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        if (s_musicLevels[i] > 110 || (hiEnergy > 90 && random(10) < 4)) {
+                            uint16_t sparkHue = random(65536);
+                            s_strip.setPixelColor(i, s_strip.ColorHSV(sparkHue, 255, mBri));
+                        } else if (beat > 60) {
+                            s_strip.setPixelColor(i, gammaCorrect(40, 0, 80, mBri / 8));
+                        }
+                    }
+                    break;
+                }
+
+                case 5: { // 5. 🌈 Color Beat Pump: Rainbow cycling where brightness & intensity pump to the beat
+                    uint16_t hue = (now * 24) % 65536;
+                    uint8_t pumpBri = (uint8_t)((beat * (uint16_t)mBri) / 255);
+                    uint8_t floorBri = mBri / 6;
+                    uint8_t finalBri = (pumpBri > floorBri) ? pumpBri : floorBri;
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        uint16_t pixelHue = (hue + (i * 65536UL / LED_COUNT)) % 65536;
+                        s_strip.setPixelColor(i, s_strip.ColorHSV(pixelHue, 255, finalBri));
+                    }
+                    break;
+                }
+
+                case 6: { // 6. ⚔️ Dual Clash: Beams fire from ends (0 and 7) and collide at center on beat
+                    int pos = (beat * 4) / 255; // 0..3
+                    s_strip.clear();
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        if (i <= pos) {
+                            s_strip.setPixelColor(i, gammaCorrect(0, 255, 200, mBri)); // Cyan beam
+                        }
+                        if ((7 - i) <= pos) {
+                            s_strip.setPixelColor(7 - i, gammaCorrect(255, 0, 120, mBri)); // Magenta beam
+                        }
+                    }
+                    if (pos >= 3) { // Center clash flash
+                        s_strip.setPixelColor(3, gammaCorrect(255, 255, 255, mBri));
+                        s_strip.setPixelColor(4, gammaCorrect(255, 255, 255, mBri));
+                    }
+                    break;
+                }
+
+                case 7: { // 7. 🎶 Cyber Spectrum: Dynamic cyberpunk 8-band frequency visualizer
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        uint8_t lvl = s_musicLevels[i];
+                        if (lvl < 15) {
+                            s_strip.setPixelColor(i, 0);
+                        } else {
+                            uint16_t hue = (48000 + (i * 4500)) % 65536;
+                            uint8_t briVal = (uint8_t)((lvl * (uint16_t)mBri) / 255);
+                            s_strip.setPixelColor(i, s_strip.ColorHSV(hue, 255, briVal));
+                        }
+                    }
+                    break;
+                }
+
+                case 8: { // 8. 🔥 Fire Dance: Flames that flare up into blinding white-hot peaks on beat
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        uint8_t flameVal = s_musicLevels[i];
+                        if (beat > 150) flameVal = (flameVal / 2) + (beat / 2);
+                        uint8_t briVal = (uint8_t)((flameVal * (uint16_t)mBri) / 255);
+                        if (briVal < 10) {
+                            s_strip.setPixelColor(i, 0);
+                        } else if (briVal > (mBri * 85) / 100) {
+                            s_strip.setPixelColor(i, gammaCorrect(255, 240, 160, briVal));
+                        } else if (briVal > (mBri * 50) / 100) {
+                            s_strip.setPixelColor(i, gammaCorrect(255, 120, 0, briVal));
+                        } else {
+                            s_strip.setPixelColor(i, gammaCorrect(220, 25, 0, briVal));
+                        }
+                    }
+                    break;
+                }
+
+                case 9: { // 9. 🎯 Solo Beat Sync: User's custom color pulses & breathes synchronized to the song's beat
+                    uint8_t pulseBri = (uint8_t)((beat * (uint16_t)mBri) / 255);
+                    uint8_t floorBri = mBri / 8; // Gentle minimum glow so it doesn't vanish entirely
+                    uint8_t activeBri = (pulseBri > floorBri) ? pulseBri : floorBri;
+                    uint32_t col = gammaCorrect(s_musicColorR, s_musicColorG, s_musicColorB, activeBri);
+                    for (int i = 0; i < LED_COUNT; i++) {
+                        s_strip.setPixelColor(i, col);
+                    }
+                    break;
+                }
+
+                default:
+                    s_strip.clear();
+                    break;
+            }
+            s_strip.show();
+            break;
+        }
+
         default:
             s_strip.clear();
             s_strip.show();
@@ -1020,24 +1213,53 @@ void loop() {
                 allRelaysOff("BLE All-Off");
             }
         } else if (cmd.type == WT_LED && cmd.len >= 6) {
-            s_ledMode = cmd.data[0];
-            s_ledR    = cmd.data[1];
-            s_ledG    = cmd.data[2];
-            s_ledB    = cmd.data[3];
-            s_ledBri  = cmd.data[4];
-            s_ledSpd  = cmd.data[5];
-            // If transient animation was running, update saved state so change is retained
-            if (s_animActive) {
-                s_savedLedMode = s_ledMode;
-                s_savedLedR    = s_ledR;
-                s_savedLedG    = s_ledG;
-                s_savedLedB    = s_ledB;
-                s_savedLedBri  = s_ledBri;
-                s_savedLedSpd  = s_ledSpd;
+            uint8_t newMode = cmd.data[0];
+            if (newMode == 16) {
+                // Music Sync Mode: independent brightness cap in cmd.data[1]
+                s_ledMode = 16;
+                s_musicBri = cmd.data[1];
+                if (cmd.len >= 15) {
+                    // 15 bytes: [16, musicBri, subMode, beatVal, r, g, b, b0..b7]
+                    s_musicSubMode = cmd.data[2];
+                    s_musicBeatVal = cmd.data[3];
+                    s_musicColorR  = cmd.data[4];
+                    s_musicColorG  = cmd.data[5];
+                    s_musicColorB  = cmd.data[6];
+                    for (int i = 0; i < 8; i++) {
+                        s_musicLevels[i] = cmd.data[7 + i];
+                    }
+                } else if (cmd.len >= 10) {
+                    s_musicSubMode = 7; // Cyber Spectrum fallback
+                    for (int i = 0; i < 8; i++) {
+                        s_musicLevels[i] = cmd.data[2 + i];
+                    }
+                } else {
+                    s_musicSubMode = 9; // Solo Beat Sync fallback
+                    s_musicBeatVal = cmd.data[2];
+                    s_musicColorR  = cmd.data[3];
+                    s_musicColorG  = cmd.data[4];
+                    s_musicColorB  = cmd.data[5];
+                }
+            } else {
+                s_ledMode = cmd.data[0];
+                s_ledR    = cmd.data[1];
+                s_ledG    = cmd.data[2];
+                s_ledB    = cmd.data[3];
+                s_ledBri  = cmd.data[4];
+                s_ledSpd  = cmd.data[5];
+                // If transient animation was running, update saved state so change is retained
+                if (s_animActive) {
+                    s_savedLedMode = s_ledMode;
+                    s_savedLedR    = s_ledR;
+                    s_savedLedG    = s_ledG;
+                    s_savedLedB    = s_ledB;
+                    s_savedLedBri  = s_ledBri;
+                    s_savedLedSpd  = s_ledSpd;
+                }
+                Serial.printf(">>> [BLE CMD] LED Update: Mode=%u RGB=(%u,%u,%u) Bri=%u%% Spd=%u\n",
+                              s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd);
+                notifyLedState();
             }
-            Serial.printf(">>> [BLE CMD] LED Update: Mode=%u RGB=(%u,%u,%u) Bri=%u%% Spd=%u\n",
-                          s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd);
-            notifyLedState();
         } else if (cmd.type == WT_CONFIG && cmd.len >= 2) {
             if (cmd.data[0] == 0xFE) { // 0xFE = Device Rename [0xFE, len, ...nameBytes]
                 uint8_t nameLen = cmd.data[1];

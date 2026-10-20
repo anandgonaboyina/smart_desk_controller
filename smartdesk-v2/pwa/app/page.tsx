@@ -2,7 +2,7 @@
 
 /**
  ================================================================================
- SMARTDESK-V2 BLE GATT PROTOCOL SPECIFICATION
+ SMARTDESK-V1 BLE GATT PROTOCOL SPECIFICATION
  Service UUID: 7f781e04-c0ee-47c9-a1e4-0aafa8ee316b
  Advertised Name: smartDesk Controller (Configurable in NVS)
 
@@ -21,16 +21,29 @@
 
  2. LED Characteristic: 1814a0cb-9d1f-4212-946a-72e78b64042e
     Properties: READ, WRITE (with response), NOTIFY
-    - Read / Write / Notify Payload (6 bytes):
-      * Byte 0: Mode (0..15: 0=Off, 1=Solid, 2=Breathe/Fade, 3=Rainbow, 4=Blink,
-                5=Chase L->R, 6=Chase R->L, 7=Color Cycle, 8=Scanner, 9=Sparkle,
-                10=Center Pulse, 11=Dual Chase, 12=Wipe L->R, 13=Wipe R->L,
-                14=Fire Flicker, 15=Aurora Wave)
-      * Byte 1: Red (0..255)
-      * Byte 2: Green (0..255)
-      * Byte 3: Blue (0..255)
-      * Byte 4: Brightness (0..100%, capped internally to LED_MAX_BRIGHT=80)
-      * Byte 5: Speed (1..10)
+    - Read / Write / Notify Payload (6 to 10 bytes):
+      * Standard Modes (0..15 - 6 bytes):
+        - Byte 0: Mode (0..15: 0=Off, 1=Solid, 2=Breathe/Fade, 3=Rainbow, 4=Blink,
+                  5=Chase L->R, 6=Chase R->L, 7=Color Cycle, 8=Scanner, 9=Sparkle,
+                  10=Center Pulse, 11=Dual Chase, 12=Wipe L->R, 13=Wipe R->L,
+                  14=Fire Flicker, 15=Aurora Wave)
+        - Byte 1: Red (0..255)
+        - Byte 2: Green (0..255)
+        - Byte 3: Blue (0..255)
+        - Byte 4: Brightness (0..100%, capped internally to LED_MAX_BRIGHT=80)
+        - Byte 5: Speed (1..10)
+      * Music Reactive Mode (Mode 16 - 6 to 15 bytes):
+        - Byte 0: Mode = 16 (Music Reactive)
+        - Byte 1: Music Brightness Cap (0..100%, independent of normal brightness)
+        - 15-byte frame:
+          * Byte 2: Disco SubMode (0..9: 0=Disco Party, 1=Bass Burst, 2=Neon Strobe,
+                    3=Rhythm Ripple, 4=Disco Sparkle, 5=Beat Pump, 6=Dual Clash,
+                    7=Cyber Spectrum, 8=Fire Dance, 9=Solo Beat Sync)
+          * Byte 3: Beat / Bass Kick Intensity (0..255)
+          * Bytes 4..6: RGB Color (0..255 each, used in Solo Beat Sync & Disco)
+          * Bytes 7..14: Frequency Bands 0..7 (0..255 each)
+        - 10-byte fallback: Bytes 2..9 = Intensity levels for LEDs 0..7 (0..255 each)
+        - 6-byte fallback : Byte 2 = VU level (0..8), Bytes 3..5 = RGB color
 
  3. CONFIG Characteristic: 11848579-c357-45cb-bdb2-88f560c11708
     Properties: READ, WRITE (with response)
@@ -194,6 +207,19 @@ const RELAY_ANIM_OPTIONS = [
   { id: 10, label: "Rainbow Wave" },
 ];
 
+const MUSIC_DISCO_MODES = [
+  { id: 0, label: "🕺 Disco Party", desc: "Rotating club lights & beat jumps" },
+  { id: 1, label: "💥 Bass Burst", desc: "Center-outward explosion on kicks" },
+  { id: 2, label: "⚡ Neon Strobe", desc: "High-contrast nightclub beat flashes" },
+  { id: 3, label: "🌊 Rhythm Ripple", desc: "Flowing light wave driven by tempo" },
+  { id: 4, label: "✨ Disco Sparkle", desc: "Shimmering random starbursts on beats" },
+  { id: 5, label: "🌈 Beat Pump", desc: "Color wheel pumping brightness with bass" },
+  { id: 6, label: "⚔️ Dual Clash", desc: "Beams colliding at center on beat" },
+  { id: 7, label: "🎶 Cyber Spectrum", desc: "8-band dancing cyberpunk equalizer" },
+  { id: 8, label: "🔥 Fire Dance", desc: "Flaring flames on heavy bass/drums" },
+  { id: 9, label: "🎯 Solo Beat Sync", desc: "Custom color pulsing to the song" },
+];
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const bytesToHex = (arr: Uint8Array | DataView): string => {
@@ -237,6 +263,39 @@ export default function SmartDeskPage() {
     bri: 50,
     spd: 5,
   });
+
+  // Dedicated Music Sync State (Independent brightness & 10 Disco Styles)
+  const [musicSyncActive, setMusicSyncActive] = useState<boolean>(false);
+  const [musicBri, setMusicBri] = useState<number>(85); // Dedicated Music Brightness Cap (0..100%), independent of led.bri
+  const [musicSensitivity, setMusicSensitivity] = useState<number>(1.2); // 0.5x to 3.0x
+  const [musicSubMode, setMusicSubMode] = useState<number>(0); // 0..9 for the 10 Disco Styles
+  const [soloColor, setSoloColor] = useState<{ r: number; g: number; b: number }>({ r: 0, g: 240, b: 255 });
+  const [micVolume, setMicVolume] = useState<number>(0); // 0..100% volume for UI level meter
+  const [beatPulse, setBeatPulse] = useState<boolean>(false); // UI beat pulse visual indicator
+
+  // Audio Analysis Refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const lastBleMusicWriteMsRef = useRef<number>(0);
+  const lastVolUpdateRef = useRef<number>(0);
+  const liveMusicLevelsRef = useRef<number[]>([0, 0, 0, 0, 0, 0, 0, 0]);
+  const liveBeatValRef = useRef<number>(0);
+  const bassAvgRef = useRef<number>(45);
+  const savedLedBeforeMusicRef = useRef<LedState | null>(null);
+  const stopMusicSyncRef = useRef<() => void>(() => {});
+
+  const musicBriRef = useRef<number>(musicBri);
+  musicBriRef.current = musicBri;
+  const musicSensitivityRef = useRef<number>(musicSensitivity);
+  musicSensitivityRef.current = musicSensitivity;
+  const musicSubModeRef = useRef<number>(musicSubMode);
+  musicSubModeRef.current = musicSubMode;
+  const soloColorRef = useRef<{ r: number; g: number; b: number }>(soloColor);
+  soloColorRef.current = soloColor;
+  const connectedRef = useRef<boolean>(connected);
+  connectedRef.current = connected;
 
   // UI Simulation State for Transient Relay Action (Visible directly in browser)
   const [uiAnim, setUiAnim] = useState<{
@@ -461,6 +520,7 @@ export default function SmartDeskPage() {
     infoCharRef.current = null;
     deviceRef.current = null;
     setUiAnim(null);
+    stopMusicSyncRef.current();
   }, [addLog]);
 
   /* ── Connect Flow (One-by-One GATT Setup) ───────────────────────────────── */
@@ -730,6 +790,9 @@ export default function SmartDeskPage() {
   );
 
   const updateLedDebounced = (patch: Partial<LedState>) => {
+    if (patch.mode !== undefined && musicSyncActive) {
+      stopMusicSyncRef.current();
+    }
     const next = { ...led, ...patch };
     setLed(next);
     if (ledDebounceTimerRef.current) clearTimeout(ledDebounceTimerRef.current);
@@ -739,8 +802,155 @@ export default function SmartDeskPage() {
   };
 
   const applyLedPreset = (preset: { mode: number; r: number; g: number; b: number; bri: number; spd: number }) => {
+    if (musicSyncActive) {
+      stopMusicSyncRef.current();
+    }
     setLed(preset);
     dispatchLedUpdate(preset);
+  };
+
+  /* ── Music Sync Functions (Microphone Live Audio Reactivity) ────────────── */
+  const stopMusicSync = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    setMusicSyncActive(false);
+    setMicVolume(0);
+    setBeatPulse(false);
+    liveBeatValRef.current = 0;
+    liveMusicLevelsRef.current = [0, 0, 0, 0, 0, 0, 0, 0];
+
+    // Restore previous normal LED mode and normal brightness!
+    if (savedLedBeforeMusicRef.current) {
+      const restored = savedLedBeforeMusicRef.current;
+      setLed(restored);
+      dispatchLedUpdate(restored);
+      savedLedBeforeMusicRef.current = null;
+      addLog("Microphone listening stopped. Restored previous LED mode & brightness.", "info");
+    }
+  }, [addLog, dispatchLedUpdate]);
+
+  useEffect(() => {
+    stopMusicSyncRef.current = stopMusicSync;
+  }, [stopMusicSync]);
+
+  const startMusicSync = async () => {
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      alert("Microphone access is not supported in this browser. Please use Google Chrome or Microsoft Edge on HTTPS or localhost:3000.");
+      return;
+    }
+
+    try {
+      // Save current normal LED state before starting Music Sync
+      savedLedBeforeMusicRef.current = { ...led };
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      mediaStreamRef.current = stream;
+
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      audioContextRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64; // 32 frequency bins
+      analyser.smoothingTimeConstant = 0.5;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      setMusicSyncActive(true);
+      addLog("🎙️ Microphone listening started for Music Sync.", "info");
+
+      const bufferLength = analyser.frequencyBinCount; // 32 bins
+      const dataArray = new Uint8Array(bufferLength);
+
+      const tickAudio = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+
+        // 8 frequency bands
+        const sens = musicSensitivityRef.current;
+        const rawBands = [
+          dataArray[1] || 0, // 0: Sub-bass
+          dataArray[2] || 0, // 1: Bass
+          Math.round(((dataArray[3] || 0) + (dataArray[4] || 0)) / 2), // 2: Low-mid
+          Math.round(((dataArray[5] || 0) + (dataArray[6] || 0)) / 2), // 3: Mid
+          Math.round(((dataArray[7] || 0) + (dataArray[8] || 0)) / 2), // 4: Upper-mid
+          Math.round(((dataArray[9] || 0) + (dataArray[11] || 0)) / 2), // 5: High-mid
+          Math.round(((dataArray[12] || 0) + (dataArray[15] || 0)) / 2), // 6: Presence
+          Math.round(((dataArray[16] || 0) + (dataArray[22] || 0)) / 2), // 7: Treble
+        ];
+
+        const scaledBands = rawBands.map((v) => Math.min(255, Math.round(v * sens)));
+        liveMusicLevelsRef.current = scaledBands;
+
+        // Dynamic beat detection on low frequencies (bass kicks)
+        const bassEnergy = Math.max(scaledBands[0], scaledBands[1]);
+        bassAvgRef.current = bassAvgRef.current * 0.88 + bassEnergy * 0.12;
+        const isBeat = bassEnergy > 1.25 * bassAvgRef.current && bassEnergy > 50;
+        const beatVal = Math.min(255, Math.round(bassEnergy));
+        liveBeatValRef.current = beatVal;
+
+        let sum = 0;
+        for (let i = 0; i < 8; i++) sum += scaledBands[i];
+        const avg = Math.round(sum / 8);
+
+        const now = Date.now();
+        if (now - lastVolUpdateRef.current >= 60) {
+          lastVolUpdateRef.current = now;
+          setMicVolume(Math.round((avg / 255) * 100));
+          setBeatPulse(isBeat);
+        }
+
+        // Throttle BLE write to ~12-14 Hz (~75ms)
+        if (connectedRef.current && ledCharRef.current && (now - lastBleMusicWriteMsRef.current >= 75)) {
+          lastBleMusicWriteMsRef.current = now;
+          const currentBri = musicBriRef.current;
+          const currentSub = musicSubModeRef.current;
+          const sColor = soloColorRef.current;
+
+          // 15-byte frame: [16, musicBri, subMode, beatVal, r, g, b, b0..b7]
+          const payload = new Uint8Array([
+            16,
+            currentBri,
+            currentSub,
+            beatVal,
+            sColor.r,
+            sColor.g,
+            sColor.b,
+            ...scaledBands,
+          ]);
+          ledCharRef.current.writeValueWithResponse(payload).catch(() => {});
+        }
+
+        animFrameRef.current = requestAnimationFrame(tickAudio);
+      };
+
+      animFrameRef.current = requestAnimationFrame(tickAudio);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addLog(`Microphone access error: ${msg}`, "err");
+      alert(`Could not access microphone:\n\n${msg}\n\nPlease allow microphone access in your browser to use Music Sync.`);
+      stopMusicSync();
+    }
   };
 
   /* ── Hex Color Converter ───────────────────────────────────────────────── */
@@ -860,6 +1070,152 @@ export default function SmartDeskPage() {
           }
           default:
             bg = `rgba(${baseR}, ${baseG}, ${baseB}, 0.8)`;
+            break;
+        }
+
+        dots.push(
+          <div
+            key={i}
+            className="w-7 h-7 sm:w-9 sm:h-9 rounded-full border border-zinc-600 transition-all duration-75"
+            style={{ backgroundColor: bg, boxShadow: shadow }}
+          />
+        );
+      }
+      return dots;
+    }
+
+    // Check if Music Sync is active (10 Disco Styles Live Simulation)
+    if (musicSyncActive) {
+      const levels = liveMusicLevelsRef.current;
+      const alpha = Math.max(0.15, musicBri / 100);
+      const beat = liveBeatValRef.current;
+      const normBeat = beat / 255; // 0.0 .. 1.0
+
+      for (let i = 0; i < 8; i++) {
+        let bg = "#18181b";
+        let shadow = "none";
+
+        switch (musicSubMode) {
+          case 0: { // 0. 🕺 Disco Party: Rotating party hues jumping on beats
+            const shift = (t * 6 + (beat > 120 ? 120 : 0)) % 360;
+            const hue = (shift + i * 45) % 360;
+            const bBri = Math.max(0.2, normBeat * alpha);
+            bg = `hsl(${hue}, 100%, ${Math.min(65, 30 + bBri * 35)}%)`;
+            shadow = `0 0 ${Math.round(20 * bBri)}px hsl(${hue}, 100%, 50%)`;
+            break;
+          }
+
+          case 1: { // 1. 💥 Bass Burst: Center 2 LEDs (3 & 4) explode outward
+            const dist = i < 4 ? 3 - i : i - 4;
+            const radius = Math.floor(normBeat * 4);
+            if (dist <= radius) {
+              const fade = Math.max(0.1, (1 - dist / 4) * normBeat * alpha);
+              const col = dist === 0 ? "255, 0, 180" : "0, 240, 255";
+              bg = `rgba(${col}, ${fade})`;
+              shadow = `0 0 ${Math.round(18 * fade)}px rgba(${col}, 0.9)`;
+            }
+            break;
+          }
+
+          case 2: { // 2. ⚡ Neon Strobe: High-contrast nightclub flash on beats
+            if (beat > 120) {
+              bg = `rgba(245, 250, 255, ${alpha})`;
+              shadow = `0 0 24px rgba(245, 250, 255, 1)`;
+            } else {
+              const dim = Math.max(0.05, normBeat * 0.25 * alpha);
+              bg = `rgba(130, 0, 255, ${dim})`;
+              shadow = `0 0 8px rgba(130, 0, 255, ${dim})`;
+            }
+            break;
+          }
+
+          case 3: { // 3. 🌊 Rhythm Ripple: Flowing light wave driven by tempo
+            const head = Math.floor((t * (0.2 + normBeat * 0.5)) % 8);
+            const diff = Math.abs(i - head);
+            const rippleBri = diff === 0 ? alpha : diff === 1 ? alpha * 0.5 : alpha * 0.15;
+            const hue = (190 + i * 20) % 360; // Cyan -> Blue -> Purple
+            bg = `hsl(${hue}, 100%, ${Math.min(65, 25 + rippleBri * 40)}%)`;
+            shadow = `0 0 ${Math.round(16 * rippleBri)}px hsl(${hue}, 100%, 50%)`;
+            break;
+          }
+
+          case 4: { // 4. ✨ Disco Sparkle: Shimmering random starbursts on beats & treble
+            const hi = (levels[5] + levels[6] + levels[7]) / 3;
+            const isSparkle = levels[i] > 110 || (hi > 90 && ((t + i * 3) % 4 === 0));
+            if (isSparkle) {
+              const sparkHue = (i * 70 + t * 25) % 360;
+              bg = `hsl(${sparkHue}, 100%, 65%)`;
+              shadow = `0 0 18px hsl(${sparkHue}, 100%, 50%)`;
+            } else if (normBeat > 0.3) {
+              bg = `rgba(70, 0, 140, ${alpha * 0.2})`;
+            }
+            break;
+          }
+
+          case 5: { // 5. 🌈 Beat Pump: Color wheel pumping brightness to the bass
+            const hue = (t * 4 + i * 45) % 360;
+            const pump = Math.max(0.18, normBeat * alpha);
+            bg = `hsl(${hue}, 100%, ${Math.min(65, 25 + pump * 40)}%)`;
+            shadow = `0 0 ${Math.round(20 * pump)}px hsl(${hue}, 100%, 50%)`;
+            break;
+          }
+
+          case 6: { // 6. ⚔️ Dual Clash: Beams colliding at center on beat
+            const pos = Math.floor(normBeat * 4);
+            const isCyan = i <= pos;
+            const isMagenta = (7 - i) <= pos;
+            if (pos >= 3 && (i === 3 || i === 4)) {
+              bg = `rgba(255, 255, 255, ${alpha})`;
+              shadow = `0 0 20px rgba(255, 255, 255, 1)`;
+            } else if (isCyan && isMagenta) {
+              bg = `rgba(255, 255, 255, ${alpha * 0.8})`;
+              shadow = `0 0 14px white`;
+            } else if (isCyan) {
+              bg = `rgba(0, 255, 200, ${alpha})`;
+              shadow = `0 0 14px rgba(0, 255, 200, 0.8)`;
+            } else if (isMagenta) {
+              bg = `rgba(255, 0, 120, ${alpha})`;
+              shadow = `0 0 14px rgba(255, 0, 120, 0.8)`;
+            }
+            break;
+          }
+
+          case 7: { // 7. 🎶 Cyber Spectrum: 8-band dancing cyberpunk equalizer
+            const lvl = levels[i] || 0;
+            const intensity = (lvl / 255) * alpha;
+            if (intensity > 0.05) {
+              const hue = (260 + i * 35) % 360;
+              bg = `hsl(${hue}, 100%, ${Math.min(65, 25 + intensity * 45)}%)`;
+              shadow = `0 0 ${Math.round(18 * intensity)}px hsl(${hue}, 100%, 50%)`;
+            }
+            break;
+          }
+
+          case 8: { // 8. 🔥 Fire Dance: Flames flaring into white-hot peaks
+            const fVal = Math.max(levels[i] || 0, Math.round(normBeat * 200));
+            const intensity = (fVal / 255) * alpha;
+            if (intensity > 0.7) {
+              bg = `rgba(255, 240, 170, ${intensity})`;
+              shadow = `0 0 20px rgba(255, 220, 100, 1)`;
+            } else if (intensity > 0.35) {
+              bg = `rgba(255, 120, 0, ${intensity})`;
+              shadow = `0 0 14px rgba(255, 100, 0, 0.8)`;
+            } else if (intensity > 0.08) {
+              bg = `rgba(220, 25, 0, ${intensity})`;
+              shadow = `0 0 10px rgba(200, 20, 0, 0.5)`;
+            }
+            break;
+          }
+
+          case 9: { // 9. 🎯 Solo Beat Sync: User's custom color pulsing & breathing to the song
+            const pulse = Math.max(0.12, normBeat * alpha);
+            bg = `rgba(${soloColor.r}, ${soloColor.g}, ${soloColor.b}, ${pulse})`;
+            shadow = `0 0 ${Math.round(22 * pulse)}px rgba(${soloColor.r}, ${soloColor.g}, ${soloColor.b}, 0.9)`;
+            break;
+          }
+
+          default:
+            bg = "#18181b";
             break;
         }
 
@@ -1188,6 +1544,8 @@ export default function SmartDeskPage() {
             <div className="text-xs font-mono font-semibold px-2.5 py-1 rounded bg-zinc-800 text-cyan-300 border border-zinc-700">
               {uiAnim?.active
                 ? "Relay Action Triggered"
+                : musicSyncActive
+                ? `🎙️ ${MUSIC_DISCO_MODES.find((m) => m.id === musicSubMode)?.label || "Music Sync"}`
                 : LED_MODES.find((m) => m.id === led.mode)?.label || `Mode ${led.mode}`}
             </div>
           </div>
@@ -1195,6 +1553,220 @@ export default function SmartDeskPage() {
           {/* 8-Dot Visualizer */}
           <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex justify-around items-center overflow-x-auto gap-2">
             {render8DotPreview()}
+          </div>
+
+          {/* ── MUSIC SYNC (LIVE MICROPHONE AUDIO REACTIVITY) ───────────── */}
+          <div className={`p-4 rounded-xl border transition-all duration-300 flex flex-col gap-4 ${
+            musicSyncActive
+              ? "bg-gradient-to-b from-purple-950/40 via-zinc-900 to-zinc-900 border-purple-500/80 shadow-[0_0_24px_rgba(168,85,247,0.2)]"
+              : "bg-zinc-950/60 border-zinc-800"
+          }`}>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🎙️</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white tracking-wide">
+                      Microphone Music Sync
+                    </span>
+                    {musicSyncActive && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/50 animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                        LISTENING
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
+                    Live browser microphone input • 10 Disco Party Sync Modes • Auto-restores normal LED mode on stop
+                  </p>
+                </div>
+              </div>
+
+              {/* Main Toggle Button */}
+              <button
+                type="button"
+                disabled={!connected}
+                onClick={() => {
+                  if (musicSyncActive) {
+                    stopMusicSync();
+                  } else {
+                    startMusicSync();
+                  }
+                }}
+                className={`min-h-[44px] px-5 py-2 rounded-xl font-bold text-xs tracking-wider uppercase transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 select-none shadow-md disabled:opacity-40 active:scale-95 ${
+                  musicSyncActive
+                    ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/50 border border-rose-400 animate-pulse"
+                    : "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-900/50 border border-purple-400"
+                }`}
+              >
+                {musicSyncActive ? (
+                  <>
+                    <span>⏹️</span>
+                    <span>Stop Music Sync</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🎙️</span>
+                    <span>Start Music Sync</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Live Volume & Beat Meter Bar (When Active) */}
+            {musicSyncActive && (
+              <div className="flex flex-col gap-1.5 bg-zinc-950 p-3 rounded-xl border border-zinc-800">
+                <div className="flex justify-between items-center text-xs font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-400 font-bold uppercase">Live Audio Volume</span>
+                    {beatPulse && (
+                      <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/40 animate-pulse">
+                        💥 BEAT
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-bold ${micVolume > 75 ? "text-rose-400" : micVolume > 35 ? "text-amber-400" : "text-emerald-400"}`}>
+                    {micVolume}%
+                  </span>
+                </div>
+                <div className="w-full bg-zinc-900 h-3 rounded-full overflow-hidden border border-zinc-800 p-0.5">
+                  <div
+                    className="h-full rounded-full transition-all duration-75 bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500"
+                    style={{ width: `${Math.min(100, Math.max(0, micVolume))}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 10 Disco Music Sync Styles Grid */}
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-mono uppercase text-zinc-400 font-bold flex items-center gap-1.5">
+                  <span>🕺</span>
+                  <span>10 Disco Music Sync Styles</span>
+                </label>
+                <span className="text-[11px] font-mono text-purple-400 font-bold">
+                  {MUSIC_DISCO_MODES.find((m) => m.id === musicSubMode)?.label}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {MUSIC_DISCO_MODES.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setMusicSubMode(s.id)}
+                    className={`min-h-[50px] py-2 px-2.5 rounded-xl flex flex-col items-start justify-center text-left transition-all cursor-pointer ${
+                      musicSubMode === s.id
+                        ? "bg-purple-600 text-white shadow-md shadow-purple-900/50 border border-purple-400 font-bold"
+                        : "bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700/60 hover:bg-zinc-750"
+                    }`}
+                  >
+                    <span className="text-xs leading-none">{s.label}</span>
+                    <span className="text-[10px] opacity-75 font-mono mt-1 line-clamp-1">{s.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Solo Beat Color Customizer (When Mode 9 is selected) */}
+            {musicSubMode === 9 && (
+              <div className="bg-zinc-950 p-3.5 rounded-xl border border-purple-500/50 flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-mono uppercase text-purple-300 font-bold flex items-center gap-1.5">
+                    <span>🎯</span>
+                    <span>Solo Beat Sync Color</span>
+                  </label>
+                  <span className="text-[11px] font-mono text-zinc-400">
+                    rgb({soloColor.r}, {soloColor.g}, {soloColor.b})
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={rgbToHex(soloColor.r, soloColor.g, soloColor.b)}
+                    onChange={(e) => setSoloColor(hexToRgb(e.target.value))}
+                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { name: "Cyan", rgb: { r: 0, g: 240, b: 255 } },
+                      { name: "Violet", rgb: { r: 180, g: 0, b: 255 } },
+                      { name: "Hot Pink", rgb: { r: 255, g: 0, b: 140 } },
+                      { name: "Lime", rgb: { r: 50, g: 255, b: 20 } },
+                      { name: "Gold", rgb: { r: 255, g: 190, b: 0 } },
+                      { name: "Ice White", rgb: { r: 255, g: 255, b: 255 } },
+                    ].map((col) => (
+                      <button
+                        key={col.name}
+                        type="button"
+                        onClick={() => setSoloColor(col.rgb)}
+                        className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-mono text-zinc-300 border border-zinc-700/60 cursor-pointer transition-all active:scale-95"
+                      >
+                        {col.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[10px] font-mono text-zinc-400">
+                  This chosen color will pump, animate, and synchronize with your song's beat!
+                </p>
+              </div>
+            )}
+
+            {/* Independent Brightness & Sensitivity Sliders */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-zinc-800/80">
+              {/* Music Brightness Slider (INDEPENDENT CAP) */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs font-mono text-purple-300 font-bold uppercase">
+                      Music Max Brightness
+                    </label>
+                    <span className="text-[10px] font-mono text-purple-400/80 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-800/60">
+                      Independent Cap
+                    </span>
+                  </div>
+                  <span className="font-mono text-xs text-purple-400 font-bold">{musicBri}%</span>
+                </div>
+                <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 flex items-center min-h-[48px]">
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={musicBri}
+                    onChange={(e) => setMusicBri(parseInt(e.target.value, 10))}
+                    className="w-full accent-purple-500 cursor-pointer"
+                  />
+                </div>
+                <p className="text-[10px] font-mono text-zinc-500">
+                  Controls Music Sync brightness only. Normal RGB brightness ({led.bri}%) is preserved.
+                </p>
+              </div>
+
+              {/* Microphone Sensitivity Slider */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-mono text-zinc-400 font-bold uppercase">
+                    Mic Sensitivity / Gain
+                  </label>
+                  <span className="font-mono text-xs text-cyan-400 font-bold">{musicSensitivity.toFixed(1)}x</span>
+                </div>
+                <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 flex items-center min-h-[48px]">
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="3.0"
+                    step="0.1"
+                    value={musicSensitivity}
+                    onChange={(e) => setMusicSensitivity(parseFloat(e.target.value))}
+                    className="w-full accent-cyan-500 cursor-pointer"
+                  />
+                </div>
+                <p className="text-[10px] font-mono text-zinc-500">
+                  Boost gain for quiet rooms or lower for loud speakers.
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* 16 Effect Modes Grid */}
@@ -1275,7 +1847,7 @@ export default function SmartDeskPage() {
             {/* Brightness Slider */}
             <div className="flex flex-col gap-2">
               <div className="flex justify-between items-center">
-                <label className="text-xs font-mono text-zinc-400 font-bold uppercase">Brightness Cap</label>
+                <label className="text-xs font-mono text-zinc-400 font-bold uppercase">Normal Brightness Cap</label>
                 <span className="font-mono text-xs text-cyan-400">{led.bri}%</span>
               </div>
               <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 flex items-center min-h-[52px]">
