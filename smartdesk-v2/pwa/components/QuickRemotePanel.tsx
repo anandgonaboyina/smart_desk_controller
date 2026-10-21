@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { RelayState, RelayConfigItem, LedState } from "../types/smartdesk";
+import { RelayState, RelayConfigItem, LedState, MatrixConfig } from "../types/smartdesk";
 import CustomTimerModal from "./CustomTimerModal";
+import { useVoiceAssistant } from "../hooks/useVoiceAssistant";
 
 export interface QuickRemotePanelProps {
   connected: boolean;
@@ -10,12 +11,14 @@ export interface QuickRemotePanelProps {
   relays: RelayState[];
   configs: RelayConfigItem[];
   led: LedState;
+  matrixConfig?: MatrixConfig;
   rgbTimerRemainingMin: number;
   onToggleRelay: (idx: number, currentVal?: boolean) => void;
   onSetRelayTimer: (idx: number, minutes: number) => void;
   onAllRelaysOff: () => void;
   onSendLed: (mode: number, r: number, g: number, b: number, bri: number, spd: number) => void;
   onSetRgbTimer: (minutes: number) => void;
+  onSetMatrixDisplay?: (mode: number, speed?: number, bri?: number, r?: number, g?: number, b?: number, text?: string) => void;
   onNavigateTab: (tab: "relays" | "leds" | "schedule" | "presence" | "settings") => void;
 }
 
@@ -23,15 +26,26 @@ export default function QuickRemotePanel({
   relays,
   configs,
   led,
+  matrixConfig,
   rgbTimerRemainingMin,
   onToggleRelay,
   onSetRelayTimer,
   onAllRelaysOff,
   onSendLed,
   onSetRgbTimer,
+  onSetMatrixDisplay,
 }: QuickRemotePanelProps) {
   const [timerTargetIdx, setTimerTargetIdx] = useState<number | null>(null);
   const isRgbOn = led.mode !== 0;
+
+  const voice = useVoiceAssistant({
+    relays,
+    relayConfigs: configs,
+    onToggleRelay,
+    onAllRelaysOff,
+    onSendLed,
+    onSetMatrixMode: (mode, text) => onSetMatrixDisplay?.(mode, undefined, undefined, undefined, undefined, undefined, text),
+  });
 
   const handleToggleRgb = () => {
     if (isRgbOn) onSendLed(0, led.r, led.g, led.b, led.bri, led.spd);
@@ -168,6 +182,95 @@ export default function QuickRemotePanel({
             </div>
           )}
         </div>
+      </div>
+
+      {/* 2D MATRIX QUICK ROW */}
+      <div
+        className={`p-3 rounded-xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0 ${
+          matrixConfig?.mode !== 0 ? "bg-zinc-900 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-black border-zinc-800"
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-base">🔲</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-extrabold text-white">Matrix Display:</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
+              {matrixConfig?.mode === 17 ? "🕒 Clock" : matrixConfig?.mode === 18 ? `💬 "${matrixConfig?.text || 'SMARTDESK'}"` : matrixConfig?.mode === 19 ? "🌧️ Matrix Rain" : "Off"}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={() => onSetMatrixDisplay?.(17)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-all active:scale-95 cursor-pointer ${
+              matrixConfig?.mode === 17 ? "bg-cyan-500 text-black border-cyan-400" : "bg-zinc-800 text-zinc-300 border-zinc-700"
+            }`}
+          >
+            Clock
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetMatrixDisplay?.(18)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-all active:scale-95 cursor-pointer ${
+              matrixConfig?.mode === 18 ? "bg-cyan-500 text-black border-cyan-400" : "bg-zinc-800 text-zinc-300 border-zinc-700"
+            }`}
+          >
+            Marquee
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetMatrixDisplay?.(19)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-all active:scale-95 cursor-pointer ${
+              matrixConfig?.mode === 19 ? "bg-cyan-500 text-black border-cyan-400" : "bg-zinc-800 text-zinc-300 border-zinc-700"
+            }`}
+          >
+            Rain
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetMatrixDisplay?.(matrixConfig?.mode === 0 ? 17 : 0)}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-extrabold bg-zinc-800 border border-zinc-700 text-zinc-400 active:scale-95 cursor-pointer"
+          >
+            {matrixConfig?.mode === 0 ? "ON" : "OFF"}
+          </button>
+        </div>
+      </div>
+
+      {/* FLOATING SPEECH FEEDBACK BANNER */}
+      {(voice.voiceReply || voice.voiceTranscript) && (
+        <div className="fixed bottom-28 inset-x-0 mx-auto w-fit max-w-[85%] z-50 px-4 pointer-events-none animate-in fade-in slide-in-from-bottom-2">
+          <div className="px-5 py-2.5 rounded-full border border-cyan-500/50 bg-zinc-950/95 shadow-[0_0_25px_rgba(6,182,212,0.4)] backdrop-blur-md text-xs sm:text-sm font-extrabold text-cyan-300 flex items-center gap-2">
+            <span>{voice.isListening ? "🎙️" : "🗣️"}</span>
+            <span className="truncate">{voice.voiceReply || `"${voice.voiceTranscript}"`}</span>
+          </div>
+        </div>
+      )}
+
+      {/* BOTTOM MIDDLE VOICE ASSISTANT MIC */}
+      <div className="flex flex-col items-center justify-center pt-1 pb-1 shrink-0">
+        <button
+          type="button"
+          onMouseDown={voice.handleMicMouseDown}
+          onMouseUp={voice.handleMicMouseUp}
+          onTouchStart={voice.handleMicMouseDown}
+          onTouchEnd={voice.handleMicMouseUp}
+          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-2xl active:scale-90 border-2 ${
+            voice.isContinuous
+              ? "bg-rose-600 border-rose-400 text-white shadow-[0_0_30px_rgba(244,63,94,0.65)] animate-pulse"
+              : voice.isListening
+              ? "bg-cyan-500 border-cyan-300 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] animate-pulse"
+              : "bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-cyan-400 hover:border-cyan-500/50"
+          }`}
+          title="Tap for voice command • Hold for continuous listening"
+        >
+          <span className="text-2xl">
+            {voice.isContinuous ? "🔴" : voice.isListening ? "🎙️" : "🎤"}
+          </span>
+        </button>
+        <span className="text-[9px] font-extrabold uppercase tracking-widest mt-1 text-zinc-500">
+          {voice.isContinuous ? "Continuous" : voice.isListening ? "Listening..." : "Tap to Speak"}
+        </span>
       </div>
 
       {timerTargetIdx !== null && (

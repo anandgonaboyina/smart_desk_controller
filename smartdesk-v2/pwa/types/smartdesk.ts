@@ -97,6 +97,21 @@ export interface EnvData {
   humidity: number;
 }
 
+export interface MatrixConfig {
+  rows: number;
+  cols: number;
+  wiringType: number; // 0 = Progressive, 1 = Zig-Zag (Serpentine)
+  pin: number;        // GPIO pin (default 11)
+  enabled: boolean;
+  mode: number;       // 0=Off, 17=Clock, 18=Scroll Text, 19=Matrix Rain
+  speed: number;      // 1..10
+  bri: number;        // 0..100
+  colorR: number;
+  colorG: number;
+  colorB: number;
+  text: string;
+}
+
 export interface UiAnimState {
   active: boolean;
   isTurnOn: boolean;
@@ -160,5 +175,36 @@ export const MUSIC_DISCO_MODES = [
   { id: 7, label: "Cyber Spectrum", desc: "8-band dancing cyberpunk equalizer", icon: "🎵" },
   { id: 8, label: "Fire Dance", desc: "Flaring flames on heavy bass/drums", icon: "🔥" },
   { id: 9, label: "Solo Beat Sync", desc: "Custom color pulsing to the song", icon: "🎯" },
+];
+
+export const MATRIX_MODES = [
+  { id: 17, label: "Digital Clock", desc: "RTC Real-Time Clock Display", icon: "🕒" },
+  { id: 18, label: "Scroll Left", desc: "Marquee text scrolling right to left", icon: "⬅️" },
+  { id: 20, label: "Scroll Right", desc: "Marquee text scrolling left to right", icon: "➡️" },
+  { id: 21, label: "Bounce Text", desc: "Alternating ping-pong scrolling", icon: "↔️" },
+  { id: 22, label: "Rainbow Text", desc: "Dynamic color-cycling marquee", icon: "🌈" },
+  { id: 23, label: "Fade In-Out", desc: "Breathing text fade transition", icon: "✨" },
+  { id: 19, label: "Matrix Rain", desc: "Digital Cyberpunk falling rain", icon: "🌧️" },
+  { id: 24, label: "Fireplace", desc: "Organic flickering flame simulation", icon: "🔥" },
+  { id: 25, label: "Starfield", desc: "Twinkling starry night sparkle", icon: "⭐" },
+  { id: 26, label: "Equalizer", desc: "Audio spectrum dancing visualizer", icon: "📊" },
+  { id: 0, label: "Matrix Off", desc: "Matrix display dark", icon: "🌑" },
+];
+
+export const MATRIX_SAFE_GPIO_PINS = [
+  { pin: 11, label: "GPIO 11 (Default • Recommended)" },
+  { pin: 12, label: "GPIO 12" },
+  { pin: 13, label: "GPIO 13" },
+  { pin: 14, label: "GPIO 14" },
+  { pin: 15, label: "GPIO 15" },
+  { pin: 16, label: "GPIO 16" },
+  { pin: 17, label: "GPIO 17" },
+  { pin: 18, label: "GPIO 18" },
+  { pin: 21, label: "GPIO 21" },
+  { pin: 38, label: "GPIO 38" },
+  { pin: 39, label: "GPIO 39" },
+  { pin: 40, label: "GPIO 40" },
+  { pin: 41, label: "GPIO 41" },
+  { pin: 42, label: "GPIO 42" },
 ];
 

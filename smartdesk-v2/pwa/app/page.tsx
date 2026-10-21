@@ -50,9 +50,20 @@ export default function SmartDeskApp() {
     <main className="min-h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col font-sans">
       {activeTab === "aod" ? (
         <AodFaceScreen
-          connected={ble.connected} connecting={ble.connecting} deviceName={ble.deviceName} relays={ble.relays} envData={ble.envData}
-          presenceData={ble.presenceData} rgbTimerRemainingMin={ble.rgbTimerRemainingMin} onConnect={ble.handleConnect}
+          connected={ble.connected}
+          connecting={ble.connecting}
+          deviceName={ble.deviceName}
+          relays={ble.relays}
+          relayConfigs={ble.configs}
+          envData={ble.envData}
+          presenceData={ble.presenceData}
+          rgbTimerRemainingMin={ble.rgbTimerRemainingMin}
+          onConnect={ble.handleConnect}
           onOpenRemote={() => setActiveTab("remote")}
+          onToggleRelay={ble.toggleRelay}
+          onAllRelaysOff={ble.allRelaysOff}
+          onSendLed={ble.sendLedCommand}
+          onSetMatrixMode={(mode, text) => ble.setMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
         />
       ) : (
         <div className="flex flex-col w-full h-[100dvh] max-w-7xl mx-auto px-2 sm:px-6">
@@ -78,13 +89,51 @@ export default function SmartDeskApp() {
           <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide py-3 pb-24 flex flex-col">
             <div className="flex-1 flex flex-col justify-center max-w-full w-full mx-auto">
               {activeTab === "remote" && (
-                <QuickRemotePanel connected={ble.connected} deviceName={ble.deviceName} relays={ble.relays} configs={ble.configs} led={ble.led} rgbTimerRemainingMin={ble.rgbTimerRemainingMin} onToggleRelay={ble.toggleRelay} onSetRelayTimer={ble.setRelayTimer} onAllRelaysOff={ble.allRelaysOff} onSendLed={ble.sendLedCommand} onSetRgbTimer={ble.setRgbTimer} onNavigateTab={(tab) => setActiveTab(tab)} />
+                <QuickRemotePanel
+                  connected={ble.connected}
+                  deviceName={ble.deviceName}
+                  relays={ble.relays}
+                  configs={ble.configs}
+                  led={ble.led}
+                  matrixConfig={ble.matrixConfig}
+                  rgbTimerRemainingMin={ble.rgbTimerRemainingMin}
+                  onToggleRelay={ble.toggleRelay}
+                  onSetRelayTimer={ble.setRelayTimer}
+                  onAllRelaysOff={ble.allRelaysOff}
+                  onSendLed={ble.sendLedCommand}
+                  onSetRgbTimer={ble.setRgbTimer}
+                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                />
               )}
               {activeTab === "relays" && (
                 <RelayPanel relays={ble.relays} configs={ble.configs} uiAnim={ble.uiAnim} connected={ble.connected} onToggleRelay={ble.toggleRelay} onSetTimer={ble.setRelayTimer} onAllOff={ble.allRelaysOff} onSaveConfig={ble.saveRelayConfig} />
               )}
               {activeTab === "leds" && (
-                <LedPanel led={ble.led} previewTick={ble.previewTick} musicSyncActive={ble.musicSyncActive} musicBri={ble.musicBri} setMusicBri={ble.setMusicBri} musicSensitivity={ble.musicSensitivity} setMusicSensitivity={ble.setMusicSensitivity} musicSubMode={ble.musicSubMode} setMusicSubMode={ble.setMusicSubMode} soloColor={ble.soloColor} setSoloColor={ble.setSoloColor} micVolume={ble.micVolume} beatPulse={ble.beatPulse} onSendLed={ble.sendLedCommand} onStartMusic={ble.startMusicSync} onStopMusic={ble.stopMusicSync} />
+                <LedPanel
+                  led={ble.led}
+                  previewTick={ble.previewTick}
+                  stripLength={ble.stripLength}
+                  onSaveStripLength={ble.saveStripLength}
+                  matrixConfig={ble.matrixConfig}
+                  onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
+                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  musicSyncActive={ble.musicSyncActive}
+                  musicBri={ble.musicBri}
+                  setMusicBri={ble.setMusicBri}
+                  musicSensitivity={ble.musicSensitivity}
+                  setMusicSensitivity={ble.setMusicSensitivity}
+                  musicSubMode={ble.musicSubMode}
+                  setMusicSubMode={ble.setMusicSubMode}
+                  soloColor={ble.soloColor}
+                  setSoloColor={ble.setSoloColor}
+                  micVolume={ble.micVolume}
+                  beatPulse={ble.beatPulse}
+                  onSendLed={ble.sendLedCommand}
+                  onStartMusic={ble.startMusicSync}
+                  onStopMusic={ble.stopMusicSync}
+                />
               )}
               {activeTab === "schedule" && (
                 <SchedulePanel schedules={ble.schedules} espClock={ble.espClock} onSaveRule={ble.saveScheduleRule} onDeleteRule={ble.deleteScheduleRule} onTestRule={ble.handleTestScheduleRule} onSyncClock={ble.syncRealTime} />
@@ -93,7 +142,28 @@ export default function SmartDeskApp() {
                 <PresencePanel presenceData={ble.presenceData} presenceConfig={ble.presenceConfig} storedClients={ble.storedClients} clientNickname={ble.clientNickname} setClientNickname={ble.setClientNickname} designatedPresenceDevice={ble.designatedPresenceDevice} onSetDesignatedDevice={ble.setAsDesignatedPresenceDevice} onRemoveDesignatedDevice={ble.removeDesignatedPresenceDevice} customDelayInput={ble.customDelayInput} setCustomDelayInput={ble.setCustomDelayInput} connected={ble.connected} onSavePresenceConfig={ble.savePresenceConfig} onDeleteStoredClient={(slotIdx) => showAlert("Delete", `Remove slot #${slotIdx + 1}?`, () => ble.deleteStoredClient(slotIdx), true)} onClearKnownClients={() => showAlert("Clear", "Clear all 10 slots?", () => ble.clearKnownClients(), true)} onRegisterClientName={ble.registerClientName} />
               )}
               {activeTab === "settings" && (
-                <SettingsPanel envData={ble.envData} masterBuzzer={ble.masterBuzzer} deviceName={ble.deviceName} connected={ble.connected} connecting={ble.connecting} infoString={ble.infoString} logs={ble.logs} showAllDevices={ble.showAllDevices} setShowAllDevices={ble.setShowAllDevices} onToggleMasterBuzzer={ble.toggleMasterBuzzer} onTestBuzzer={ble.testBuzzerBeep} onRename={ble.saveRename} onConnect={ble.handleConnect} onDisconnect={ble.handleDisconnected} onClearLogs={ble.clearLogs} />
+                <SettingsPanel
+                  envData={ble.envData}
+                  masterBuzzer={ble.masterBuzzer}
+                  deviceName={ble.deviceName}
+                  connected={ble.connected}
+                  connecting={ble.connecting}
+                  infoString={ble.infoString}
+                  logs={ble.logs}
+                  showAllDevices={ble.showAllDevices}
+                  setShowAllDevices={ble.setShowAllDevices}
+                  stripLength={ble.stripLength}
+                  onSaveStripLength={ble.saveStripLength}
+                  matrixConfig={ble.matrixConfig}
+                  onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
+                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onToggleMasterBuzzer={ble.toggleMasterBuzzer}
+                  onTestBuzzer={ble.testBuzzerBeep}
+                  onRename={ble.saveRename}
+                  onConnect={ble.handleConnect}
+                  onDisconnect={ble.handleDisconnected}
+                  onClearLogs={ble.clearLogs}
+                />
               )}
             </div>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ScheduleRule, EspClock, DAYS_OF_WEEK } from "../types/smartdesk";
 import ScheduleModal from "./ScheduleModal";
 
@@ -12,6 +12,22 @@ export interface SchedulePanelProps {
 
 export default function SchedulePanel({ schedules, espClock, onSaveRule, onDeleteRule, onTestRule, onSyncClock }: SchedulePanelProps) {
   const [editingRule, setEditingRule] = useState<ScheduleRule | null>(null);
+  const [is12Hr, setIs12Hr] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIs12Hr(localStorage.getItem("smartdesk_12hr_mode") === "true");
+    }
+  }, []);
+
+  const formatTime = (h: number, m: number) => {
+    if (is12Hr) {
+      const period = h >= 12 ? "PM" : "AM";
+      const h12 = h % 12 || 12;
+      return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+    }
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
 
   const handleAddNew = () => {
     const nextId = [0, 1, 2, 3, 4, 5, 6, 7].find((id) => !schedules.some((s) => s.id === id)) ?? schedules.length;
@@ -55,9 +71,9 @@ export default function SchedulePanel({ schedules, espClock, onSaveRule, onDelet
 
                 <div className="flex items-center justify-between text-sm bg-black p-3 rounded-lg border-2 border-zinc-700 lg:w-1/3">
                   <div className="font-bold text-white flex items-center gap-2">
-                    <span>{String(rule.startHour).padStart(2, "0")}:{String(rule.startMin).padStart(2, "0")}</span>
+                    <span>{formatTime(rule.startHour, rule.startMin)}</span>
                     <span className="text-zinc-500">→</span>
-                    <span className="text-zinc-300">{rule.stopType === 1 ? `for ${rule.durationMin}m` : rule.stopType === 2 ? `until ${String(rule.stopHour).padStart(2, "0")}:${String(rule.stopMin).padStart(2, "0")}` : "Indefinite"}</span>
+                    <span className="text-zinc-300">{rule.stopType === 1 ? `for ${rule.durationMin}m` : rule.stopType === 2 ? `until ${formatTime(rule.stopHour, rule.stopMin)}` : "Indefinite"}</span>
                   </div>
                   <span className="text-cyan-300 font-extrabold">{targetLabel}</span>
                 </div>
@@ -79,7 +95,7 @@ export default function SchedulePanel({ schedules, espClock, onSaveRule, onDelet
         )}
       </div>
 
-      {editingRule && <ScheduleModal isOpen={true} editingRule={editingRule} onSave={onSaveRule} onClose={() => setEditingRule(null)} />}
+      {editingRule && <ScheduleModal isOpen={true} editingRule={editingRule} is12Hr={is12Hr} onSave={onSaveRule} onClose={() => setEditingRule(null)} />}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { ScheduleRule, DAYS_OF_WEEK } from "../types/smartdesk";
 export interface ScheduleModalProps {
   isOpen: boolean;
   editingRule: ScheduleRule | null;
+  is12Hr?: boolean;
   onSave: (rule: ScheduleRule) => void;
   onClose: () => void;
 }
@@ -21,6 +22,7 @@ export interface ScheduleModalProps {
 export default function ScheduleModal({
   isOpen,
   editingRule,
+  is12Hr = false,
   onSave,
   onClose,
 }: ScheduleModalProps) {
@@ -113,27 +115,64 @@ export default function ScheduleModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] uppercase text-zinc-400 font-bold block mb-1">
-                Start Time (24h):
+                Start Time {is12Hr ? "(12h AM/PM)" : "(24h)"}:
               </label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={rule.startHour}
-                  onChange={(e) => setRule({ ...rule, startHour: Number(e.target.value) })}
-                  className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
-                />
-                <span className="text-zinc-500">:</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  value={rule.startMin}
-                  onChange={(e) => setRule({ ...rule, startMin: Number(e.target.value) })}
-                  className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
-                />
-              </div>
+              {is12Hr ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={rule.startHour % 12 || 12}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(12, Number(e.target.value) || 12));
+                      const isPM = rule.startHour >= 12;
+                      const newH = isPM ? (val === 12 ? 12 : val + 12) : (val === 12 ? 0 : val);
+                      setRule({ ...rule, startHour: newH });
+                    }}
+                    className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
+                  />
+                  <span className="text-zinc-500">:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={rule.startMin}
+                    onChange={(e) => setRule({ ...rule, startMin: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+                    className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newH = (rule.startHour + 12) % 24;
+                      setRule({ ...rule, startHour: newH });
+                    }}
+                    className="px-2 py-1 rounded bg-zinc-800 border border-zinc-600 text-[10px] font-extrabold text-cyan-300 active:scale-95 cursor-pointer"
+                  >
+                    {rule.startHour >= 12 ? "PM" : "AM"}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={rule.startHour}
+                    onChange={(e) => setRule({ ...rule, startHour: Number(e.target.value) })}
+                    className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
+                  />
+                  <span className="text-zinc-500">:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={rule.startMin}
+                    onChange={(e) => setRule({ ...rule, startMin: Number(e.target.value) })}
+                    className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Target Channel */}
@@ -251,25 +290,62 @@ export default function ScheduleModal({
             )}
 
             {rule.stopType === 2 && (
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={rule.stopHour}
-                  onChange={(e) => setRule({ ...rule, stopHour: Number(e.target.value) })}
-                  className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
-                />
-                <span className="text-zinc-500">:</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  value={rule.stopMin}
-                  onChange={(e) => setRule({ ...rule, stopMin: Number(e.target.value) })}
-                  className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
-                />
-              </div>
+              is12Hr ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={rule.stopHour % 12 || 12}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(12, Number(e.target.value) || 12));
+                      const isPM = rule.stopHour >= 12;
+                      const newH = isPM ? (val === 12 ? 12 : val + 12) : (val === 12 ? 0 : val);
+                      setRule({ ...rule, stopHour: newH });
+                    }}
+                    className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
+                  />
+                  <span className="text-zinc-500">:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={rule.stopMin}
+                    onChange={(e) => setRule({ ...rule, stopMin: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+                    className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newH = (rule.stopHour + 12) % 24;
+                      setRule({ ...rule, stopHour: newH });
+                    }}
+                    className="px-2 py-1 rounded bg-zinc-800 border border-zinc-600 text-[10px] font-extrabold text-cyan-300 active:scale-95 cursor-pointer"
+                  >
+                    {rule.stopHour >= 12 ? "PM" : "AM"}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={rule.stopHour}
+                    onChange={(e) => setRule({ ...rule, stopHour: Number(e.target.value) })}
+                    className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
+                  />
+                  <span className="text-zinc-500">:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={rule.stopMin}
+                    onChange={(e) => setRule({ ...rule, stopMin: Number(e.target.value) })}
+                    className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
+                  />
+                </div>
+              )
             )}
           </div>
         </div>

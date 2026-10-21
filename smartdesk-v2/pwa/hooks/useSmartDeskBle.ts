@@ -26,6 +26,7 @@ import {
   EnvData,
   UiAnimState,
   LogEntry,
+  MatrixConfig,
   LED_MODES,
   RELAY_ANIM_OPTIONS,
   DAYS_OF_WEEK,
@@ -210,6 +211,21 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   const [designatedPresenceDevice, setDesignatedPresenceDevice] = useState<string>("");
   const [storedClients, setStoredClients] = useState<StoredClient[]>([]);
   const [customDelayInput, setCustomDelayInput] = useState<string>("5");
+  const [stripLength, setStripLength] = useState<number>(8);
+  const [matrixConfig, setMatrixConfig] = useState<MatrixConfig>({
+    rows: 8,
+    cols: 32,
+    wiringType: 1, // 1 = Zig-Zag (Serpentine)
+    pin: 11,
+    enabled: true,
+    mode: 17,
+    speed: 5,
+    bri: 70,
+    colorR: 0,
+    colorG: 240,
+    colorB: 255,
+    text: "SMARTDESK V2",
+  });
   const [uiAnim, setUiAnim] = useState<UiAnimState | null>(null);
   const [infoString, setInfoString] = useState<string>("Not connected");
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -236,6 +252,8 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   musicSubModeRef.current = musicSubMode;
   const soloColorRef = useRef<{ r: number; g: number; b: number }>(soloColor);
   soloColorRef.current = soloColor;
+  const matrixConfigRef = useRef<MatrixConfig>(matrixConfig);
+  matrixConfigRef.current = matrixConfig;
   const connectedRef = useRef<boolean>(connected);
   connectedRef.current = connected;
 
@@ -535,6 +553,29 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           state: presState,
           remainingMin: awayRemMin,
         });
+      }
+
+      if (dataView.byteLength >= 16) {
+        const sLen = dataView.getUint8(14) | (dataView.getUint8(15) << 8);
+        if (sLen >= 1 && sLen <= 800) setStripLength(sLen);
+      }
+
+      if (dataView.byteLength >= 23) {
+        const mRows = dataView.getUint8(16) | (dataView.getUint8(17) << 8);
+        const mCols = dataView.getUint8(18) | (dataView.getUint8(19) << 8);
+        const mWiring = dataView.getUint8(20);
+        const mPin = dataView.getUint8(21);
+        const mEn = dataView.getUint8(22) === 1;
+        const mMode = dataView.byteLength >= 24 ? dataView.getUint8(23) : 17;
+        setMatrixConfig((prev) => ({
+          ...prev,
+          rows: mRows,
+          cols: mCols,
+          wiringType: mWiring,
+          pin: mPin,
+          enabled: mEn,
+          mode: mMode,
+        }));
       }
     },
     []
@@ -1116,6 +1157,123 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     onToastRef.current?.("Designated presence device cleared. Presence tracking inactive.");
   }, [savePresenceConfig, presenceConfig]);
 
+  /* Dynamic Strip Length Command (0xF3) */
+  const saveStripLength = useCallback(
+    (newLen: number) => {
+      const clamped = Math.max(1, Math.min(800, Number(newLen) || 8));
+      setStripLength(clamped);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("smartdesk_strip_length", String(clamped));
+      }
+      if (configCharRef.current) {
+        const payload = new Uint8Array([0xF3, clamped & 0xff, (clamped >> 8) & 0xff]);
+        enqueueWrite(`Set Strip Length (${clamped})`, async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Strip Length: ${clamped} LEDs)`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+        onToastRef.current?.(`Strip length set to ${clamped} LEDs`, "success");
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
+  /* 2D Matrix Hardware Config (0xF2) */
+  const saveMatrixHardwareConfig = useCallback(
+    (rows: number, cols: number, wiringType: number, pin: number = 11, enabled: boolean = true) => {
+      const r = Math.max(1, Math.min(800, Number(rows) || 8));
+      const c = Math.max(1, Math.min(800, Number(cols) || 32));
+      const w = wiringType === 0 ? 0 : 1;
+      const p = Math.max(1, Math.min(48, Number(pin) || 11));
+      setMatrixConfig((prev) => ({ ...prev, rows: r, cols: c, wiringType: w, pin: p, enabled }));
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "smartdesk_matrix_config",
+          JSON.stringify({ rows: r, cols: c, wiringType: w, pin: p, enabled })
+        );
+      }
+      if (configCharRef.current) {
+        const payload = new Uint8Array([
+          0xF2,
+          r & 0xff,
+          (r >> 8) & 0xff,
+          c & 0xff,
+          (c >> 8) & 0xff,
+          w,
+          p,
+          enabled ? 1 : 0,
+        ]);
+        enqueueWrite("Set Matrix Hardware Config", async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Matrix ${c}x${r} on GPIO ${p})`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+        onToastRef.current?.(`Matrix configured: ${c}x${r} on GPIO ${p}`, "success");
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
+  /* 2D Matrix Display Mode & Marquee Text (0xF1) */
+  const setMatrixDisplay = useCallback(
+    (
+      mode: number,
+      speed?: number,
+      bri?: number,
+      r?: number,
+      g?: number,
+      b?: number,
+      text?: string
+    ) => {
+      const cur = matrixConfigRef.current;
+      const finalSpeed = speed !== undefined ? speed : cur.speed;
+      const finalBri = bri !== undefined ? bri : cur.bri;
+      const finalR = r !== undefined ? r : cur.colorR;
+      const finalG = g !== undefined ? g : cur.colorG;
+      const finalB = b !== undefined ? b : cur.colorB;
+      const cleanText = (text !== undefined ? text : cur.text || "SMARTDESK V2").slice(0, 60);
+
+      setMatrixConfig((prev) => ({
+        ...prev,
+        mode,
+        speed: finalSpeed,
+        bri: finalBri,
+        colorR: finalR,
+        colorG: finalG,
+        colorB: finalB,
+        text: cleanText,
+      }));
+      if (configCharRef.current) {
+        const enc = new TextEncoder();
+        const tBytes = enc.encode(cleanText);
+        const payload = new Uint8Array(8 + tBytes.length);
+        payload[0] = 0xF1;
+        payload[1] = mode;
+        payload[2] = Math.max(1, Math.min(10, finalSpeed));
+        payload[3] = Math.max(0, Math.min(255, Math.round((finalBri / 100) * 255)));
+        payload[4] = finalR;
+        payload[5] = finalG;
+        payload[6] = finalB;
+        payload[7] = tBytes.length;
+        payload.set(tBytes, 8);
+        enqueueWrite(`Set Matrix Mode ${mode}`, async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Matrix Mode ${mode}: "${cleanText}")`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+        onToastRef.current?.(
+          `Matrix: ${
+            mode === 17
+              ? "Digital Clock"
+              : mode === 18
+              ? "Scrolling Text"
+              : mode === 19
+              ? "Matrix Rain"
+              : "Off"
+          }`
+        );
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
   const saveRelayConfig = useCallback(
     (
       idx: number,
@@ -1388,6 +1546,10 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       addLog("Music Sync active. FFT analyzing audio beats...", "info");
 
       const freqData = new Uint8Array(analyser.frequencyBinCount);
+      const smoothBands = [0, 0, 0, 0, 0, 0, 0, 0];
+      let smoothBass = 0;
+      const agcHistory: number[] = [];
+      let lastAgcTick = 0;
 
       const renderAudioFrame = () => {
         if (!analyserRef.current) return;
@@ -1396,15 +1558,27 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         let sum = 0;
         for (let i = 0; i < freqData.length; i++) sum += freqData[i];
         const avg = sum / (freqData.length || 1);
-        const sens = musicSensitivityRef.current;
-        const normalizedVol = Math.min(100, Math.round((avg / 128) * 100 * sens));
 
         const now = Date.now();
+
+        // Auto-Gain Control (AGC): 3-second rolling volume average
+        if (now - lastAgcTick > 100) {
+          lastAgcTick = now;
+          agcHistory.push(avg);
+          if (agcHistory.length > 30) agcHistory.shift(); // 30 samples * 100ms = 3.0s
+        }
+        const recentPeak = Math.max(16, ...agcHistory);
+        const agcMultiplier = Math.max(0.6, Math.min(2.4, 75 / recentPeak));
+        const effectiveSens = musicSensitivityRef.current * agcMultiplier;
+
+        const normalizedVol = Math.min(100, Math.round((avg / 128) * 100 * effectiveSens));
+
         if (now - lastVolUpdateRef.current > 80) {
           lastVolUpdateRef.current = now;
           setMicVolume(normalizedVol);
         }
 
+        // Fluid Falloff Audio Equalizer Decay
         const bands = [0, 0, 0, 0, 0, 0, 0, 0];
         const step = Math.max(1, Math.floor(freqData.length / 8));
         for (let i = 0; i < 8; i++) {
@@ -1412,14 +1586,25 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           for (let j = 0; j < step; j++) {
             bSum += freqData[i * step + j] || 0;
           }
-          bands[i] = Math.min(255, Math.round((bSum / step) * sens));
+          const instantVal = Math.min(255, Math.round((bSum / step) * effectiveSens));
+          if (instantVal >= smoothBands[i]) {
+            smoothBands[i] = instantVal; // Fast attack
+          } else {
+            smoothBands[i] = Math.max(0, Math.round(smoothBands[i] * 0.88 - 3)); // Smooth studio decay
+          }
+          bands[i] = smoothBands[i];
         }
         liveMusicLevelsRef.current = bands;
 
         const rawBass = (bands[0] * 1.5 + bands[1] * 1.2 + bands[2]) / 3.7;
-        bassAvgRef.current = bassAvgRef.current * 0.9 + rawBass * 0.1;
-        const bassKick = rawBass > bassAvgRef.current * 1.3 && rawBass > 40;
-        const beatVal = Math.min(255, Math.round(rawBass * (bassKick ? 1.4 : 1.0)));
+        if (rawBass >= smoothBass) {
+          smoothBass = rawBass;
+        } else {
+          smoothBass = Math.max(0, smoothBass * 0.85 - 4);
+        }
+        bassAvgRef.current = bassAvgRef.current * 0.9 + smoothBass * 0.1;
+        const bassKick = smoothBass > bassAvgRef.current * 1.3 && smoothBass > 40;
+        const beatVal = Math.min(255, Math.round(smoothBass * (bassKick ? 1.4 : 1.0)));
         liveBeatValRef.current = beatVal;
 
         if (bassKick) {
@@ -1499,6 +1684,13 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     deleteStoredClient,
     customDelayInput,
     setCustomDelayInput,
+    stripLength,
+    setStripLength,
+    saveStripLength,
+    matrixConfig,
+    setMatrixConfig,
+    saveMatrixHardwareConfig,
+    setMatrixDisplay,
     uiAnim,
     infoString,
     logs,
