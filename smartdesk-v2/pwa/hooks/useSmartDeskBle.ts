@@ -311,10 +311,21 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     };
   }, [connecting]);
 
-  /* Logging Helper */
+  /* Automatic 24-Hour Log Purge Timer */
+  useEffect(() => {
+    const purgeInterval = setInterval(() => {
+      const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
+      setLogs((prev) => prev.filter((entry) => !entry.timestamp || entry.timestamp >= cutoff24h));
+    }, 60 * 60 * 1000); // Check once per hour
+    return () => clearInterval(purgeInterval);
+  }, []);
+
+  /* Logging Helper (Strictly in-memory, capped at last 150 items, max 24hr retention) */
   const addLog = useCallback(
     (text: string, type: "info" | "tx" | "rx" | "warn" | "err" = "info") => {
       const now = new Date();
+      const nowMs = now.getTime();
+      const cutoff24h = nowMs - 24 * 60 * 60 * 1000;
       const timeStr = now.toLocaleTimeString("en-GB", { hour12: false }) + "." +
         String(now.getMilliseconds()).padStart(3, "0");
       const entry: LogEntry = {
@@ -322,8 +333,13 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         time: timeStr,
         text,
         type,
+        timestamp: nowMs,
       };
-      setLogs((prev) => [...prev.slice(-150), entry]);
+      setLogs((prev) => {
+        // Enforce 24-hour retention window + last 150 entries ring buffer
+        const nonExpired = prev.filter((item) => !item.timestamp || item.timestamp >= cutoff24h);
+        return [...nonExpired.slice(-150), entry];
+      });
       console.log(`[${timeStr}] [${type.toUpperCase()}] ${text}`);
     },
     []
@@ -929,35 +945,26 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     await handleConnect(undefined, false);
   }, [handleConnect]);
 
-  /* Relay Commands: Accurately switches functionality for NC relays */
+  /* Relay Commands: Sends standard LOAD state (1=ON, 0=OFF); ESP32 hardware driver converts to coil levels */
   const toggleRelay = useCallback(
-    (idx: number, currentVal?: boolean) => {
-      const isNC = configsRef.current[idx]?.wiring === 1;
-      // Determine what the current physical power state is
-      // If currentVal passed, use it, else compute from load & wiring
-      const currentPhysical = currentVal !== undefined ? currentVal : (isNC ? !relays[idx]?.load : relays[idx]?.load);
-      const nextPhysical = !currentPhysical;
+    (idx: number, explicitTarget?: boolean) => {
+      const currentLoad = relays[idx]?.load ?? false;
+      const nextLoad = explicitTarget !== undefined ? explicitTarget : !currentLoad;
 
-      // On active-high / user's board where NO signal (0V) keeps NC closed (powered ON):
-      // - To get nextPhysical = true (ON):
-      //     If NO: send 1
-      //     If NC: send 0 (no signal / resting)
-      // - To get nextPhysical = false (OFF):
-      //     If NO: send 0
-      //     If NC: send 1 (send signal / open NC)
-      const espVal = isNC ? (nextPhysical ? 0 : 1) : (nextPhysical ? 1 : 0);
-
-      const payload = new Uint8Array([1, idx, espVal]);
-      triggerUiAnimation(idx, nextPhysical);
+      const payload = new Uint8Array([1, idx, nextLoad ? 1 : 0]);
+      triggerUiAnimation(idx, nextLoad);
       setRelays((prev) =>
-        prev.map((r, i) => (i === idx ? { load: espVal === 1, remainingMin: 0 } : r))
+        prev.map((r, i) => (i === idx ? { ...r, load: nextLoad, remainingMin: 0 } : r))
       );
 
-      enqueueWrite(`Set Relay ${idx + 1} -> ${nextPhysical ? "ON" : "OFF"}`, async () => {
-        addLog(`[TX RELAY] ${bytesToHex(payload)} (Set Relay ${idx + 1} to ${nextPhysical ? "ON" : "OFF"}, Contact=${isNC ? "NC" : "NO"})`, "tx");
+      const rName = configsRef.current[idx]?.name || `CH${idx + 1}`;
+      const wiringMode = configsRef.current[idx]?.wiring === 1 ? "NC" : "NO";
+
+      enqueueWrite(`Set Relay ${idx + 1} -> ${nextLoad ? "ON" : "OFF"}`, async () => {
+        addLog(`[TX RELAY] ${bytesToHex(payload)} (Set ${rName} Load -> ${nextLoad ? "ON" : "OFF"}, Contact=${wiringMode})`, "tx");
         await relayCharRef.current?.writeValueWithResponse(payload);
       });
-      onToastRef.current?.(`${configsRef.current[idx]?.name || `CH\${idx + 1}`} turned ${nextPhysical ? "ON" : "OFF"}`);
+      onToastRef.current?.(`${rName} turned ${nextLoad ? "ON" : "OFF"}`);
     },
     [triggerUiAnimation, enqueueWrite, addLog, relays]
   );

@@ -27,6 +27,18 @@ static const uint8_t RELAY_PINS[RELAY_COUNT] = {4, 5, 6, 7};
 #define DEFAULT_MATRIX_COLS 32     // Default 32 columns (e.g. 8x32 flexible matrix)
 #define MAX_MATRIX_LEDS     1024   // Maximum matrix pixel buffer in internal SRAM
 
+// Non-conflicting, safe GPIO pins for ESP32-S3 (excludes Relays 4-7, Strip 8, DHT 9, Buzzer 10, Strapping/Flash/UART/USB)
+static inline bool isSafeMatrixPin(uint8_t pin) {
+    switch (pin) {
+        case 11: case 12: case 13: case 14: case 15:
+        case 16: case 17: case 18: case 21:
+        case 38: case 39: case 40: case 41: case 42:
+            return true;
+        default:
+            return false;
+    }
+}
+
 /* ── Environmental Sensors & Acoustic Buzzer ────────────────────────────── */
 #define DHT_PIN             9      // DHT11 Sensor Data GPIO (3.3V, GND)
 #define BUZZER_PIN          10     // Active Buzzer Signal GPIO (HIGH=Beep, LOW=Silent)

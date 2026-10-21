@@ -15,10 +15,12 @@ export interface AodFaceScreenProps {
   rgbTimerRemainingMin?: number;
   onConnect: () => void;
   onOpenRemote: () => void;
-  onToggleRelay?: (idx: number, val: boolean) => void;
+  onToggleRelay?: (idx: number, val?: boolean) => void;
   onAllRelaysOff?: () => void;
   onSendLed?: (mode: number, r: number, g: number, b: number, bri: number, spd: number) => void;
   onSetMatrixMode?: (mode: number, text?: string) => void;
+  onStartMusic?: () => void;
+  onStopMusic?: () => void;
 }
 
 const MOODS_LIST: { id: BuddyMood; label: string; icon: string }[] = [
@@ -46,6 +48,8 @@ export default function AodFaceScreen({
   onAllRelaysOff,
   onSendLed,
   onSetMatrixMode,
+  onStartMusic,
+  onStopMusic,
 }: AodFaceScreenProps) {
   const [now, setNow] = useState<Date | null>(null);
   const [currentMood, setCurrentMood] = useState<BuddyMood>("NEUTRAL");
@@ -69,6 +73,8 @@ export default function AodFaceScreen({
     onSendLed,
     onSetMatrixMode,
     onSetManualMood: (m) => setManualMood(m),
+    onStartMusic,
+    onStopMusic,
   });
 
   useEffect(() => {
@@ -357,7 +363,10 @@ export default function AodFaceScreen({
               {MOODS_LIST.map((m) => (
                 <button
                   key={m.id}
-                  onClick={() => setIsMoodMenuOpen(false) || setManualMood(m.id)}
+                  onClick={() => {
+                    setIsMoodMenuOpen(false);
+                    setManualMood(m.id);
+                  }}
                   className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-extrabold transition-all cursor-pointer ${
                     currentMood === m.id
                       ? "bg-cyan-500 text-black shadow-[inset_0_0_12px_rgba(255,255,255,0.4)]"

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { RelayState, RelayConfigItem, LedState, MatrixConfig } from "../types/smartdesk";
+import { RelayState, RelayConfigItem, LedState, MatrixConfig, MATRIX_MODES } from "../types/smartdesk";
 import CustomTimerModal from "./CustomTimerModal";
 import { useVoiceAssistant } from "../hooks/useVoiceAssistant";
 
@@ -19,6 +19,8 @@ export interface QuickRemotePanelProps {
   onSendLed: (mode: number, r: number, g: number, b: number, bri: number, spd: number) => void;
   onSetRgbTimer: (minutes: number) => void;
   onSetMatrixDisplay?: (mode: number, speed?: number, bri?: number, r?: number, g?: number, b?: number, text?: string) => void;
+  onStartMusic?: () => void;
+  onStopMusic?: () => void;
   onNavigateTab: (tab: "relays" | "leds" | "schedule" | "presence" | "settings") => void;
 }
 
@@ -34,6 +36,8 @@ export default function QuickRemotePanel({
   onSendLed,
   onSetRgbTimer,
   onSetMatrixDisplay,
+  onStartMusic,
+  onStopMusic,
 }: QuickRemotePanelProps) {
   const [timerTargetIdx, setTimerTargetIdx] = useState<number | null>(null);
   const isRgbOn = led.mode !== 0;
@@ -45,6 +49,8 @@ export default function QuickRemotePanel({
     onAllRelaysOff,
     onSendLed,
     onSetMatrixMode: (mode, text) => onSetMatrixDisplay?.(mode, undefined, undefined, undefined, undefined, undefined, text),
+    onStartMusic,
+    onStopMusic,
   });
 
   const handleToggleRgb = () => {
@@ -73,7 +79,7 @@ export default function QuickRemotePanel({
         {relays.map((relay, idx) => {
           const cfg = configs[idx] || { name: `Relay ${idx + 1}`, wiring: 0 };
           const isNC = cfg.wiring === 1;
-          const isPowered = isNC ? !relay.load : relay.load;
+          const isPowered = relay.load;
 
           return (
             <div
@@ -84,13 +90,18 @@ export default function QuickRemotePanel({
                   : "bg-black border-zinc-700"
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full shrink-0 ${isPowered ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                <span className="text-sm font-extrabold text-white truncate">{cfg.name}</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 truncate">
+                  <span className={`w-3 h-3 rounded-full shrink-0 ${isPowered ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                  <span className="text-sm font-extrabold text-white truncate">{cfg.name}</span>
+                </div>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${isNC ? "bg-amber-950/60 text-amber-400 border-amber-600/60" : "bg-cyan-950/60 text-cyan-400 border-cyan-600/60"}`}>
+                  {isNC ? "NC" : "NO"}
+                </span>
               </div>
 
               <button
-                onClick={() => onToggleRelay(idx, isPowered)}
+                onClick={() => onToggleRelay(idx)}
                 className={`w-full py-3 rounded-lg font-extrabold text-xs transition-all active:scale-95 border-2 ${
                   isPowered
                     ? "bg-emerald-500 text-black border-emerald-400"
@@ -194,9 +205,25 @@ export default function QuickRemotePanel({
           <span className="text-base">🔲</span>
           <div className="flex items-center gap-2">
             <span className="text-xs font-extrabold text-white">Matrix Display:</span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
-              {matrixConfig?.mode === 17 ? "🕒 Clock" : matrixConfig?.mode === 18 ? `💬 "${matrixConfig?.text || 'SMARTDESK'}"` : matrixConfig?.mode === 19 ? "🌧️ Matrix Rain" : "Off"}
-            </span>
+            {(() => {
+              if (!matrixConfig || matrixConfig.mode === 0) {
+                return (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 text-zinc-400">
+                    🌑 Off
+                  </span>
+                );
+              }
+              const mObj = MATRIX_MODES.find((m) => m.id === matrixConfig.mode);
+              const label = mObj ? `${mObj.icon} ${mObj.label}` : `Mode ${matrixConfig.mode}`;
+              const textSnippet = [18, 20, 21, 22, 23].includes(matrixConfig.mode) && matrixConfig.text
+                ? ` "${matrixConfig.text}"`
+                : "";
+              return (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
+                  {label}{textSnippet}
+                </span>
+              );
+            })()}
           </div>
         </div>
         <div className="flex items-center gap-1.5 self-end sm:self-auto">

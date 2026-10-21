@@ -168,18 +168,24 @@ static void initMatrixHardware() {
         totalLeds = s_matrixConfig.rows * s_matrixConfig.cols;
     }
 
-    if (s_matrixConfig.pin == 0 || s_matrixConfig.pin > 48) {
+    if (!isSafeMatrixPin(s_matrixConfig.pin)) {
         s_matrixConfig.pin = MATRIX_PIN;
     }
 
     s_matrixStrip = new Adafruit_NeoPixel((uint16_t)totalLeds, s_matrixConfig.pin, NEO_GRB + NEO_KHZ800);
     if (s_matrixStrip) {
         s_matrixStrip->begin();
-        s_matrixStrip->clear();
-        s_matrixStrip->show();
-        Serial.printf(">>> [MATRIX] Initialized %dx%d (%d LEDs) on GPIO %d [Wiring: %s]\n",
-                      s_matrixConfig.cols, s_matrixConfig.rows, totalLeds, s_matrixConfig.pin,
-                      s_matrixConfig.wiringType == 1 ? "Zig-Zag Serpentine" : "Progressive");
+        if (s_matrixStrip->getPixels() != nullptr) {
+            s_matrixStrip->clear();
+            s_matrixStrip->show();
+            Serial.printf(">>> [MATRIX] Initialized %dx%d (%d LEDs) on GPIO %d [Wiring: %s]\n",
+                          s_matrixConfig.cols, s_matrixConfig.rows, totalLeds, s_matrixConfig.pin,
+                          s_matrixConfig.wiringType == 1 ? "Zig-Zag Serpentine" : "Progressive");
+        } else {
+            Serial.println(">>> [MATRIX WARN] NeoPixel heap allocation failed!");
+            delete s_matrixStrip;
+            s_matrixStrip = nullptr;
+        }
     }
 }
 
@@ -188,8 +194,15 @@ static void loadMatrixConfigFromNVS() {
     s_matrixPrefs.begin("desk_matrix", true);
     s_matrixConfig.rows       = s_matrixPrefs.getUShort("rows", DEFAULT_MATRIX_ROWS);
     s_matrixConfig.cols       = s_matrixPrefs.getUShort("cols", DEFAULT_MATRIX_COLS);
+    uint32_t totalLeds = (uint32_t)s_matrixConfig.rows * (uint32_t)s_matrixConfig.cols;
+    if (totalLeds == 0 || totalLeds > MAX_MATRIX_LEDS) {
+        s_matrixConfig.rows = DEFAULT_MATRIX_ROWS;
+        s_matrixConfig.cols = DEFAULT_MATRIX_COLS;
+    }
+
     s_matrixConfig.wiringType = s_matrixPrefs.getUChar("wiring", 1);
-    s_matrixConfig.pin        = s_matrixPrefs.getUChar("pin", MATRIX_PIN);
+    uint8_t pin = s_matrixPrefs.getUChar("pin", MATRIX_PIN);
+    s_matrixConfig.pin        = isSafeMatrixPin(pin) ? pin : MATRIX_PIN;
     s_matrixConfig.enabled    = s_matrixPrefs.getBool("en", true);
     s_matrixConfig.mode       = s_matrixPrefs.getUChar("mode", 17);
     s_matrixConfig.speed      = s_matrixPrefs.getUChar("spd", 5);
@@ -199,12 +212,23 @@ static void loadMatrixConfigFromNVS() {
     s_matrixConfig.colorB     = s_matrixPrefs.getUChar("b", 255);
     String txt = s_matrixPrefs.getString("text", "SMARTDESK V2");
     strncpy(s_matrixConfig.text, txt.c_str(), sizeof(s_matrixConfig.text) - 1);
+    s_matrixConfig.text[sizeof(s_matrixConfig.text) - 1] = '\0';
     s_matrixPrefs.end();
 
     initMatrixHardware();
 }
 
 static void saveMatrixConfigToNVS() {
+    uint32_t totalLeds = (uint32_t)s_matrixConfig.rows * (uint32_t)s_matrixConfig.cols;
+    if (totalLeds == 0 || totalLeds > MAX_MATRIX_LEDS) {
+        s_matrixConfig.rows = DEFAULT_MATRIX_ROWS;
+        s_matrixConfig.cols = DEFAULT_MATRIX_COLS;
+    }
+    if (!isSafeMatrixPin(s_matrixConfig.pin)) {
+        s_matrixConfig.pin = MATRIX_PIN;
+    }
+    s_matrixConfig.text[sizeof(s_matrixConfig.text) - 1] = '\0';
+
     s_matrixPrefs.begin("desk_matrix", false);
     s_matrixPrefs.putUShort("rows", s_matrixConfig.rows);
     s_matrixPrefs.putUShort("cols", s_matrixConfig.cols);

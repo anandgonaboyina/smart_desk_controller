@@ -100,9 +100,10 @@ export default function LedPanel({
 
     if (led.mode === 0) return { backgroundColor: "#18181b", opacity: 0.3, boxShadow: "none" };
 
-    const baseBri = led.bri / 100;
+    const baseBri = Math.max(0.2, led.bri / 100);
 
-    if (led.mode === 3 || led.mode === 8 || led.mode === 9) {
+    // Multi-color spectrum modes
+    if (led.mode === 3 || led.mode === 7 || led.mode === 18) {
       const hue = (previewTick * led.spd * 2 + dotIdx * 45) % 360;
       return {
         backgroundColor: `hsl(${hue}, 100%, 55%)`,
@@ -111,11 +112,69 @@ export default function LedPanel({
       };
     }
 
+    // Cyberpunk Synthwave (Hot Magenta & Electric Cyan)
+    if (led.mode === 17) {
+      const isCyan = (Math.floor(previewTick * 0.1 * led.spd) + dotIdx) % 2 === 0;
+      const col = isCyan ? "rgb(0, 240, 255)" : "rgb(255, 0, 128)";
+      return {
+        backgroundColor: col,
+        opacity: baseBri,
+        boxShadow: `0 0 ${12 * baseBri}px ${col}`,
+      };
+    }
+
+    // Police Pursuit (Red & Blue Double Flash)
+    if (led.mode === 22) {
+      const isRed = dotIdx < 4;
+      const flash = (Math.floor(previewTick * 0.2 * led.spd) % 2) === 0;
+      const col = isRed ? "rgb(255, 20, 20)" : "rgb(0, 80, 255)";
+      return {
+        backgroundColor: col,
+        opacity: flash ? baseBri : 0.08,
+        boxShadow: flash ? `0 0 15px ${col}` : "none",
+      };
+    }
+
+    // Fireplace & Lava Lamp (Warm Ember & Gold)
+    if (led.mode === 14 || led.mode === 21) {
+      const emberFlicker = 0.5 + 0.5 * Math.sin(previewTick * 0.15 + dotIdx * 1.5);
+      const col = led.mode === 14 ? "rgb(255, 120, 20)" : "rgb(245, 80, 0)";
+      return {
+        backgroundColor: col,
+        opacity: baseBri * emberFlicker,
+        boxShadow: `0 0 ${12 * baseBri * emberFlicker}px ${col}`,
+      };
+    }
+
+    // Aurora & Ocean Deep Tide (Emerald / Teal / Violet)
+    if (led.mode === 15 || led.mode === 23) {
+      const wave = 0.5 + 0.5 * Math.sin(previewTick * 0.08 + dotIdx * 0.8);
+      const col = led.mode === 15 ? "rgb(16, 220, 180)" : "rgb(0, 180, 255)";
+      return {
+        backgroundColor: col,
+        opacity: baseBri * wave,
+        boxShadow: `0 0 ${12 * baseBri * wave}px ${col}`,
+      };
+    }
+
+    // Toxic Hazmat & Matrix Glitch (Radioactive Lime / Neon Green)
+    if (led.mode === 19 || led.mode === 24) {
+      const glitch = Math.sin(previewTick * 0.2 + dotIdx * 2.0) > 0.3;
+      const col = "rgb(50, 255, 40)";
+      return {
+        backgroundColor: col,
+        opacity: glitch ? baseBri : baseBri * 0.15,
+        boxShadow: glitch ? `0 0 14px ${col}` : "none",
+      };
+    }
+
     let opacity = baseBri;
     let shadowBlur = 12 * baseBri;
 
-    if (led.mode === 2) {
-      const breathe = (Math.sin(previewTick * led.spd * 0.05) + 1) / 2;
+    if (led.mode === 2 || led.mode === 25) {
+      // Breathe or Heartbeat
+      const freq = led.mode === 25 ? 0.12 : 0.05;
+      const breathe = (Math.sin(previewTick * led.spd * freq) + 1) / 2;
       opacity = baseBri * (0.2 + 0.8 * breathe);
       shadowBlur = 15 * opacity;
     } else if (led.mode > 3) {
@@ -378,7 +437,16 @@ export default function LedPanel({
 
         {/* Matrix Display Mode Controls */}
         <div className="pt-3 border-t border-zinc-800 space-y-3">
-          <span className="text-xs text-zinc-300 font-extrabold uppercase block">Matrix Display Mode</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-zinc-300 font-extrabold uppercase">Matrix Display Mode</span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300">
+              {(() => {
+                if (!matrixConfig || matrixConfig.mode === 0) return "🌑 Matrix Off";
+                const mObj = MATRIX_MODES.find((m) => m.id === matrixConfig.mode);
+                return mObj ? `${mObj.icon} ${mObj.label}` : `Mode ${matrixConfig.mode}`;
+              })()}
+            </span>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
             {MATRIX_MODES.map((m) => (
               <button

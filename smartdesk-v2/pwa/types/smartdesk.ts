@@ -128,6 +128,7 @@ export interface LogEntry {
   time: string;
   text: string;
   type: "info" | "tx" | "rx" | "warn" | "err";
+  timestamp?: number;
 }
 
 export const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -136,8 +137,8 @@ export const LED_MODES = [
   { id: 0, label: "Off", desc: "All LEDs Dark", icon: "🌑" },
   { id: 1, label: "Solid", desc: "Static Color", icon: "💡" },
   { id: 2, label: "Breathe", desc: "Fade In & Out", icon: "🌊" },
-  { id: 3, label: "Rainbow", desc: "Full Spectrum Wave", icon: "🌈" },
-  { id: 4, label: "Blink", desc: "Clean Pulse (<3Hz)", icon: "✨" },
+  { id: 3, label: "Rainbow Wave", desc: "Full Spectrum Wave", icon: "🌈" },
+  { id: 4, label: "Pulse Blink", desc: "Clean Pulse (<3Hz)", icon: "✨" },
   { id: 5, label: "Chase L→R", desc: "Left to Right Trail", icon: "➡️" },
   { id: 6, label: "Chase R→L", desc: "Right to Left Trail", icon: "⬅️" },
   { id: 7, label: "Color Cycle", desc: "Synchronized Spectrum", icon: "🔄" },
@@ -149,6 +150,17 @@ export const LED_MODES = [
   { id: 13, label: "Wipe R→L", desc: "Progressive Fill Right", icon: "◀️" },
   { id: 14, label: "Fireplace", desc: "Organic Flame Flicker", icon: "🔥" },
   { id: 15, label: "Aurora", desc: "Two-Tone Ambient Shift", icon: "🌌" },
+  // 10 Crazy New Ambient Modes
+  { id: 17, label: "Cyberpunk", desc: "Hot Magenta & Neon Cyan", icon: "🌆" },
+  { id: 18, label: "Plasma Wave", desc: "Harmonic Multi-Sine Wave", icon: "🔮" },
+  { id: 19, label: "Matrix Glitch", desc: "Digital Matrix Code Runner", icon: "👾" },
+  { id: 20, label: "Hyperdrive", desc: "Lightspeed Warp Jump", icon: "🚀" },
+  { id: 21, label: "Lava Lamp", desc: "Viscous Crimson & Gold", icon: "🌋" },
+  { id: 22, label: "Police Pursuit", desc: "Red & Blue Double Strobe", icon: "🚨" },
+  { id: 23, label: "Ocean Tide", desc: "Aquamarine Deep Swell", icon: "🌊" },
+  { id: 24, label: "Toxic Hazmat", desc: "Radioactive Lime Glow", icon: "☢️" },
+  { id: 25, label: "Heartbeat EKG", desc: "Cardiovascular Pulse", icon: "💓" },
+  { id: 26, label: "Meteor Shower", desc: "Prismatic Bursting Embers", icon: "☄️" },
 ];
 
 export const RELAY_ANIM_OPTIONS = [

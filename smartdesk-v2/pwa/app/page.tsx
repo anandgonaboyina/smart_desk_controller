@@ -64,6 +64,8 @@ export default function SmartDeskApp() {
           onAllRelaysOff={ble.allRelaysOff}
           onSendLed={ble.sendLedCommand}
           onSetMatrixMode={(mode, text) => ble.setMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
+          onStartMusic={ble.startMusicSync}
+          onStopMusic={ble.stopMusicSync}
         />
       ) : (
         <div className="flex flex-col w-full h-[100dvh] max-w-7xl mx-auto px-2 sm:px-6">
@@ -103,6 +105,8 @@ export default function SmartDeskApp() {
                   onSendLed={ble.sendLedCommand}
                   onSetRgbTimer={ble.setRgbTimer}
                   onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onStartMusic={ble.startMusicSync}
+                  onStopMusic={ble.stopMusicSync}
                   onNavigateTab={(tab) => setActiveTab(tab)}
                 />
               )}
@@ -117,7 +121,6 @@ export default function SmartDeskApp() {
                   onSaveStripLength={ble.saveStripLength}
                   matrixConfig={ble.matrixConfig}
                   onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
-                  onSetMatrixDisplay={ble.setMatrixDisplay}
                   onSetMatrixDisplay={ble.setMatrixDisplay}
                   musicSyncActive={ble.musicSyncActive}
                   musicBri={ble.musicBri}

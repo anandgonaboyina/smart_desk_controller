@@ -58,14 +58,14 @@ export default function RelayPanel({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         {relays.map((relay, idx) => {
-          const cfg = configs[idx] || { name: `Relay \${idx + 1}`, wiring: 0 };
+          const cfg = configs[idx] || { name: `Relay ${idx + 1}`, wiring: 0 };
           const isNC = cfg.wiring === 1;
-          const isPowered = isNC ? !relay.load : relay.load;
+          const isPowered = relay.load;
 
           return (
             <div
               key={idx}
-              className={`p-4 rounded-xl border-2 transition-all flex flex-col gap-4 \${
+              className={`p-4 rounded-xl border-2 transition-all flex flex-col gap-4 ${
                 isPowered
                   ? "bg-zinc-900 border-emerald-500 shadow-[0_4px_15px_rgba(16,185,129,0.2)]"
                   : "bg-black border-zinc-700"
@@ -73,9 +73,9 @@ export default function RelayPanel({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 truncate">
-                  <span className={`w-3 h-3 rounded-full shrink-0 \${isPowered ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                  <span className={`w-3 h-3 rounded-full shrink-0 ${isPowered ? "bg-emerald-400" : "bg-zinc-600"}`} />
                   <span className="text-base font-extrabold text-white truncate">{cfg.name}</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border-2 \${isNC ? "bg-amber-900 text-amber-300 border-amber-600" : "bg-cyan-900 text-cyan-300 border-cyan-600"}`}>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border-2 ${isNC ? "bg-amber-900 text-amber-300 border-amber-600" : "bg-cyan-900 text-cyan-300 border-cyan-600"}`}>
                     {isNC ? "NC" : "NO"}
                   </span>
                 </div>
@@ -90,8 +90,8 @@ export default function RelayPanel({
 
               <button
                 type="button"
-                onClick={() => onToggleRelay(idx, isPowered)}
-                className={`w-full py-4 rounded-lg font-extrabold text-sm flex items-center justify-center gap-2 border-2 transition-all active:scale-95 \${
+                onClick={() => onToggleRelay(idx)}
+                className={`w-full py-4 rounded-lg font-extrabold text-sm flex items-center justify-center gap-2 border-2 transition-all active:scale-95 ${
                   isPowered
                     ? "bg-emerald-500 text-black border-emerald-400 shadow-lg shadow-emerald-500/30"
                     : "bg-zinc-800 text-white border-zinc-600 hover:bg-zinc-700"

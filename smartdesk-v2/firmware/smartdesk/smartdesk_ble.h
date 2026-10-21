@@ -20,10 +20,10 @@ enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
 struct WriteCmd {
     WriteType type;
     uint8_t   len;
-    uint8_t   data[32];
+    uint8_t   data[72];
 };
 
-#define CMD_QUEUE_SIZE 16
+#define CMD_QUEUE_SIZE 32
 static volatile uint8_t s_cmdHead = 0;
 static volatile uint8_t s_cmdTail = 0;
 static WriteCmd s_cmdQueue[CMD_QUEUE_SIZE];
@@ -32,7 +32,7 @@ static inline bool enqueueCmd(WriteType type, const uint8_t* data, size_t len) {
     uint8_t next = (s_cmdHead + 1) % CMD_QUEUE_SIZE;
     if (next == s_cmdTail) return false; // Queue full
     s_cmdQueue[s_cmdHead].type = type;
-    s_cmdQueue[s_cmdHead].len  = (len > 32) ? 32 : (uint8_t)len;
+    s_cmdQueue[s_cmdHead].len  = (len > 72) ? 72 : (uint8_t)len;
     if (data && s_cmdQueue[s_cmdHead].len > 0) {
         memcpy(s_cmdQueue[s_cmdHead].data, data, s_cmdQueue[s_cmdHead].len);
     }
@@ -100,6 +100,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         s_flagConnected = true;
         NimBLEAddress addr = connInfo.getAddress();
         strncpy(s_connectedClientAddr, addr.toString().c_str(), sizeof(s_connectedClientAddr) - 1);
+        s_connectedClientAddr[sizeof(s_connectedClientAddr) - 1] = '\0';
     }
 
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {

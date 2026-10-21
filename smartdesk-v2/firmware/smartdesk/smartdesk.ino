@@ -362,6 +362,9 @@ static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason) {
     digitalWrite(RELAY_PINS[idx], pinLevel);
     s_relayLoads[idx] = load;
     s_lastSwitchMs[idx] = millis();
+    Serial.printf(">>> [RELAY %d] Load=%d Wiring=%s -> Coil=%d Pin=%s (GPIO %d) [%s]\n",
+                  idx + 1, load, (s_relayConfigs[idx].wiring == 1) ? "NC" : "NO",
+                  coilLevel, (pinLevel == LOW) ? "LOW" : "HIGH", RELAY_PINS[idx], reason);
 }
 
 static void triggerRelayAnimation(uint8_t idx, bool turningOn, uint8_t mode, uint8_t durationSec) {
@@ -670,21 +673,21 @@ static void renderLeds() {
     uint8_t spd = (s_ledSpd < 1) ? 1 : (s_ledSpd > 10 ? 10 : s_ledSpd);
 
     switch (s_ledMode) {
-        case 1: { // Solid
+        case 1: { // 1. Solid Static
             uint32_t col = gammaCorrect(s_ledR, s_ledG, s_ledB, bri);
             for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, col);
             break;
         }
-        case 2: { // Breathe
+        case 2: { // 2. Breathe
             uint32_t period = 4500 - (spd * 350);
             float phase = (float)(now % period) / (float)period;
-            float sineVal = (sinf(phase * 2.0f * 3.14159f - 1.57079f) + 1.0f) * 0.5f;
+            float sineVal = (sinf(phase * 6.28318f - 1.57079f) + 1.0f) * 0.5f;
             uint8_t bBri = (uint8_t)(sineVal * (float)bri);
             uint32_t col = gammaCorrect(s_ledR, s_ledG, s_ledB, bBri);
             for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, col);
             break;
         }
-        case 3: { // Rainbow Wave
+        case 3: { // 3. Rainbow Wave
             uint32_t stepMs = 55 - (spd * 4);
             uint16_t startHue = (uint16_t)((now / stepMs) * 256UL);
             for (int i = 0; i < s_stripLen; i++) {
@@ -693,7 +696,151 @@ static void renderLeds() {
             }
             break;
         }
-        case 16: { // Mode 16: Music Reactive Engine (With Floor Glow & Amplitude Heat Map)
+        case 4: { // 4. Pulse Blink (<3Hz safe photosensitivity cycle)
+            uint32_t blinkPeriod = 1200 - (spd * 80);
+            bool isOn = (now % blinkPeriod) < (blinkPeriod / 2);
+            uint32_t col = isOn ? gammaCorrect(s_ledR, s_ledG, s_ledB, bri) : 0;
+            for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, col);
+            break;
+        }
+        case 5: { // 5. Comet Chase Left -> Right
+            uint32_t speedDelay = 80 - (spd * 6);
+            int head = (now / speedDelay) % (s_stripLen ? s_stripLen : 1);
+            int tailLen = (s_stripLen > 6) ? (s_stripLen / 3) : 3;
+            for (int i = 0; i < s_stripLen; i++) {
+                int dist = (head - i + s_stripLen) % (s_stripLen ? s_stripLen : 1);
+                if (dist < tailLen) {
+                    float fade = 1.0f - ((float)dist / (float)tailLen);
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(fade * (float)bri)));
+                } else {
+                    s_strip.setPixelColor(i, 0);
+                }
+            }
+            break;
+        }
+        case 6: { // 6. Comet Chase Right -> Left
+            uint32_t speedDelay = 80 - (spd * 6);
+            int head = (s_stripLen - 1) - ((now / speedDelay) % (s_stripLen ? s_stripLen : 1));
+            int tailLen = (s_stripLen > 6) ? (s_stripLen / 3) : 3;
+            for (int i = 0; i < s_stripLen; i++) {
+                int dist = (i - head + s_stripLen) % (s_stripLen ? s_stripLen : 1);
+                if (dist < tailLen) {
+                    float fade = 1.0f - ((float)dist / (float)tailLen);
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(fade * (float)bri)));
+                } else {
+                    s_strip.setPixelColor(i, 0);
+                }
+            }
+            break;
+        }
+        case 7: { // 7. Color Cycle (Synchronized whole-strip spectrum)
+            uint32_t cycleMs = 12000 - (spd * 900);
+            uint16_t globalHue = (uint16_t)((now % cycleMs) * 65536UL / cycleMs);
+            uint32_t col = s_strip.gamma32(s_strip.ColorHSV(globalHue, 255, bri));
+            for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, col);
+            break;
+        }
+        case 8: { // 8. Scanner / Knight Rider / Cylon Ping-Pong
+            int span = s_stripLen > 1 ? (s_stripLen - 1) : 1;
+            uint32_t cycle = span * (100 - spd * 7);
+            uint32_t pos = (now % (cycle * 2));
+            int head = (pos < cycle) ? (pos * span / cycle) : (span - ((pos - cycle) * span / cycle));
+            int tailLen = (s_stripLen > 6) ? (s_stripLen / 4) : 2;
+            for (int i = 0; i < s_stripLen; i++) {
+                int dist = abs(head - i);
+                if (dist <= tailLen) {
+                    float fade = 1.0f - ((float)dist / (float)(tailLen + 1));
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(fade * (float)bri)));
+                } else {
+                    s_strip.setPixelColor(i, 0);
+                }
+            }
+            break;
+        }
+        case 9: { // 9. Sparkle / Twinkle
+            for (int i = 0; i < s_stripLen; i++) {
+                uint8_t rnd = (uint8_t)((sinf((float)(now * 0.005f * spd + i * 1.5f)) + 1.0f) * 127.0f);
+                if (rnd > 205) {
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, bri));
+                } else if (rnd > 130) {
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(bri * 0.35f)));
+                } else {
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(bri * 0.05f)));
+                }
+            }
+            break;
+        }
+        case 10: { // 10. Center Pulse / Ripple
+            int mid = s_stripLen / 2;
+            uint32_t pulsePeriod = 1600 - (spd * 120);
+            float progress = (float)(now % pulsePeriod) / (float)pulsePeriod;
+            int activeWave = (int)(progress * (float)mid);
+            for (int i = 0; i < s_stripLen; i++) {
+                int distFromMid = abs(i - mid);
+                int waveDist = abs(distFromMid - activeWave);
+                if (waveDist < 3) {
+                    float fade = 1.0f - ((float)waveDist / 3.0f);
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(fade * (float)bri)));
+                } else {
+                    s_strip.setPixelColor(i, gammaCorrect(s_ledR, s_ledG, s_ledB, (uint8_t)(bri * 0.06f)));
+                }
+            }
+            break;
+        }
+        case 11: { // 11. Dual Crossing Beams
+            uint32_t speedDelay = 90 - (spd * 7);
+            int head1 = (now / speedDelay) % (s_stripLen ? s_stripLen : 1);
+            int head2 = (s_stripLen - 1) - head1;
+            for (int i = 0; i < s_stripLen; i++) {
+                int d1 = abs(head1 - i);
+                int d2 = abs(head2 - i);
+                float f1 = (d1 < 3) ? (1.0f - (float)d1 / 3.0f) : 0.0f;
+                float f2 = (d2 < 3) ? (1.0f - (float)d2 / 3.0f) : 0.0f;
+                uint8_t rVal = (uint8_t)(min(255.0f, (f1 * s_ledR + f2 * s_ledB) * (bri / 255.0f)));
+                uint8_t gVal = (uint8_t)(min(255.0f, (f1 * s_ledG + f2 * s_ledG) * (bri / 255.0f)));
+                uint8_t bVal = (uint8_t)(min(255.0f, (f1 * s_ledB + f2 * s_ledR) * (bri / 255.0f)));
+                s_strip.setPixelColor(i, s_strip.Color(rVal, gVal, bVal));
+            }
+            break;
+        }
+        case 12: { // 12. Wipe Left -> Right
+            uint32_t wipePeriod = 2200 - (spd * 170);
+            uint32_t phase = now % (wipePeriod * 2);
+            int filled = (phase < wipePeriod) ? (phase * s_stripLen / wipePeriod) : (s_stripLen - ((phase - wipePeriod) * s_stripLen / wipePeriod));
+            uint32_t col = gammaCorrect(s_ledR, s_ledG, s_ledB, bri);
+            for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, (i <= filled) ? col : 0);
+            break;
+        }
+        case 13: { // 13. Wipe Right -> Left
+            uint32_t wipePeriod = 2200 - (spd * 170);
+            uint32_t phase = now % (wipePeriod * 2);
+            int filled = (phase < wipePeriod) ? (phase * s_stripLen / wipePeriod) : (s_stripLen - ((phase - wipePeriod) * s_stripLen / wipePeriod));
+            uint32_t col = gammaCorrect(s_ledR, s_ledG, s_ledB, bri);
+            for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, (i >= (s_stripLen - 1 - filled)) ? col : 0);
+            break;
+        }
+        case 14: { // 14. Fireplace / Flame Flicker
+            for (int i = 0; i < s_stripLen; i++) {
+                uint8_t flicker = random(55, 255);
+                uint8_t rVal = (uint8_t)(((uint16_t)255 * flicker * bri) / 65025);
+                uint8_t gVal = (uint8_t)(((uint16_t)random(40, 110) * flicker * bri) / 65025);
+                uint8_t bVal = (uint8_t)(((uint16_t)random(0, 15) * flicker * bri) / 65025);
+                s_strip.setPixelColor(i, s_strip.Color(rVal, gVal, bVal));
+            }
+            break;
+        }
+        case 15: { // 15. Aurora Borealis (Emerald & Violet Ambient Waves)
+            float t = (float)now * 0.0015f * ((float)spd * 0.4f);
+            for (int i = 0; i < s_stripLen; i++) {
+                float wave = sinf(t + (float)i * 0.35f) * 0.5f + 0.5f;
+                uint8_t rA = (uint8_t)(wave * 80.0f * (bri / 255.0f));
+                uint8_t gA = (uint8_t)((1.0f - wave) * 220.0f * (bri / 255.0f));
+                uint8_t bA = (uint8_t)(200.0f * (bri / 255.0f));
+                s_strip.setPixelColor(i, s_strip.Color(rA, gA, bA));
+            }
+            break;
+        }
+        case 16: { // 16. Music Reactive Engine (Pro-DJ Visualizer)
             uint8_t mBri = scaleBri(s_musicBri);
             uint8_t floorBri = (uint8_t)(((uint16_t)mBri * 10) / 100); // 10% Floor Glow
             if (floorBri < 5 && mBri > 0) floorBri = 5;
@@ -708,14 +855,11 @@ static void renderLeds() {
 
                         uint32_t heatCol;
                         if (lvl < 80) {
-                            // Quiet: Deep Blue to Cyan
                             heatCol = gammaCorrect(0, (uint8_t)((lvl * 220) / 80), 255, briVal);
                         } else if (lvl < 180) {
-                            // Medium: Neon Green to Amber
                             uint8_t progress = lvl - 80;
                             heatCol = gammaCorrect((uint8_t)((progress * 255) / 100), 255, 0, briVal);
                         } else {
-                            // Bass Peaks: White-Hot Orange to Crimson Red
                             uint8_t peak = lvl - 180;
                             heatCol = gammaCorrect(255, (uint8_t)(255 - ((peak * 200) / 75)), (uint8_t)(peak / 3), briVal);
                         }
@@ -737,9 +881,141 @@ static void renderLeds() {
                     uint8_t finalBri = (uint8_t)((activeBri * (uint16_t)mBri) / 255);
                     uint16_t hue = (now * 8) % 65536;
                     for (int i = 0; i < s_stripLen; i++) {
-                        s_strip.setPixelColor(i, s_strip.ColorHSV((hue + (i * 65536UL / s_stripLen)) % 65536, 255, finalBri));
+                        s_strip.setPixelColor(i, s_strip.ColorHSV((hue + (i * 65536UL / (s_stripLen ? s_stripLen : 1))) % 65536, 255, finalBri));
                     }
                     break;
+                }
+            }
+            break;
+        }
+        case 17: { // 17. Neon Cyberpunk (Hot Magenta & Electric Cyan Synthwave)
+            float t = (float)now * 0.003f * (float)spd;
+            for (int i = 0; i < s_stripLen; i++) {
+                float wave = sinf(t + (float)i * 0.5f);
+                uint32_t col = (wave > 0)
+                    ? gammaCorrect(255, 0, 128, (uint8_t)(wave * (float)bri))     // Hot Magenta
+                    : gammaCorrect(0, 240, 255, (uint8_t)(-wave * (float)bri));   // Electric Cyan
+                s_strip.setPixelColor(i, col);
+            }
+            break;
+        }
+        case 18: { // 18. Plasma Wave (Harmonic Multi-Sine Synthesis)
+            float t = (float)now * 0.002f * (float)spd;
+            for (int i = 0; i < s_stripLen; i++) {
+                float v1 = sinf((float)i * 0.4f + t);
+                float v2 = sinf((float)i * 0.2f - t * 1.5f);
+                float v3 = sinf((float)i * 0.6f + t * 0.7f);
+                uint16_t hue = (uint16_t)(((v1 + v2 + v3 + 3.0f) / 6.0f) * 65535.0f);
+                s_strip.setPixelColor(i, s_strip.gamma32(s_strip.ColorHSV(hue, 255, bri)));
+            }
+            break;
+        }
+        case 19: { // 19. Glitch Strobe / Cyber Matrix (Digital rain code runner)
+            uint32_t step = now / (70 - spd * 5);
+            int runner = step % (s_stripLen ? s_stripLen : 1);
+            for (int i = 0; i < s_stripLen; i++) {
+                int dist = (runner - i + s_stripLen) % (s_stripLen ? s_stripLen : 1);
+                if (dist == 0) {
+                    s_strip.setPixelColor(i, gammaCorrect(240, 255, 240, bri));
+                } else if (dist < 6) {
+                    uint8_t fade = 255 - dist * 40;
+                    s_strip.setPixelColor(i, gammaCorrect(0, fade, 20, (uint8_t)(bri * (fade / 255.0f))));
+                } else if (random(0, 35) == 0) {
+                    s_strip.setPixelColor(i, gammaCorrect(0, 255, 60, (uint8_t)(bri * 0.5f)));
+                } else {
+                    s_strip.setPixelColor(i, 0);
+                }
+            }
+            break;
+        }
+        case 20: { // 20. Hyperdrive / Warp Speed (Acceleration jump from center)
+            int mid = s_stripLen / 2;
+            float t = (float)(now % 1200) / 1200.0f;
+            float curved = t * t * (float)mid;
+            int active = (int)curved;
+            for (int i = 0; i < s_stripLen; i++) {
+                int dist = abs(i - mid);
+                if (abs(dist - active) < 2) {
+                    uint8_t pBri = (uint8_t)((0.4f + t * 0.6f) * (float)bri);
+                    s_strip.setPixelColor(i, gammaCorrect(180, 220, 255, pBri));
+                } else {
+                    s_strip.setPixelColor(i, gammaCorrect(10, 30, 80, (uint8_t)(bri * 0.05f)));
+                }
+            }
+            break;
+        }
+        case 21: { // 21. Lava Lamp (Viscous Crimson & Gold)
+            float t = (float)now * 0.001f * (float)spd;
+            for (int i = 0; i < s_stripLen; i++) {
+                float blob1 = sinf((float)i * 0.25f + t);
+                float blob2 = sinf((float)i * 0.45f - t * 0.7f);
+                float heat = (blob1 + blob2 + 2.0f) * 0.25f;
+                uint32_t col = (heat > 0.65f)
+                    ? gammaCorrect(255, 210, 20, bri)
+                    : (heat > 0.35f ? gammaCorrect(245, 80, 0, bri) : gammaCorrect(160, 0, 10, (uint8_t)(bri * 0.7f)));
+                s_strip.setPixelColor(i, col);
+            }
+            break;
+        }
+        case 22: { // 22. Police Pursuit (Red & Blue Double Strobe)
+            uint32_t cycle = now % 600;
+            int mid = s_stripLen / 2;
+            bool redFlash = (cycle < 80) || (cycle >= 140 && cycle < 220);
+            bool blueFlash = (cycle >= 300 && cycle < 380) || (cycle >= 440 && cycle < 520);
+            for (int i = 0; i < s_stripLen; i++) {
+                if (i < mid) {
+                    s_strip.setPixelColor(i, redFlash ? gammaCorrect(255, 0, 0, bri) : 0);
+                } else {
+                    s_strip.setPixelColor(i, blueFlash ? gammaCorrect(0, 50, 255, bri) : 0);
+                }
+            }
+            break;
+        }
+        case 23: { // 23. Ocean Deep Tide (Aquamarine & Abyssal Indigo)
+            float t = (float)now * 0.002f * (float)spd;
+            for (int i = 0; i < s_stripLen; i++) {
+                float swell = sinf((float)i * 0.2f + t) * 0.5f + 0.5f;
+                uint8_t rSea = 0;
+                uint8_t gSea = (uint8_t)(swell * 230.0f * (bri / 255.0f));
+                uint8_t bSea = (uint8_t)((120.0f + swell * 135.0f) * (bri / 255.0f));
+                s_strip.setPixelColor(i, s_strip.Color(rSea, gSea, bSea));
+            }
+            break;
+        }
+        case 24: { // 24. Toxic Hazmat (Radioactive Lime Glow with Pulsing Amber Flares)
+            float pulse = (sinf((float)now * 0.004f * (float)spd) + 1.0f) * 0.5f;
+            for (int i = 0; i < s_stripLen; i++) {
+                uint8_t limeG = (uint8_t)(255.0f * (bri / 255.0f));
+                uint8_t limeR = (uint8_t)((40.0f + pulse * 120.0f) * (bri / 255.0f));
+                s_strip.setPixelColor(i, s_strip.Color(limeR, limeG, 0));
+            }
+            break;
+        }
+        case 25: { // 25. Heartbeat EKG (Cardiovascular Anatomical Pulse)
+            uint32_t beatCycle = now % (1200 - spd * 40);
+            float beatBri = 0.05f;
+            if (beatCycle < 80) {
+                beatBri = sinf((float)beatCycle / 80.0f * 3.14159f);
+            } else if (beatCycle >= 160 && beatCycle < 280) {
+                beatBri = sinf((float)(beatCycle - 160) / 120.0f * 3.14159f) * 0.85f;
+            }
+            uint32_t col = gammaCorrect((s_ledR == 0 && s_ledG == 0) ? 255 : s_ledR, s_ledG, s_ledB, (uint8_t)(beatBri * (float)bri));
+            for (int i = 0; i < s_stripLen; i++) s_strip.setPixelColor(i, col);
+            break;
+        }
+        case 26: { // 26. Prismatic Meteor Shower (Bursting Ember Streamers)
+            uint32_t speedDelay = 70 - (spd * 5);
+            int meteorPos = (now / speedDelay) % (s_stripLen ? s_stripLen : 1);
+            for (int i = 0; i < s_stripLen; i++) {
+                int dist = (meteorPos - i + s_stripLen) % (s_stripLen ? s_stripLen : 1);
+                if (dist == 0) {
+                    s_strip.setPixelColor(i, s_strip.Color(255, 255, 255));
+                } else if (dist < 8) {
+                    uint16_t emberHue = (uint16_t)((now * 4 + dist * 5000) % 65536);
+                    uint8_t emberBri = (uint8_t)((1.0f - (float)dist / 8.0f) * (float)bri);
+                    s_strip.setPixelColor(i, s_strip.gamma32(s_strip.ColorHSV(emberHue, 255, emberBri)));
+                } else {
+                    s_strip.setPixelColor(i, 0);
                 }
             }
             break;
@@ -970,10 +1246,18 @@ void loop() {
                     notifyEnvState();
                 }
             } else if (cmd.data[0] == 0xF2 && cmd.len >= 6) { // 0xF2: Matrix Config [0xF2, rowsLo, rowsHi, colsLo, colsHi, wiring, pin, en]
-                s_matrixConfig.rows       = cmd.data[1] | ((uint16_t)cmd.data[2] << 8);
-                s_matrixConfig.cols       = cmd.data[3] | ((uint16_t)cmd.data[4] << 8);
-                s_matrixConfig.wiringType = cmd.data[5];
-                s_matrixConfig.pin        = (cmd.len >= 7 && cmd.data[6] > 0) ? cmd.data[6] : MATRIX_PIN;
+                uint16_t reqRows = cmd.data[1] | ((uint16_t)cmd.data[2] << 8);
+                uint16_t reqCols = cmd.data[3] | ((uint16_t)cmd.data[4] << 8);
+                uint32_t totalLeds = (uint32_t)reqRows * (uint32_t)reqCols;
+                if (totalLeds == 0 || totalLeds > MAX_MATRIX_LEDS) {
+                    reqRows = DEFAULT_MATRIX_ROWS;
+                    reqCols = DEFAULT_MATRIX_COLS;
+                }
+                s_matrixConfig.rows       = reqRows;
+                s_matrixConfig.cols       = reqCols;
+                s_matrixConfig.wiringType = (cmd.data[5] == 1) ? 1 : 0;
+                uint8_t reqPin = (cmd.len >= 7 && cmd.data[6] > 0) ? cmd.data[6] : MATRIX_PIN;
+                s_matrixConfig.pin        = isSafeMatrixPin(reqPin) ? reqPin : MATRIX_PIN;
                 s_matrixConfig.enabled    = (cmd.len >= 8) ? (cmd.data[7] == 1) : true;
                 saveMatrixConfigToNVS();
                 initMatrixHardware();
@@ -990,6 +1274,7 @@ void loop() {
                     if (cmd.len >= 8 + tlen) {
                         memset(s_matrixConfig.text, 0, sizeof(s_matrixConfig.text));
                         memcpy(s_matrixConfig.text, &cmd.data[8], tlen);
+                        s_matrixConfig.text[sizeof(s_matrixConfig.text) - 1] = '\0';
                     }
                 }
                 saveMatrixConfigToNVS();
