@@ -28,11 +28,34 @@ export default function ScheduleModal({
 }: ScheduleModalProps) {
   const [rule, setRule] = useState<ScheduleRule | null>(null);
 
+  // String states for numeric fields allowing clean wipe / single-digit typing
+  const [startH, setStartH] = useState<string>("9");
+  const [startM, setStartM] = useState<string>("00");
+  const [startAmPm, setStartAmPm] = useState<"AM" | "PM">("AM");
+  const [stopH, setStopH] = useState<string>("5");
+  const [stopM, setStopM] = useState<string>("00");
+  const [stopAmPm, setStopAmPm] = useState<"AM" | "PM">("PM");
+  const [durationStr, setDurationStr] = useState<string>("480");
+
   useEffect(() => {
     if (editingRule) {
       setRule({ ...editingRule });
+      if (is12Hr) {
+        const h12 = editingRule.startHour % 12 || 12;
+        setStartH(String(h12));
+        setStartAmPm(editingRule.startHour >= 12 ? "PM" : "AM");
+        const stopH12 = editingRule.stopHour % 12 || 12;
+        setStopH(String(stopH12));
+        setStopAmPm(editingRule.stopHour >= 12 ? "PM" : "AM");
+      } else {
+        setStartH(String(editingRule.startHour));
+        setStopH(String(editingRule.stopHour));
+      }
+      setStartM(String(editingRule.startMin).padStart(2, "0"));
+      setStopM(String(editingRule.stopMin).padStart(2, "0"));
+      setDurationStr(String(editingRule.durationMin || 30));
     }
-  }, [editingRule]);
+  }, [editingRule, is12Hr]);
 
   if (!isOpen || !rule) return null;
 
@@ -41,6 +64,38 @@ export default function ScheduleModal({
       if (!prev) return null;
       return { ...prev, daysMask: prev.daysMask ^ (1 << dayBit) };
     });
+  };
+
+  const handleSave = () => {
+    if (!rule) return;
+    let finalStartH = 0;
+    if (is12Hr) {
+      const h = Math.max(1, Math.min(12, parseInt(startH, 10) || 12));
+      finalStartH = startAmPm === "PM" ? (h === 12 ? 12 : h + 12) : (h === 12 ? 0 : h);
+    } else {
+      finalStartH = Math.max(0, Math.min(23, parseInt(startH, 10) || 0));
+    }
+    const finalStartM = Math.max(0, Math.min(59, parseInt(startM, 10) || 0));
+
+    let finalStopH = 0;
+    if (is12Hr) {
+      const h = Math.max(1, Math.min(12, parseInt(stopH, 10) || 12));
+      finalStopH = stopAmPm === "PM" ? (h === 12 ? 12 : h + 12) : (h === 12 ? 0 : h);
+    } else {
+      finalStopH = Math.max(0, Math.min(23, parseInt(stopH, 10) || 0));
+    }
+    const finalStopM = Math.max(0, Math.min(59, parseInt(stopM, 10) || 0));
+    const finalDur = Math.max(1, Math.min(1440, parseInt(durationStr, 10) || 30));
+
+    onSave({
+      ...rule,
+      startHour: finalStartH,
+      startMin: finalStartM,
+      stopHour: finalStopH,
+      stopMin: finalStopM,
+      durationMin: finalDur,
+    });
+    onClose();
   };
 
   return (
@@ -81,6 +136,7 @@ export default function ScheduleModal({
               maxLength={20}
               value={rule.name}
               onChange={(e) => setRule({ ...rule, name: e.target.value })}
+              onFocus={(e) => e.target.select()}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-cyan-500"
             />
           </div>
@@ -123,13 +179,9 @@ export default function ScheduleModal({
                     type="number"
                     min="1"
                     max="12"
-                    value={rule.startHour % 12 || 12}
-                    onChange={(e) => {
-                      const val = Math.max(1, Math.min(12, Number(e.target.value) || 12));
-                      const isPM = rule.startHour >= 12;
-                      const newH = isPM ? (val === 12 ? 12 : val + 12) : (val === 12 ? 0 : val);
-                      setRule({ ...rule, startHour: newH });
-                    }}
+                    value={startH}
+                    onChange={(e) => setStartH(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
                   />
                   <span className="text-zinc-500">:</span>
@@ -137,19 +189,17 @@ export default function ScheduleModal({
                     type="number"
                     min="0"
                     max="59"
-                    value={rule.startMin}
-                    onChange={(e) => setRule({ ...rule, startMin: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+                    value={startM}
+                    onChange={(e) => setStartM(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const newH = (rule.startHour + 12) % 24;
-                      setRule({ ...rule, startHour: newH });
-                    }}
+                    onClick={() => setStartAmPm(startAmPm === "AM" ? "PM" : "AM")}
                     className="px-2 py-1 rounded bg-zinc-800 border border-zinc-600 text-[10px] font-extrabold text-cyan-300 active:scale-95 cursor-pointer"
                   >
-                    {rule.startHour >= 12 ? "PM" : "AM"}
+                    {startAmPm}
                   </button>
                 </div>
               ) : (
@@ -158,8 +208,9 @@ export default function ScheduleModal({
                     type="number"
                     min="0"
                     max="23"
-                    value={rule.startHour}
-                    onChange={(e) => setRule({ ...rule, startHour: Number(e.target.value) })}
+                    value={startH}
+                    onChange={(e) => setStartH(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
                   />
                   <span className="text-zinc-500">:</span>
@@ -167,8 +218,9 @@ export default function ScheduleModal({
                     type="number"
                     min="0"
                     max="59"
-                    value={rule.startMin}
-                    onChange={(e) => setRule({ ...rule, startMin: Number(e.target.value) })}
+                    value={startM}
+                    onChange={(e) => setStartM(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
                   />
                 </div>
@@ -281,8 +333,9 @@ export default function ScheduleModal({
                   type="number"
                   min="1"
                   max="1440"
-                  value={rule.durationMin}
-                  onChange={(e) => setRule({ ...rule, durationMin: Number(e.target.value) })}
+                  value={durationStr}
+                  onChange={(e) => setDurationStr(e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   className="w-24 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white"
                 />
                 <span className="text-zinc-500">Minutes</span>
@@ -296,13 +349,9 @@ export default function ScheduleModal({
                     type="number"
                     min="1"
                     max="12"
-                    value={rule.stopHour % 12 || 12}
-                    onChange={(e) => {
-                      const val = Math.max(1, Math.min(12, Number(e.target.value) || 12));
-                      const isPM = rule.stopHour >= 12;
-                      const newH = isPM ? (val === 12 ? 12 : val + 12) : (val === 12 ? 0 : val);
-                      setRule({ ...rule, stopHour: newH });
-                    }}
+                    value={stopH}
+                    onChange={(e) => setStopH(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
                   />
                   <span className="text-zinc-500">:</span>
@@ -310,19 +359,17 @@ export default function ScheduleModal({
                     type="number"
                     min="0"
                     max="59"
-                    value={rule.stopMin}
-                    onChange={(e) => setRule({ ...rule, stopMin: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })}
+                    value={stopM}
+                    onChange={(e) => setStopM(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-12 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-white text-center font-bold"
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const newH = (rule.stopHour + 12) % 24;
-                      setRule({ ...rule, stopHour: newH });
-                    }}
+                    onClick={() => setStopAmPm(stopAmPm === "AM" ? "PM" : "AM")}
                     className="px-2 py-1 rounded bg-zinc-800 border border-zinc-600 text-[10px] font-extrabold text-cyan-300 active:scale-95 cursor-pointer"
                   >
-                    {rule.stopHour >= 12 ? "PM" : "AM"}
+                    {stopAmPm}
                   </button>
                 </div>
               ) : (
@@ -331,8 +378,9 @@ export default function ScheduleModal({
                     type="number"
                     min="0"
                     max="23"
-                    value={rule.stopHour}
-                    onChange={(e) => setRule({ ...rule, stopHour: Number(e.target.value) })}
+                    value={stopH}
+                    onChange={(e) => setStopH(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
                   />
                   <span className="text-zinc-500">:</span>
@@ -340,8 +388,9 @@ export default function ScheduleModal({
                     type="number"
                     min="0"
                     max="59"
-                    value={rule.stopMin}
-                    onChange={(e) => setRule({ ...rule, stopMin: Number(e.target.value) })}
+                    value={stopM}
+                    onChange={(e) => setStopM(e.target.value)}
+                    onFocus={(e) => e.target.select()}
                     className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white text-center"
                   />
                 </div>
@@ -361,10 +410,7 @@ export default function ScheduleModal({
           </button>
           <button
             type="button"
-            onClick={() => {
-              onSave(rule);
-              onClose();
-            }}
+            onClick={handleSave}
             className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold cursor-pointer transition-all shadow-md active:scale-95"
           >
             Save Rule to ESP32
@@ -374,4 +420,3 @@ export default function ScheduleModal({
     </div>
   );
 }
-

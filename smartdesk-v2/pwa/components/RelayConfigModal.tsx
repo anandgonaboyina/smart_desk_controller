@@ -43,10 +43,10 @@ export default function RelayConfigModal({
   const [wiring, setWiring] = useState<number>(config?.wiring || 0);
   const [onEn, setOnEn] = useState<boolean>(config?.onAnimEnabled ?? true);
   const [onMd, setOnMd] = useState<number>(config?.onAnimMode || 1);
-  const [onDu, setOnDu] = useState<number>(config?.onAnimDuration || 2);
+  const [onDu, setOnDu] = useState<number | string>(config?.onAnimDuration || 2);
   const [offEn, setOffEn] = useState<boolean>(config?.offAnimEnabled ?? true);
   const [offMd, setOffMd] = useState<number>(config?.offAnimMode || 3);
-  const [offDu, setOffDu] = useState<number>(config?.offAnimDuration || 2);
+  const [offDu, setOffDu] = useState<number | string>(config?.offAnimDuration || 2);
   const [beepOn, setBeepOn] = useState<boolean>(config?.beepOn ?? true);
   const [beepOff, setBeepOff] = useState<boolean>(config?.beepOff ?? true);
   const [beepEnd, setBeepEnd] = useState<boolean>(config?.beepTimerEnd ?? true);
@@ -217,7 +217,8 @@ export default function RelayConfigModal({
                     min="1"
                     max="10"
                     value={onDu}
-                    onChange={(e) => setOnDu(Number(e.target.value))}
+                    onChange={(e) => setOnDu(e.target.value === "" ? "" : Number(e.target.value))}
+                    onFocus={(e) => e.target.select()}
                     className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
                   />
                   <span className="text-zinc-500 text-[10px]">sec</span>
@@ -259,7 +260,8 @@ export default function RelayConfigModal({
                     min="1"
                     max="10"
                     value={offDu}
-                    onChange={(e) => setOffDu(Number(e.target.value))}
+                    onChange={(e) => setOffDu(e.target.value === "" ? "" : Number(e.target.value))}
+                    onFocus={(e) => e.target.select()}
                     className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
                   />
                   <span className="text-zinc-500 text-[10px]">sec</span>
@@ -281,7 +283,7 @@ export default function RelayConfigModal({
           <button
             type="button"
             onClick={() => {
-              onSave(relayIndex, name, wiring, onEn, onMd, onDu, offEn, offMd, offDu, beepOn, beepOff, beepEnd);
+              onSave(relayIndex, name, wiring, onEn, onMd, Math.max(1, Math.min(10, Number(onDu) || 2)), offEn, offMd, Math.max(1, Math.min(10, Number(offDu) || 2)), beepOn, beepOff, beepEnd);
               onClose();
             }}
             className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-mono font-bold cursor-pointer transition-all shadow-md active:scale-95"

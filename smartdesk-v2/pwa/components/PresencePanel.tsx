@@ -89,7 +89,15 @@ export default function PresencePanel({
               </button>
             ))}
             <div className="flex gap-1 flex-1">
-              <input type="number" min="1" max="1440" value={customDelayInput} onChange={(e) => setCustomDelayInput(e.target.value)} className="w-16 bg-black border-2 border-zinc-600 rounded-lg px-2 text-white text-xs font-bold text-center outline-none" />
+              <input
+                type="number"
+                min="1"
+                max="1440"
+                value={customDelayInput}
+                onChange={(e) => setCustomDelayInput(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                className="w-16 bg-black border-2 border-zinc-600 rounded-lg px-2 text-white text-xs font-bold text-center outline-none"
+              />
               <button onClick={() => onSavePresenceConfig({ ...presenceConfig, awayDelayMin: Math.max(1, Math.min(1440, Number(customDelayInput) || 1)) })} className="flex-1 bg-zinc-800 text-white text-[10px] font-extrabold rounded-lg border-2 border-zinc-600 active:scale-95">OK</button>
             </div>
           </div>

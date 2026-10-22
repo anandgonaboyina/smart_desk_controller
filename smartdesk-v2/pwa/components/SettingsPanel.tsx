@@ -55,9 +55,9 @@ export default function SettingsPanel({
   const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
 
   // Local state for hardware configurations
-  const [stripLenInput, setStripLenInput] = useState<number>(stripLength);
-  const [mRows, setMRows] = useState<number>(matrixConfig?.rows || 8);
-  const [mCols, setMCols] = useState<number>(matrixConfig?.cols || 32);
+  const [stripLenInput, setStripLenInput] = useState<number | string>(stripLength);
+  const [mRows, setMRows] = useState<number | string>(matrixConfig?.rows || 8);
+  const [mCols, setMCols] = useState<number | string>(matrixConfig?.cols || 32);
   const [mWiring, setMWiring] = useState<number>(matrixConfig?.wiringType ?? 1);
   const [mPin, setMPin] = useState<number>(matrixConfig?.pin || 11);
   const [mText, setMText] = useState<string>(matrixConfig?.text || "SMARTDESK V2");
@@ -124,7 +124,7 @@ export default function SettingsPanel({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 shrink-0">
         <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400 font-extrabold uppercase">DHT11 Environmental Sensor</span>
+            <span className="text-xs text-zinc-400 font-extrabold uppercase">DHT11 Environmental Sensor GPIO 9(check once hardcoded)</span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${envData.valid ? "bg-emerald-950 text-emerald-300 border border-emerald-700" : "bg-zinc-800 text-zinc-500"}`}>
               {envData.valid ? "Sensor Active" : "No Sensor"}
             </span>
@@ -195,12 +195,13 @@ export default function SettingsPanel({
               min="1"
               max="800"
               value={stripLenInput}
-              onChange={(e) => setStripLenInput(Math.max(1, Math.min(800, Number(e.target.value) || 1)))}
+              onChange={(e) => setStripLenInput(e.target.value === "" ? "" : Number(e.target.value))}
+              onFocus={(e) => e.target.select()}
               className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-bold text-xs"
             />
             <button
               type="button"
-              onClick={() => onSaveStripLength?.(stripLenInput)}
+              onClick={() => onSaveStripLength?.(Math.max(1, Math.min(800, Number(stripLenInput) || 8)))}
               className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs cursor-pointer active:scale-95"
             >
               Set Strip (0xF3)
@@ -212,7 +213,7 @@ export default function SettingsPanel({
         <div className="space-y-2 pt-2 border-t border-zinc-800">
           <div className="flex justify-between items-center">
             <span className="text-[10px] text-cyan-400 font-bold uppercase">2D Matrix Display (GPIO {mPin}):</span>
-            <span className="text-[10px] text-zinc-400">{mCols}x{mRows} Grid ({mCols * mRows} LEDs)</span>
+            <span className="text-[10px] text-zinc-400">{mCols}x{mRows} Grid ({Number(mCols) * Number(mRows)} LEDs)</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div>
@@ -222,7 +223,8 @@ export default function SettingsPanel({
                 min="1"
                 max="64"
                 value={mRows}
-                onChange={(e) => setMRows(Math.max(1, Math.min(64, Number(e.target.value) || 8)))}
+                onChange={(e) => setMRows(e.target.value === "" ? "" : Number(e.target.value))}
+                onFocus={(e) => e.target.select()}
                 className="w-full bg-black border border-zinc-700 rounded-lg p-1.5 text-white text-xs font-bold"
               />
             </div>
@@ -233,7 +235,8 @@ export default function SettingsPanel({
                 min="1"
                 max="128"
                 value={mCols}
-                onChange={(e) => setMCols(Math.max(1, Math.min(128, Number(e.target.value) || 32)))}
+                onChange={(e) => setMCols(e.target.value === "" ? "" : Number(e.target.value))}
+                onFocus={(e) => e.target.select()}
                 className="w-full bg-black border border-zinc-700 rounded-lg p-1.5 text-white text-xs font-bold"
               />
             </div>
@@ -264,7 +267,7 @@ export default function SettingsPanel({
           </div>
           <button
             type="button"
-            onClick={() => onSaveMatrixConfig?.(mRows, mCols, mWiring, mPin, matrixConfig?.enabled ?? true)}
+            onClick={() => onSaveMatrixConfig?.(Math.max(1, Math.min(64, Number(mRows) || 8)), Math.max(1, Math.min(128, Number(mCols) || 32)), mWiring, mPin, matrixConfig?.enabled ?? true)}
             className="w-full py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white font-extrabold text-xs cursor-pointer active:scale-95"
           >
             Save Matrix Hardware (0xF2)

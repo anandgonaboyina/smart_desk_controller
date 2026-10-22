@@ -157,7 +157,7 @@ export default function AodFaceScreen({
   }, [relays, relayConfigs, rgbTimerRemainingMin]);
 
   return (
-    <div className="relative w-full h-[100dvh] bg-black text-white flex flex-col justify-between overflow-hidden select-none font-sans">
+    <div className="fixed inset-0 w-full h-[100dvh] max-h-[100dvh] bg-black text-white flex flex-col justify-between overflow-hidden select-none font-sans touch-none overscroll-none">
       
       {/* ── TOP SECTION (Fixed Padding) ── */}
       <div className="flex justify-between items-start p-4 sm:p-6 w-full z-10 shrink-0">
@@ -187,16 +187,17 @@ export default function AodFaceScreen({
         {/* Top-Right: Device Link / Status Pill */}
         <div className="flex flex-col items-end gap-1">
           <button
-            onClick={onConnect}
-            className={`px-3 py-1.5 rounded-full border text-xs font-extrabold tracking-wide flex items-center gap-2 transition-all active:scale-95 cursor-pointer ${
+            onClick={connected ? undefined : onConnect}
+            disabled={connected}
+            className={`px-3 py-1.5 rounded-full border text-xs font-extrabold tracking-wide flex items-center gap-2 transition-all ${
               connected
-                ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-300"
+                ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-300 cursor-default select-none pointer-events-none"
                 : connecting
-                ? "bg-amber-950/80 border-amber-500/50 text-amber-300 animate-pulse"
-                : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white"
+                ? "bg-amber-950/80 border-amber-500/50 text-amber-300 animate-pulse cursor-pointer active:scale-95"
+                : "bg-cyan-950/80 hover:bg-cyan-900 border-cyan-500/60 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.3)] cursor-pointer active:scale-95"
             }`}
           >
-            <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : connecting ? "bg-amber-400" : "bg-zinc-600"}`} />
+            <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : connecting ? "bg-amber-400" : "bg-cyan-400 animate-ping"}`} />
             <span className="truncate max-w-[120px] sm:max-w-[180px]">{connected ? deviceName : connecting ? "Connecting..." : "Tap to Link Desk"}</span>
           </button>
           {presenceData.state === 2 && (
@@ -210,9 +211,9 @@ export default function AodFaceScreen({
       {/* ── CENTER SECTION: Huge Animated DeskBuddy Face ── */}
       <div 
         onClick={handleFaceTap}
-        className="flex-1 w-full flex flex-col items-center justify-center cursor-pointer relative px-4"
+        className="flex-1 w-full min-h-0 flex flex-col items-center justify-center cursor-pointer relative px-4 overflow-hidden"
       >
-        <div className="w-full max-w-[420px] aspect-[4/3] flex items-center justify-center relative">
+        <div className="w-full max-w-[380px] max-h-[48vh] aspect-[4/3] flex items-center justify-center relative">
           <svg
             viewBox="0 0 200 150"
             className="w-full h-full drop-shadow-[0_0_35px_rgba(6,182,212,0.65)]"
@@ -393,45 +394,47 @@ export default function AodFaceScreen({
           </button>
         </div>
 
-        {/* Center: Sleek Voice Assistant Microphone Icon */}
-        <div className="relative pointer-events-auto flex flex-col items-center">
-          <button
-            type="button"
-            onMouseDown={voice.handleMicMouseDown}
-            onMouseUp={voice.handleMicMouseUp}
-            onTouchStart={voice.handleMicMouseDown}
-            onTouchEnd={voice.handleMicMouseUp}
-            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-2xl active:scale-90 border-2 ${
-              voice.isContinuous
-                ? "bg-rose-600 border-rose-400 text-white shadow-[0_0_30px_rgba(244,63,94,0.65)] animate-pulse"
-                : voice.isListening
-                ? "bg-cyan-500 border-cyan-300 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] animate-pulse"
-                : "bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-cyan-400 hover:border-cyan-500/50"
-            }`}
-            title="Tap for voice command • Hold for continuous listening"
-          >
-            <span className="text-2xl sm:text-3xl">
-              {voice.isContinuous ? "🔴" : voice.isListening ? "🎙️" : "🎤"}
-            </span>
-          </button>
-          <span className="text-[9px] font-extrabold uppercase tracking-widest mt-1 text-zinc-500">
-            {voice.isContinuous ? "Continuous" : voice.isListening ? "Listening" : "Voice Assist"}
-          </span>
-        </div>
+        {/* Center: Sleek Voice Assistant Microphone Icon (Only when connected) */}
+        {connected ? (
+          <div className="relative pointer-events-auto flex flex-col items-center">
+            <button
+              type="button"
+              onMouseDown={voice.handleMicMouseDown}
+              onMouseUp={voice.handleMicMouseUp}
+              onTouchStart={voice.handleMicMouseDown}
+              onTouchEnd={voice.handleMicMouseUp}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-lg active:scale-90 border-2 ${
+                voice.isContinuous
+                  ? "bg-rose-600 border-rose-400 text-white shadow-[0_0_20px_rgba(244,63,94,0.65)] animate-pulse"
+                  : voice.isListening
+                  ? "bg-cyan-500 border-cyan-300 text-black shadow-[0_0_15px_rgba(6,182,212,0.6)] animate-pulse"
+                  : "bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-cyan-400 hover:border-cyan-500/50"
+              }`}
+              title="Tap for voice command • Hold for continuous listening"
+            >
+              <span className="text-base sm:text-lg">
+                {voice.isContinuous ? "🔴" : voice.isListening ? "🎙️" : "🎤"}
+              </span>
+            </button>
+          </div>
+        ) : (
+          <div className="w-10" />
+        )}
 
-        {/* Right Side: Open Remote Button */}
+        {/* Right Side: Open Remote (when connected) OR Instant Connect (when offline/disconnected) */}
         <button
-          onClick={onOpenRemote}
-          disabled={!connected}
+          onClick={connected ? onOpenRemote : onConnect}
           className={`pointer-events-auto px-5 sm:px-8 py-3 sm:py-4 rounded-2xl font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 sm:gap-3 transition-all border-2 shadow-2xl active:scale-95 cursor-pointer ${
             connected
               ? "bg-cyan-500 hover:bg-cyan-400 text-black border-cyan-300 shadow-cyan-500/40"
-              : "bg-zinc-900 text-zinc-600 border-zinc-800"
+              : connecting
+              ? "bg-amber-950/80 border-amber-500/60 text-amber-300 animate-pulse shadow-amber-500/30"
+              : "bg-cyan-950/80 hover:bg-cyan-900 border-cyan-500/80 text-cyan-300 shadow-[0_0_20px_rgba(6,182,212,0.4)]"
           }`}
         >
-          <span>⚡</span>
-          <span className="hidden sm:inline">{connected ? "OPEN REMOTE" : "DISCONNECTED"}</span>
-          <span className="sm:hidden">{connected ? "REMOTE" : "OFFLINE"}</span>
+          <span>{connected ? "⚡" : connecting ? "⏳" : "🔗"}</span>
+          <span className="hidden sm:inline">{connected ? "OPEN REMOTE" : connecting ? "CONNECTING..." : "CONNECT DESK"}</span>
+          <span className="sm:hidden">{connected ? "REMOTE" : connecting ? "LINKING..." : "CONNECT"}</span>
         </button>
 
       </div>

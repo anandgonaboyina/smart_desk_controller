@@ -537,6 +537,72 @@ static void loadSchedulesFromNVS() {
     s_prefs.end();
 }
 
+static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
+    if (ruleIdx >= MAX_SCHEDULES) return;
+    const ScheduleRule& rule = s_schedules[ruleIdx];
+    uint8_t targetType = rule.targetType;
+    Serial.printf(">>> [SCHEDULE TRIGGER] Rule %d, Target=%d, Action=%d\n", ruleIdx, targetType, action);
+    if (targetType < RELAY_COUNT) {
+        setRelayLoad(targetType, action, "Schedule Rule");
+        notifyRelayState();
+    } else if (targetType == 4) { // All Relays
+        for (int r = 0; r < RELAY_COUNT; r++) {
+            setRelayLoad(r, action, "Schedule All");
+        }
+        notifyRelayState();
+    } else if (targetType == 5) { // RGB Strip
+        if (action == 1) {
+            s_ledMode = 1; // Solid
+            s_ledR   = rule.rgbR;
+            s_ledG   = rule.rgbG;
+            s_ledB   = rule.rgbB;
+            s_ledBri = (rule.rgbBri > 0) ? rule.rgbBri : 100;
+        } else {
+            s_ledMode = 0; // Off
+        }
+        notifyLedState();
+    }
+}
+
+static void checkSchedules() {
+    if (!s_timeSync.synced) return;
+
+    uint8_t curH = 0, curM = 0, curS = 0, curDOW = 0;
+    getLocalTime(&curH, &curM, &curS, &curDOW);
+
+    uint16_t curDayMinute = ((uint16_t)curH * 60) + curM;
+    uint8_t dayBit = (1 << (curDOW % 7)); // Bit 0 = Sun, Bit 1 = Mon ... Bit 6 = Sat
+
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+        if (!s_schedules[i].enabled) continue;
+        if ((s_schedules[i].daysMask & dayBit) == 0) continue;
+
+        uint16_t startMinute = ((uint16_t)s_schedules[i].startHour * 60) + s_schedules[i].startMin;
+        uint16_t stopMinute = 0;
+        bool hasStop = false;
+
+        if (s_schedules[i].stopType == 1 && s_schedules[i].durationMin > 0) { // Duration
+            stopMinute = (startMinute + s_schedules[i].durationMin) % 1440;
+            hasStop = true;
+        } else if (s_schedules[i].stopType == 2) { // Direct End Time
+            stopMinute = ((uint16_t)s_schedules[i].stopHour * 60) + s_schedules[i].stopMin;
+            hasStop = true;
+        }
+
+        // Fire Start
+        if (curDayMinute == startMinute && s_schedules[i].lastFiredDayMinute != curDayMinute) {
+            s_schedules[i].lastFiredDayMinute = curDayMinute;
+            executeScheduleAction(i, s_schedules[i].targetAction);
+        }
+        // Fire Stop (Opposite of targetAction)
+        else if (hasStop && curDayMinute == stopMinute && s_schedules[i].lastFiredDayMinute != (curDayMinute | 0x8000)) {
+            s_schedules[i].lastFiredDayMinute = (curDayMinute | 0x8000);
+            uint8_t stopAction = (s_schedules[i].targetAction == 1) ? 0 : 1;
+            executeScheduleAction(i, stopAction);
+        }
+    }
+}
+
 static void loadTimeBaseFromNVS() {
     s_prefs.begin("desk_time", true);
     s_timeSync.synced      = s_prefs.getBool("synced", false);
@@ -1194,6 +1260,79 @@ void loop() {
                 s_timeSync.syncMillis = millis();
                 saveTimeBaseToNVS();
                 notifyEnvState();
+            } else if (cmd.data[0] == 0xFA && cmd.len >= 12) { // 0xFA: Save Schedule Rule
+                uint8_t id = cmd.data[1];
+                if (id < MAX_SCHEDULES) {
+                    s_schedules[id].enabled      = (cmd.data[2] == 1);
+                    s_schedules[id].daysMask     = cmd.data[3];
+                    s_schedules[id].startHour    = cmd.data[4];
+                    s_schedules[id].startMin     = cmd.data[5];
+                    s_schedules[id].stopType     = cmd.data[6];
+                    if (s_schedules[id].stopType == 1) {
+                        s_schedules[id].durationMin = cmd.data[7] | ((uint16_t)cmd.data[8] << 8);
+                    } else {
+                        s_schedules[id].stopHour = cmd.data[7];
+                        s_schedules[id].stopMin  = (cmd.len >= 10) ? cmd.data[9] : 0;
+                    }
+                    s_schedules[id].targetType   = cmd.data[10];
+                    s_schedules[id].targetAction = cmd.data[11];
+                    if (cmd.len >= 16) {
+                        s_schedules[id].rgbR   = cmd.data[12];
+                        s_schedules[id].rgbG   = cmd.data[13];
+                        s_schedules[id].rgbB   = cmd.data[14];
+                        s_schedules[id].rgbBri = cmd.data[15];
+                    }
+                    s_schedules[id].lastFiredDayMinute = 0xFFFF;
+
+                    s_prefs.begin("desk_sched", false);
+                    char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16];
+                    snprintf(kEn, sizeof(kEn), "en_%d", id);
+                    snprintf(kDays, sizeof(kDays), "dy_%d", id);
+                    snprintf(kSH, sizeof(kSH), "sh_%d", id);
+                    snprintf(kSM, sizeof(kSM), "sm_%d", id);
+                    snprintf(kST, sizeof(kST), "st_%d", id);
+                    snprintf(kDur, sizeof(kDur), "du_%d", id);
+                    snprintf(kEH, sizeof(kEH), "eh_%d", id);
+                    snprintf(kEM, sizeof(kEM), "em_%d", id);
+                    snprintf(kTT, sizeof(kTT), "tt_%d", id);
+                    snprintf(kTA, sizeof(kTA), "ta_%d", id);
+                    snprintf(kR, sizeof(kR), "r_%d", id);
+                    snprintf(kG, sizeof(kG), "g_%d", id);
+                    snprintf(kB, sizeof(kB), "b_%d", id);
+                    snprintf(kBri, sizeof(kBri), "br_%d", id);
+
+                    s_prefs.putBool(kEn, s_schedules[id].enabled);
+                    s_prefs.putUChar(kDays, s_schedules[id].daysMask);
+                    s_prefs.putUChar(kSH, s_schedules[id].startHour);
+                    s_prefs.putUChar(kSM, s_schedules[id].startMin);
+                    s_prefs.putUChar(kST, s_schedules[id].stopType);
+                    s_prefs.putUShort(kDur, s_schedules[id].durationMin);
+                    s_prefs.putUChar(kEH, s_schedules[id].stopHour);
+                    s_prefs.putUChar(kEM, s_schedules[id].stopMin);
+                    s_prefs.putUChar(kTT, s_schedules[id].targetType);
+                    s_prefs.putUChar(kTA, s_schedules[id].targetAction);
+                    s_prefs.putUChar(kR, s_schedules[id].rgbR);
+                    s_prefs.putUChar(kG, s_schedules[id].rgbG);
+                    s_prefs.putUChar(kB, s_schedules[id].rgbB);
+                    s_prefs.putUChar(kBri, s_schedules[id].rgbBri);
+                    s_prefs.end();
+
+                    Serial.printf(">>> [SCHEDULE] Saved Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Target=%d, Act=%d)\n",
+                                  id, s_schedules[id].enabled, s_schedules[id].daysMask,
+                                  s_schedules[id].startHour, s_schedules[id].startMin,
+                                  s_schedules[id].targetType, s_schedules[id].targetAction);
+                }
+            } else if (cmd.data[0] == 0xF9 && cmd.len >= 2) { // 0xF9: Delete/Disable Schedule Rule
+                uint8_t id = cmd.data[1];
+                if (id < MAX_SCHEDULES) {
+                    s_schedules[id].enabled = false;
+                    s_prefs.begin("desk_sched", false);
+                    char kEn[16];
+                    snprintf(kEn, sizeof(kEn), "en_%d", id);
+                    s_prefs.putBool(kEn, false);
+                    s_prefs.end();
+                    Serial.printf(">>> [SCHEDULE] Disabled Rule %d\n", id);
+                }
             } else if (cmd.data[0] == 0xF8 && cmd.len >= 8) { // Presence Config
                 s_presenceConfig.enabled          = (cmd.data[1] == 1);
                 s_presenceConfig.awayDelayMin     = cmd.data[2] | ((uint16_t)cmd.data[3] << 8);
@@ -1341,6 +1480,13 @@ void loop() {
     uint8_t rtcH = 0, rtcM = 0, rtcS = 0, rtcDOW = 0;
     getLocalTime(&rtcH, &rtcM, &rtcS, &rtcDOW);
     renderMatrixLeds(rtcH, rtcM, rtcS);
+
+    // Check and Execute Schedules (24/7 Hardware Scheduler)
+    static uint32_t s_lastSchedCheckMs = 0;
+    if (now - s_lastSchedCheckMs >= 1000UL) {
+        s_lastSchedCheckMs = now;
+        checkSchedules();
+    }
 
     delay(2);
 }

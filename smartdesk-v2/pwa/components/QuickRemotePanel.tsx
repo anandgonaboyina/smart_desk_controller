@@ -25,6 +25,8 @@ export interface QuickRemotePanelProps {
 }
 
 export default function QuickRemotePanel({
+  connected,
+  deviceName,
   relays,
   configs,
   led,
@@ -274,31 +276,30 @@ export default function QuickRemotePanel({
         </div>
       )}
 
-      {/* BOTTOM MIDDLE VOICE ASSISTANT MIC */}
-      <div className="flex flex-col items-center justify-center pt-1 pb-1 shrink-0">
-        <button
-          type="button"
-          onMouseDown={voice.handleMicMouseDown}
-          onMouseUp={voice.handleMicMouseUp}
-          onTouchStart={voice.handleMicMouseDown}
-          onTouchEnd={voice.handleMicMouseUp}
-          className={`w-14 h-14 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-2xl active:scale-90 border-2 ${
-            voice.isContinuous
-              ? "bg-rose-600 border-rose-400 text-white shadow-[0_0_30px_rgba(244,63,94,0.65)] animate-pulse"
-              : voice.isListening
-              ? "bg-cyan-500 border-cyan-300 text-black shadow-[0_0_25px_rgba(6,182,212,0.6)] animate-pulse"
-              : "bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-cyan-400 hover:border-cyan-500/50"
-          }`}
-          title="Tap for voice command • Hold for continuous listening"
-        >
-          <span className="text-2xl">
-            {voice.isContinuous ? "🔴" : voice.isListening ? "🎙️" : "🎤"}
-          </span>
-        </button>
-        <span className="text-[9px] font-extrabold uppercase tracking-widest mt-1 text-zinc-500">
-          {voice.isContinuous ? "Continuous" : voice.isListening ? "Listening..." : "Tap to Speak"}
-        </span>
-      </div>
+      {/* BOTTOM MIDDLE VOICE ASSISTANT MIC (Only when connected) */}
+      {connected && (
+        <div className="flex flex-col items-center justify-center pt-1 pb-1 shrink-0">
+          <button
+            type="button"
+            onMouseDown={voice.handleMicMouseDown}
+            onMouseUp={voice.handleMicMouseUp}
+            onTouchStart={voice.handleMicMouseDown}
+            onTouchEnd={voice.handleMicMouseUp}
+            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-lg active:scale-90 border-2 ${
+              voice.isContinuous
+                ? "bg-rose-600 border-rose-400 text-white shadow-[0_0_20px_rgba(244,63,94,0.65)] animate-pulse"
+                : voice.isListening
+                ? "bg-cyan-500 border-cyan-300 text-black shadow-[0_0_15px_rgba(6,182,212,0.6)] animate-pulse"
+                : "bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-cyan-400 hover:border-cyan-500/50"
+            }`}
+            title="Tap for voice command • Hold for continuous listening"
+          >
+            <span className="text-base">
+              {voice.isContinuous ? "🔴" : voice.isListening ? "🎙️" : "🎤"}
+            </span>
+          </button>
+        </div>
+      )}
 
       {timerTargetIdx !== null && (
         <CustomTimerModal

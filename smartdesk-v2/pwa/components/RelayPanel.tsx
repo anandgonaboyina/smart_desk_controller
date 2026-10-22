@@ -113,7 +113,7 @@ export default function RelayPanel({
                       onClick={() => onSetTimer(idx, mins)}
                       className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border-2 border-zinc-600 text-xs font-bold text-white transition-all active:scale-95"
                     >
-                      {mins >= 60 ? "1h" : `\${mins}m`}
+                      {mins >= 60 ? "1h" : `${mins}m`}
                     </button>
                   ))}
                   <button
@@ -132,7 +132,7 @@ export default function RelayPanel({
       {customTimerIdx !== null && (
         <CustomTimerModal
           isOpen={true}
-          targetTitle={configs[customTimerIdx]?.name || `Relay #\${customTimerIdx + 1}`}
+          targetTitle={configs[customTimerIdx]?.name || `Relay #${customTimerIdx + 1}`}
           isTimerActive={relays[customTimerIdx]?.remainingMin > 0}
           currentRemainingMin={relays[customTimerIdx]?.remainingMin}
           onSetTimer={(mins) => onSetTimer(customTimerIdx, mins)}

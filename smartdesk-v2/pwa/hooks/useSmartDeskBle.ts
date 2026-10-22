@@ -647,35 +647,77 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       try {
         setConnecting(true);
 
-        let dev: BluetoothDevice;
-        if (targetDevice) {
-          addLog(`Step 1: Connecting directly to pre-authorized device '${targetDevice.name}'...`, "info");
-          dev = targetDevice;
-        } else {
-          addLog("Step 1: Requesting Bluetooth device chooser...", "info");
-          const savedCustomName = typeof window !== "undefined" ? localStorage.getItem("smartdesk_last_device_name") : null;
-          const nameFilters: Array<{ namePrefix?: string; services?: string[] }> = [
-            { namePrefix: "smart" },
-            { namePrefix: "Smart" },
-            { namePrefix: "sd" },
-            { namePrefix: "SD" },
-            { namePrefix: "desk" },
-            { namePrefix: "Desk" },
-            { namePrefix: "controller" },
-            { namePrefix: "Controller" },
-            { services: [SERVICE_UUID] },
-          ];
-          if (savedCustomName && savedCustomName.trim()) {
-            nameFilters.unshift({ namePrefix: savedCustomName.trim() });
-          }
+        let dev: BluetoothDevice | undefined = targetDevice;
+        let connectedGatt: BluetoothRemoteGATTServer | null = null;
 
+        // 1. If no targetDevice specified, check for pre-authorized / known device to connect instantly
+        if (!dev) {
+          if (deviceRef.current && deviceRef.current.gatt) {
+            dev = deviceRef.current;
+          } else if (lastDeviceDetected && lastDeviceDetected.gatt) {
+            dev = lastDeviceDetected;
+          } else if (nav.bluetooth.getDevices) {
+            try {
+              const knownDevices = await nav.bluetooth.getDevices();
+              if (knownDevices && knownDevices.length > 0) {
+                const lastId = typeof window !== "undefined" ? localStorage.getItem("smartdesk_last_device_id") : null;
+                const matched =
+                  (lastId && knownDevices.find((d) => d.id === lastId)) ||
+                  knownDevices.find((d) => {
+                    const n = (d.name || "").toLowerCase();
+                    return n.includes("smartdesk") || n.includes("controller") || n.includes("desk") || n.includes("sd");
+                  }) ||
+                  knownDevices[0];
+                if (matched) {
+                  dev = matched;
+                }
+              }
+            } catch (e) {
+              console.warn("[getDevices check error]:", e);
+            }
+          }
+        }
+
+        // 2. If a pre-authorized device exists, attempt direct instant connection without popup
+        if (dev) {
+          addLog(`Step 1: Instantly reconnecting to previously connected device '${dev.name || "smartDesk"}'...`, "info");
+          try {
+            connectedGatt = dev.gatt?.connected
+              ? dev.gatt
+              : await Promise.race([
+                  dev.gatt?.connect(),
+                  new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("Direct connection timed out after 4.5s")), 4500)
+                  ),
+                ]) || null;
+          } catch (directErr) {
+            addLog(`Direct reconnect to '${dev.name || "device"}' was unavailable: ${(directErr as Error).message}`, "info");
+            connectedGatt = null;
+            if (isAuto) {
+              throw directErr;
+            }
+            // User manually clicked connect: fall back to chooser if previous device is offline/unreachable
+            dev = undefined;
+          }
+        }
+
+        // 3. If no pre-authorized device was found or direct connect failed, prompt device chooser (filtered for SmartDesk devices)
+        if (!dev) {
+          addLog("Step 1: Requesting Bluetooth device chooser (filtered for SmartDesk devices)...", "info");
           const reqOptions = showAllDevicesRef.current
             ? {
                 acceptAllDevices: true,
                 optionalServices: [SERVICE_UUID, "00001812-0000-1000-8000-00805f9b34fb"],
               }
             : {
-                filters: nameFilters,
+                filters: [
+                  { services: [SERVICE_UUID] },
+                  { namePrefix: "SmartDesk" },
+                  { namePrefix: "smartDesk" },
+                  { namePrefix: "Smart Desk" },
+                  { namePrefix: "Desk" },
+                  { namePrefix: "SD-" },
+                ],
                 optionalServices: [SERVICE_UUID, "00001812-0000-1000-8000-00805f9b34fb"],
               };
           dev = await nav.bluetooth.requestDevice(reqOptions);
@@ -695,14 +737,14 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         addLog(`Step 2: Connecting to GATT server for '${dev.name}'...`, "info");
 
         // Wrap connect with a strict 7-second timeout to avoid Windows BLE hangs
-        const gatt = dev.gatt?.connected
+        const gatt = connectedGatt || (dev.gatt?.connected
           ? dev.gatt
           : await Promise.race([
               dev.gatt?.connect(),
               new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error("GATT connection timed out after 7 seconds")), 7000)
               ),
-            ]);
+            ]));
 
         if (!gatt) throw new Error("Could not acquire GATT server connection.");
         await sleep(150);
@@ -839,7 +881,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
   /* Teardown & Auto-Connect on Mount */
   useEffect(() => {
-    // Teardown listener to prevent zombie GATT locks across browser refreshes
+    // Teardown listener on actual page refresh/close (avoid pagehide so screen lock doesn't disconnect)
     const onCleanTeardown = () => {
       if (deviceRef.current?.gatt?.connected) {
         try {
@@ -848,7 +890,6 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       }
     };
     window.addEventListener("beforeunload", onCleanTeardown);
-    window.addEventListener("pagehide", onCleanTeardown);
 
     if (typeof window !== "undefined") {
       const savedName = localStorage.getItem("smartdesk_last_device_name");
@@ -868,7 +909,6 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       setBluetoothSupported(false);
       return () => {
         window.removeEventListener("beforeunload", onCleanTeardown);
-        window.removeEventListener("pagehide", onCleanTeardown);
       };
     }
 
@@ -929,7 +969,6 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     return () => {
       clearTimeout(timeoutId);
       window.removeEventListener("beforeunload", onCleanTeardown);
-      window.removeEventListener("pagehide", onCleanTeardown);
     };
   }, [addLog]);
 

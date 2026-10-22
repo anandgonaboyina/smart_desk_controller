@@ -73,10 +73,13 @@ export default function SmartDeskApp() {
           {/* HIGH-CONTRAST HEADER */}
           <header className="flex items-center justify-between py-4 border-b-2 border-zinc-800 shrink-0">
             <div className="flex items-center gap-3">
-              <span className={`w-3 h-3 rounded-full ${ble.connected ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,1)]" : ble.connecting ? "bg-amber-400 animate-ping" : "bg-zinc-600"}`} />
-              <span className="text-sm font-extrabold tracking-wide text-white">
-                {ble.connected ? ble.deviceName : ble.connecting ? "Connecting..." : "Standby"}
-              </span>
+              <img src="/SmartDesk logo.png" alt="SmartDesk Logo" className="w-8 h-8 rounded-lg object-contain shadow-md border border-zinc-800" />
+              <div className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${ble.connected ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,1)]" : ble.connecting ? "bg-amber-400 animate-ping" : "bg-zinc-600"}`} />
+                <span className="text-sm font-extrabold tracking-wide text-white">
+                  {ble.connected ? ble.deviceName : ble.connecting ? "Connecting..." : "Standby"}
+                </span>
+              </div>
             </div>
             
             {/* ENHANCED TOGGLE BACK BUTTON */}

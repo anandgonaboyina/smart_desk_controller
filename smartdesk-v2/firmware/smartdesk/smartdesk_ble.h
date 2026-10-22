@@ -101,13 +101,23 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         NimBLEAddress addr = connInfo.getAddress();
         strncpy(s_connectedClientAddr, addr.toString().c_str(), sizeof(s_connectedClientAddr) - 1);
         s_connectedClientAddr[sizeof(s_connectedClientAddr) - 1] = '\0';
+
+        // Keep advertising active so secondary devices (e.g. Remote PWA) can discover
+        // and connect concurrently even while mobile phone is paired/connected!
+        NimBLEDevice::startAdvertising();
     }
 
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
-        (void)pServer; (void)connInfo;
-        s_connected = false;
+        (void)connInfo;
         s_discReason = reason;
-        s_flagDisconnected = true;
+
+        // Only mark disconnected and trigger presence Away when NO clients remain connected!
+        if (pServer->getConnectedCount() == 0) {
+            s_connected = false;
+            s_flagDisconnected = true;
+        }
+
+        // Always restart advertising so clients can reconnect
         NimBLEDevice::startAdvertising();
     }
 };

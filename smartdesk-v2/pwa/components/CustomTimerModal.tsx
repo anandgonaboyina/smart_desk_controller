@@ -134,6 +134,7 @@ export default function CustomTimerModal({
                 max={1440}
                 value={minutesInput}
                 onChange={(e) => setMinutesInput(e.target.value)}
+                onFocus={(e) => e.target.select()}
                 placeholder="Minutes..."
                 className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-cyan-500"
               />

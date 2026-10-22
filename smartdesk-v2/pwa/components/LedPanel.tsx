@@ -64,9 +64,9 @@ export default function LedPanel({
   const [showDiscoModal, setShowDiscoModal] = useState<boolean>(false);
 
   // Local inputs for hardware configuration
-  const [customStripLen, setCustomStripLen] = useState<number>(stripLength);
-  const [matrixRows, setMatrixRows] = useState<number>(matrixConfig?.rows || 8);
-  const [matrixCols, setMatrixCols] = useState<number>(matrixConfig?.cols || 32);
+  const [customStripLen, setCustomStripLen] = useState<number | string>(stripLength);
+  const [matrixRows, setMatrixRows] = useState<number | string>(matrixConfig?.rows || 8);
+  const [matrixCols, setMatrixCols] = useState<number | string>(matrixConfig?.cols || 32);
   const [matrixWiring, setMatrixWiring] = useState<number>(matrixConfig?.wiringType ?? 1);
   const [matrixPin, setMatrixPin] = useState<number>(matrixConfig?.pin || 11);
   const [matrixText, setMatrixText] = useState<string>(matrixConfig?.text || "SMARTDESK V2");
@@ -304,12 +304,13 @@ export default function LedPanel({
             min="1"
             max="800"
             value={customStripLen}
-            onChange={(e) => setCustomStripLen(Math.max(1, Math.min(800, Number(e.target.value) || 1)))}
+            onChange={(e) => setCustomStripLen(e.target.value === "" ? "" : Number(e.target.value))}
+            onFocus={(e) => e.target.select()}
             className="flex-1 bg-black border-2 border-zinc-700 rounded-lg px-3 py-2 text-white font-bold text-sm"
           />
           <button
             type="button"
-            onClick={() => onSaveStripLength?.(customStripLen)}
+            onClick={() => onSaveStripLength?.(Math.max(1, Math.min(800, Number(customStripLen) || 8)))}
             className="px-5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all active:scale-95 cursor-pointer"
           >
             Apply &amp; Save (0xF3)
@@ -333,8 +334,8 @@ export default function LedPanel({
             type="button"
             onClick={() =>
               onSaveMatrixConfig?.(
-                matrixRows,
-                matrixCols,
+                Math.max(1, Math.min(64, Number(matrixRows) || 8)),
+                Math.max(1, Math.min(128, Number(matrixCols) || 32)),
                 matrixWiring,
                 matrixPin,
                 !(matrixConfig?.enabled ?? true)
@@ -359,7 +360,8 @@ export default function LedPanel({
               min="1"
               max="64"
               value={matrixRows}
-              onChange={(e) => setMatrixRows(Math.max(1, Math.min(64, Number(e.target.value) || 8)))}
+              onChange={(e) => setMatrixRows(e.target.value === "" ? "" : Number(e.target.value))}
+              onFocus={(e) => e.target.select()}
               className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white font-bold text-xs"
             />
           </div>
@@ -370,7 +372,8 @@ export default function LedPanel({
               min="1"
               max="128"
               value={matrixCols}
-              onChange={(e) => setMatrixCols(Math.max(1, Math.min(128, Number(e.target.value) || 32)))}
+              onChange={(e) => setMatrixCols(e.target.value === "" ? "" : Number(e.target.value))}
+              onFocus={(e) => e.target.select()}
               className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white font-bold text-xs"
             />
           </div>
@@ -423,8 +426,8 @@ export default function LedPanel({
           type="button"
           onClick={() =>
             onSaveMatrixConfig?.(
-              matrixRows,
-              matrixCols,
+              Math.max(1, Math.min(64, Number(matrixRows) || 8)),
+              Math.max(1, Math.min(128, Number(matrixCols) || 32)),
               matrixWiring,
               matrixPin,
               matrixConfig?.enabled ?? true
