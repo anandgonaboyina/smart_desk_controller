@@ -27,7 +27,19 @@ export interface RemoteDeviceState {
   configs?: RemoteRelayConfig[];
   led: { mode: number; r: number; g: number; b: number; bri: number; spd: number };
   env: { tempC: number; humidity: number; valid: boolean };
-  presence?: { state: number; distanceM: number; remainingMin: number };
+  presence?: {
+    enabled?: boolean;
+    state: number;
+    distanceM?: number;
+    remainingMin: number;
+    awayDelayMin?: number;
+    masterDevice?: string;
+    awayRelayMask?: number;
+    awayRgbOff?: boolean;
+    arrivalRelayMask?: number;
+    arrivalRgbOn?: boolean;
+    arrivalRgbMode?: number;
+  };
   deviceName?: string;
   stripLength?: number;
   matrix?: { mode: number; speed?: number; bri?: number; r?: number; g?: number; b?: number; text?: string };
@@ -508,6 +520,77 @@ export function useRemoteDeskWs({
     [currentDeviceId]
   );
 
+  // Send Remote Presence Configuration (Enabled, Away Delay, Relays, Master Device)
+  const sendPresenceConfigCommand = useCallback(
+    (config: {
+      enabled?: boolean;
+      awayDelayMin?: number;
+      awayRelayMask?: number;
+      awayRgbOff?: boolean;
+      arrivalRelayMask?: number;
+      arrivalRgbOn?: boolean;
+      arrivalRgbMode?: number;
+      masterDevice?: string;
+    }) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot update presence: Cloud WebSocket offline", "warn");
+        return;
+      }
+      setDeviceState((prev) => {
+        const nextPres = {
+          enabled: config.enabled ?? prev.presence?.enabled ?? false,
+          state: prev.presence?.state ?? 0,
+          remainingMin: config.awayDelayMin ?? prev.presence?.remainingMin ?? 5,
+          awayDelayMin: config.awayDelayMin ?? prev.presence?.awayDelayMin ?? 5,
+          masterDevice: config.masterDevice ?? prev.presence?.masterDevice ?? "",
+          awayRelayMask: config.awayRelayMask ?? prev.presence?.awayRelayMask ?? 0x0f,
+          awayRgbOff: config.awayRgbOff ?? prev.presence?.awayRgbOff ?? true,
+        };
+        const updated: RemoteDeviceState = { ...prev, presence: nextPres };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "presence_set",
+          deviceId: currentDeviceId,
+          ...config,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate, onToast]
+  );
+
+  // Send Set Master Presence Device Command
+  const sendMasterDeviceCommand = useCallback(
+    (name: string) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      setDeviceState((prev) => {
+        const nextPres = {
+          enabled: prev.presence?.enabled ?? true,
+          state: prev.presence?.state ?? 0,
+          remainingMin: prev.presence?.remainingMin ?? 5,
+          awayDelayMin: prev.presence?.awayDelayMin ?? 5,
+          masterDevice: name,
+        };
+        const updated: RemoteDeviceState = { ...prev, presence: nextPres };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+      wsRef.current.send(
+        JSON.stringify({
+          type: "set_master_device",
+          deviceId: currentDeviceId,
+          name,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate]
+  );
+
   // Emergency All Relays Off Command
   const sendAllOff = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -549,6 +632,8 @@ export function useRemoteDeskWs({
     sendStripLengthCommand,
     sendMatrixCommand,
     sendTempOffsetCommand,
+    sendPresenceConfigCommand,
+    sendMasterDeviceCommand,
     sendAllOff,
   };
 }

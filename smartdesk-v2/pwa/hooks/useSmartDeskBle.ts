@@ -726,6 +726,20 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         setStoredClients(clients);
       }
 
+      if (dataView.byteLength >= 336) {
+        const mlen = Math.min(23, dataView.getUint8(335));
+        if (mlen > 0 && 336 + mlen <= dataView.byteLength) {
+          const mBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + 336, mlen);
+          const mName = decoder.decode(mBytes).replace(/\0/g, "").trim();
+          if (mName) {
+            setDesignatedPresenceDevice(mName);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("smartdesk_designated_presence_device", mName);
+            }
+          }
+        }
+      }
+
       addLog(`[RX CONFIG] Loaded configurations & NO/NC settings for all 4 relays.`, "rx");
     },
     [addLog]
@@ -1433,31 +1447,36 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
   /* Config & Presence Commands */
   const savePresenceConfig = useCallback(
-    (nextCfg: PresenceConfig) => {
+    (nextCfg: PresenceConfig, overrideMasterDevice?: string) => {
       setPresenceConfig(nextCfg);
       if (typeof window !== "undefined") {
         localStorage.setItem("smartdesk_presence_config", JSON.stringify(nextCfg));
       }
       if (configCharRef.current) {
-        const payload = new Uint8Array([
-          0xF8,
-          nextCfg.enabled ? 1 : 0,
-          nextCfg.awayDelayMin & 0xff,
-          (nextCfg.awayDelayMin >> 8) & 0xff,
-          nextCfg.awayRelayMask,
-          nextCfg.awayRgbOff ? 1 : 0,
-          nextCfg.arrivalRelayMask,
-          nextCfg.arrivalRgbOn ? 1 : 0,
-          nextCfg.arrivalRgbMode,
-        ]);
+        const targetMaster = overrideMasterDevice !== undefined ? overrideMasterDevice : designatedPresenceDevice;
+        const masterBytes = targetMaster ? new TextEncoder().encode(targetMaster) : new Uint8Array(0);
+        const mlen = Math.min(23, masterBytes.length);
+        const payload = new Uint8Array(10 + mlen);
+        payload[0] = 0xF8;
+        payload[1] = nextCfg.enabled ? 1 : 0;
+        payload[2] = nextCfg.awayDelayMin & 0xff;
+        payload[3] = (nextCfg.awayDelayMin >> 8) & 0xff;
+        payload[4] = nextCfg.awayRelayMask;
+        payload[5] = nextCfg.awayRgbOff ? 1 : 0;
+        payload[6] = nextCfg.arrivalRelayMask;
+        payload[7] = nextCfg.arrivalRgbOn ? 1 : 0;
+        payload[8] = nextCfg.arrivalRgbMode;
+        payload[9] = mlen;
+        if (mlen > 0) payload.set(masterBytes.slice(0, mlen), 10);
+
         enqueueWrite("Update Presence Config", async () => {
-          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Presence ${nextCfg.enabled ? "ENABLED" : "DISABLED"}, Delay: ${nextCfg.awayDelayMin}m)`, "tx");
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Presence ${nextCfg.enabled ? "ENABLED" : "DISABLED"}, Delay: ${nextCfg.awayDelayMin}m, Master: ${targetMaster || "None"})`, "tx");
           await configCharRef.current?.writeValueWithResponse(payload);
         });
       }
       onToastRef.current?.("Presence settings updated!");
     },
-    [enqueueWrite, addLog]
+    [enqueueWrite, addLog, designatedPresenceDevice]
   );
 
   const toggleDevicePresenceTracking = useCallback(
@@ -1539,7 +1558,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         localStorage.setItem("smartdesk_client_nickname", clean);
       }
       registerClientName(clean);
-      savePresenceConfig({ ...presenceConfig, enabled: true });
+      savePresenceConfig({ ...presenceConfig, enabled: true }, clean);
       onToastRef.current?.(`"${clean}" designated as Presence Master!`, "success");
     },
     [clientNickname, registerClientName, savePresenceConfig, presenceConfig]
@@ -1550,7 +1569,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     if (typeof window !== "undefined") {
       localStorage.removeItem("smartdesk_designated_presence_device");
     }
-    savePresenceConfig({ ...presenceConfig, enabled: false });
+    savePresenceConfig({ ...presenceConfig, enabled: false }, "");
     onToastRef.current?.("Designated presence device cleared. Presence tracking inactive.");
   }, [savePresenceConfig, presenceConfig]);
 

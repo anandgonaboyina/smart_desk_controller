@@ -18,6 +18,7 @@ if (typeof Object.create === "function") {
 }
 
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -41,7 +42,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false, // Prevents annoying pinch-to-zoom on mobile
-  themeColor: "#09090b", // Matches zinc-950
+  themeColor: "#050505", // Matched perfectly to the app's OLED background
 };
 
 export default function RootLayout({
@@ -50,14 +51,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="antialiased bg-black sm:bg-zinc-950">
+    <html lang="en" className="antialiased bg-[#050505]">
       <head>
         <link rel="icon" type="image/png" href="/SmartDesk logo.png" />
         <link rel="apple-touch-icon" href="/SmartDesk logo.png" />
       </head>
-      <body className="min-h-[100dvh] flex flex-col font-sans text-zinc-100 selection:bg-cyan-500 selection:text-black overflow-x-hidden">
+      {/* 
+        fixed inset-0 and overflow-hidden prevent native body scrolling.
+        This forces all scrolling to happen exactly where we want it inside page.tsx! 
+      */}
+      <body className="fixed inset-0 overflow-hidden font-sans text-zinc-100 selection:bg-cyan-500 selection:text-black bg-[#050505]">
         {children}
-        <script
+        <Script
+          id="register-sw"
+          strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {

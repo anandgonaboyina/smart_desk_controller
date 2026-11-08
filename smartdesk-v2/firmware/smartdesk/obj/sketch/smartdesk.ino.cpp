@@ -19,6 +19,11 @@
 #include "smartdesk_pins.h"
 #include "matrix_engine.h"
 
+/* ── Forward Declarations ─────────────────────────────────────────────────── */
+void notifyRelayState();
+void notifyLedState();
+void notifyEnvState();
+
 /* ── Relay Configuration Structure ───────────────────────────────────────── */
 struct RelayConfig {
     uint8_t wiring;          // 0 = Normally Open (NO), 1 = Normally Closed (NC)
@@ -40,8 +45,8 @@ uint32_t    s_timerEndMs[RELAY_COUNT]   = {0, 0, 0, 0}; // 0 = no timer
 bool        s_connected                 = false;
 
 // Strip Dynamic Length & Strip Instance
-static uint16_t          s_stripLen = DEFAULT_STRIP_LEN; // Dynamic up to 800 LEDs
-static Adafruit_NeoPixel s_strip(DEFAULT_STRIP_LEN, LED_PIN, NEO_GRB + NEO_KHZ800);
+uint16_t          s_stripLen = DEFAULT_STRIP_LEN; // Dynamic up to 800 LEDs
+Adafruit_NeoPixel s_strip(DEFAULT_STRIP_LEN, LED_PIN, NEO_GRB + NEO_KHZ800);
 static Preferences       s_prefs;
 
 // LED State (Modes 0..15)
@@ -80,6 +85,7 @@ static float    s_tempC         = 0.0f;
 static float    s_humidity      = 0.0f;
 static bool     s_sensorValid   = false;
 static uint32_t s_lastDhtReadMs = 0;
+static float    s_tempOffset    = 0.0f; // Calibrated offset in degrees C (stored in NVS)
 
 // Active Buzzer Driver (Big Buzzer B27 on GPIO 10)
 static bool s_buzzerMasterEnabled = true;
@@ -109,75 +115,81 @@ struct ActiveBuzzer {
 };
 static ActiveBuzzer s_activeBuzzer = { false, 0, 0, 0, 0, 0, false };
 
-#line 111 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 117 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void triggerBuzzerPattern(uint16_t onMs, uint16_t offMs, uint8_t repeats);
-#line 123 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 129 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void buzzerBeepRelayOn();
-#line 124 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 130 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void buzzerBeepRelayOff();
-#line 125 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 131 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void buzzerBeepTimerEnd();
-#line 127 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 133 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void updateActiveBuzzer(uint32_t now);
-#line 143 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 151 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+static bool readDHT11Raw(uint8_t data[5]);
+#line 197 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static bool readDHT11(float* outTemp, float* outHum);
-#line 217 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 224 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+void loadEnvConfigFromNVS();
+#line 231 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+void setTempOffset(float offset);
+#line 288 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void getLocalTime(uint8_t* outH, uint8_t* outM, uint8_t* outS, uint8_t* outDOW);
-#line 256 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 327 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void buildRelayPayload(uint8_t* out12);
-#line 271 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 342 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void buildConfigPayload(uint8_t* payload, size_t maxLen);
-#line 318 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 389 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason);
-#line 330 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 401 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void triggerRelayAnimation(uint8_t idx, bool turningOn, uint8_t mode, uint8_t durationSec);
-#line 339 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 410 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void setRelayLoad(uint8_t idx, uint8_t load, const char* source);
-#line 363 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 434 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setRelayTimer(uint8_t idx, uint16_t mins);
-#line 375 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 446 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void allRelaysOff(const char* source);
-#line 384 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 455 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadConfigsFromNVS();
-#line 420 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 491 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadPresenceFromNVS();
-#line 454 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 525 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void savePresenceConfigToNVS();
-#line 467 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 538 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadRelayLoadsFromNVS();
-#line 477 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 548 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void saveRelayLoadsToNVS();
-#line 488 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 559 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadLedStateFromNVS();
-#line 501 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 572 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void saveLedStateToNVS();
-#line 595 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 666 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadSchedulesFromNVS();
-#line 633 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 704 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void executeScheduleAction(uint8_t ruleIdx, uint8_t action);
-#line 661 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 732 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void checkSchedules();
-#line 700 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 771 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadTimeBaseFromNVS();
-#line 708 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 779 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void saveTimeBaseToNVS();
-#line 716 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 787 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void registerClientDevice(const char* macAddr, const char* friendlyName);
-#line 748 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 819 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void handleClientConnected(const char* macAddr);
-#line 780 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 851 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void handleClientDisconnected();
-#line 786 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 857 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static uint8_t scaleBri(uint8_t userPercent);
-#line 791 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 862 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static uint32_t gammaCorrect(uint8_t r, uint8_t g, uint8_t b, uint8_t bri);
-#line 803 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 874 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void renderLeds();
-#line 1194 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 1265 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setup();
-#line 1263 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 1335 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void loop();
-#line 111 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 117 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static inline void triggerBuzzerPattern(uint16_t onMs, uint16_t offMs, uint8_t repeats) {
     if (!s_buzzerMasterEnabled) return;
     s_activeBuzzer.active       = true;
@@ -209,9 +221,10 @@ static void updateActiveBuzzer(uint32_t now) {
     }
 }
 
-// DHT11 Bit-Bang Read
-static bool readDHT11(float* outTemp, float* outHum) {
-    uint8_t data[5] = {0, 0, 0, 0, 0};
+// DHT11 Bit-Bang Read with ESP32-S3 Critical Section & Timing Precision
+static portMUX_TYPE s_dhtMux = portMUX_INITIALIZER_UNLOCKED;
+
+static bool readDHT11Raw(uint8_t data[5]) {
     pinMode(DHT_PIN, OUTPUT);
     digitalWrite(DHT_PIN, LOW);
     delay(20);
@@ -219,27 +232,91 @@ static bool readDHT11(float* outTemp, float* outHum) {
     delayMicroseconds(30);
     pinMode(DHT_PIN, INPUT_PULLUP);
 
+    // Disable interrupts during microsecond pulse sampling
+    // (Prevents FreeRTOS/NimBLE/Wi-Fi ISR context switches from corrupting bit durations)
+    portENTER_CRITICAL(&s_dhtMux);
+
     uint32_t timeout = micros();
-    while (digitalRead(DHT_PIN) == HIGH) { if (micros() - timeout > 100) return false; }
+    while (digitalRead(DHT_PIN) == HIGH) {
+        if (micros() - timeout > 100) { portEXIT_CRITICAL(&s_dhtMux); return false; }
+    }
     timeout = micros();
-    while (digitalRead(DHT_PIN) == LOW)  { if (micros() - timeout > 100) return false; }
+    while (digitalRead(DHT_PIN) == LOW) {
+        if (micros() - timeout > 100) { portEXIT_CRITICAL(&s_dhtMux); return false; }
+    }
     timeout = micros();
-    while (digitalRead(DHT_PIN) == HIGH) { if (micros() - timeout > 100) return false; }
+    while (digitalRead(DHT_PIN) == HIGH) {
+        if (micros() - timeout > 100) { portEXIT_CRITICAL(&s_dhtMux); return false; }
+    }
 
     for (int i = 0; i < 40; i++) {
         timeout = micros();
-        while (digitalRead(DHT_PIN) == LOW) { if (micros() - timeout > 100) return false; }
+        while (digitalRead(DHT_PIN) == LOW) {
+            if (micros() - timeout > 100) { portEXIT_CRITICAL(&s_dhtMux); return false; }
+        }
         uint32_t startHigh = micros();
-        while (digitalRead(DHT_PIN) == HIGH) { if (micros() - startHigh > 120) return false; }
-        if (micros() - startHigh > 40) {
+        while (digitalRead(DHT_PIN) == HIGH) {
+            if (micros() - startHigh > 120) { portEXIT_CRITICAL(&s_dhtMux); return false; }
+        }
+        uint32_t pulseDuration = micros() - startHigh;
+        if (pulseDuration > 48) {
             data[i / 8] |= (1 << (7 - (i % 8)));
         }
     }
+
+    portEXIT_CRITICAL(&s_dhtMux);
+
     uint8_t sum = (data[0] + data[1] + data[2] + data[3]) & 0xFF;
-    if (data[4] != sum) return false;
-    *outHum  = (float)data[0] + ((float)data[1] * 0.1f);
-    *outTemp = (float)data[2] + ((float)data[3] * 0.1f);
+    return (data[4] == sum);
+}
+
+static bool readDHT11(float* outTemp, float* outHum) {
+    uint8_t data[5] = {0, 0, 0, 0, 0};
+    bool ok = readDHT11Raw(data);
+    if (!ok) {
+        delay(120);
+        memset(data, 0, sizeof(data));
+        ok = readDHT11Raw(data);
+    }
+    if (!ok) return false;
+
+    float hum = (float)data[0] + ((float)data[1] * 0.1f);
+    float temp = (float)data[2] + ((float)(data[3] & 0x7F) * 0.1f);
+    if (data[3] & 0x80) temp = -temp;
+
+    // Detect DHT22 format if temperature reads 0 but decimal has data
+    if (temp <= 0.0f && data[2] == 0 && data[3] > 0) {
+        temp = (float)(((data[2] & 0x7F) << 8) | data[3]) * 0.1f;
+        hum = (float)((data[0] << 8) | data[1]) * 0.1f;
+    }
+
+    temp += s_tempOffset;
+
+    *outHum  = hum;
+    *outTemp = temp;
     return true;
+}
+
+void loadEnvConfigFromNVS() {
+    s_prefs.begin("desk_env", true);
+    s_tempOffset = s_prefs.getFloat("t_offset", 0.0f);
+    s_prefs.end();
+    Serial.printf("[DHT11] Loaded Temperature Offset: %.1f C\n", s_tempOffset);
+}
+
+void setTempOffset(float offset) {
+    s_tempOffset = offset;
+    s_prefs.begin("desk_env", false);
+    s_prefs.putFloat("t_offset", s_tempOffset);
+    s_prefs.end();
+    Serial.printf("[DHT11] Calibrated Temperature Offset saved: %.1f C\n", s_tempOffset);
+    float t, h;
+    if (readDHT11(&t, &h)) {
+        s_tempC = t;
+        s_humidity = h;
+        s_sensorValid = true;
+    }
+    notifyEnvState();
 }
 
 // Presence Configuration & Stored Clients
@@ -1304,6 +1381,7 @@ void setup() {
     loadPresenceFromNVS();
     loadTimeBaseFromNVS();
     loadMatrixConfigFromNVS();
+    loadEnvConfigFromNVS();
 
     // Re-apply physical relay state from saved NVS loads
     for (int i = 0; i < RELAY_COUNT; i++) applyRelayPin(i, s_relayLoads[i], "Boot Init Restore");

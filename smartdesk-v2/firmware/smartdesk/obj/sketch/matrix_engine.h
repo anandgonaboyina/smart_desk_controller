@@ -32,7 +32,7 @@ struct MatrixConfig {
     char     text[64];    // Custom text for Mode 18 marquee
 };
 
-static MatrixConfig s_matrixConfig = {
+MatrixConfig s_matrixConfig = {
     DEFAULT_MATRIX_ROWS,
     DEFAULT_MATRIX_COLS,
     1,                 // 1 = Zig-Zag / Serpentine by default

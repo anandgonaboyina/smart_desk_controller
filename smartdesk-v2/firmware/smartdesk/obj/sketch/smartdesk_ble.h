@@ -70,7 +70,7 @@ static volatile int  s_discReason          = 0;
 static char          s_connectedClientAddr[18] = {0};
 
 /* ── State Notification Dispatchers ──────────────────────────────────────── */
-static inline void notifyRelayState() {
+inline void notifyRelayState() {
     if (!s_pRelayChar || !s_connected) return;
     uint8_t payload[12];
     buildRelayPayload(payload);
@@ -78,14 +78,14 @@ static inline void notifyRelayState() {
     s_pRelayChar->notify();
 }
 
-static inline void notifyLedState() {
+inline void notifyLedState() {
     if (!s_pLedChar || !s_connected) return;
     uint8_t payload[6] = { s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd };
     s_pLedChar->setValue(payload, 6);
     s_pLedChar->notify();
 }
 
-static inline void notifyEnvState() {
+inline void notifyEnvState() {
     if (!s_pEnvChar || !s_connected) return;
     uint8_t payload[48];
     buildEnvPayload(payload);

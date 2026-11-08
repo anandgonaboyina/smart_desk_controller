@@ -350,6 +350,9 @@ wss.on("connection", (ws, req) => {
         msg.type === "matrix" ||
         msg.type === "temp_offset" ||
         msg.type === "cal_offset" ||
+        msg.type === "presence_set" ||
+        msg.type === "presence_config" ||
+        msg.type === "set_master_device" ||
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||

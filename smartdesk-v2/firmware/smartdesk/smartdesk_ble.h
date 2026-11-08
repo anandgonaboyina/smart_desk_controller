@@ -69,7 +69,7 @@ static volatile int  s_discReason          = 0;
 static char          s_connectedClientAddr[18] = {0};
 
 /* ── State Notification Dispatchers ──────────────────────────────────────── */
-static inline void notifyRelayState() {
+inline void notifyRelayState() {
     if (!s_pRelayChar || !s_connected) return;
     uint8_t payload[12];
     buildRelayPayload(payload);
@@ -77,14 +77,14 @@ static inline void notifyRelayState() {
     s_pRelayChar->notify();
 }
 
-static inline void notifyLedState() {
+inline void notifyLedState() {
     if (!s_pLedChar || !s_connected) return;
     uint8_t payload[6] = { s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd };
     s_pLedChar->setValue(payload, 6);
     s_pLedChar->notify();
 }
 
-static inline void notifyEnvState() {
+inline void notifyEnvState() {
     if (!s_pEnvChar || !s_connected) return;
     uint8_t payload[48];
     buildEnvPayload(payload);
@@ -113,9 +113,12 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
         (void)connInfo;
         s_discReason = reason;
+        size_t count = pServer->getConnectedCount();
+        Serial.printf(">>> [BLE] onDisconnect: reason=%d, connectedCount=%u\n", reason, (unsigned int)count);
 
-        // Only mark disconnected and trigger presence Away when NO clients remain connected!
-        if (pServer->getConnectedCount() == 0) {
+        // In NimBLE 2.x, the disconnecting connection may still be counted in m_vConnList.
+        // If count <= 1, no OTHER clients remain connected!
+        if (count <= 1) {
             s_connected = false;
             s_flagDisconnected = true;
         }
@@ -157,7 +160,7 @@ class LedCallbacks : public NimBLECharacteristicCallbacks {
 class ConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[335];
+        uint8_t payload[360];
         memset(payload, 0, sizeof(payload));
         buildConfigPayload(payload, sizeof(payload));
         pChr->setValue(payload, sizeof(payload));

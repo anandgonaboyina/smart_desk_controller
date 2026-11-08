@@ -102,6 +102,8 @@ void saveLedStateToNVS();
 void notifyRelayState();
 void notifyLedState();
 void notifyEnvState();
+void initBleServer(const char* name);
+void saveMatrixConfigToNVS();
 
 extern RelayConfig s_relayConfigs[RELAY_COUNT];
 extern uint8_t s_relayLoads[RELAY_COUNT];
@@ -115,15 +117,21 @@ extern uint8_t s_ledSpd;
 extern float   s_tempC;
 extern float   s_humidity;
 extern bool    s_sensorValid;
+extern char    s_deviceName[25];
+extern uint16_t s_stripLen;
+extern Adafruit_NeoPixel s_strip;
+extern MatrixConfig s_matrixConfig;
+extern void setTempOffset(float offset);
 
 /* ── Broadcast Hardware State to Cloud Relay ─────────────────────────────── */
 inline void broadcastCloudState() {
     if (!s_cloudConnected) return;
 
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
-    char msg[1400];
+    char msg[1600];
     int len = snprintf(msg, sizeof(msg),
-        "{\"type\":\"state_update\",\"deviceId\":\"%s\","
+        "{\"type\":\"state_update\",\"deviceId\":\"%s\",\"deviceName\":\"%s\",\"stripLen\":%u,"
+        "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
         "\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -136,7 +144,9 @@ inline void broadcastCloudState() {
         "{\"name\":\"%s\",\"wiring\":%u}],"
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
-        "\"state\":{\"relays\":["
+        "\"state\":{\"deviceName\":\"%s\",\"stripLen\":%u,"
+        "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
+        "\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -148,7 +158,8 @@ inline void broadcastCloudState() {
         "{\"name\":\"%s\",\"wiring\":%u}],"
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
-        s_cloudDeviceId,
+        s_cloudDeviceId, s_deviceName, s_stripLen,
+        s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
@@ -159,6 +170,8 @@ inline void broadcastCloudState() {
         s_relayConfigs[3].name, s_relayConfigs[3].wiring,
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
+        s_deviceName, s_stripLen,
+        s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
@@ -394,6 +407,92 @@ static void handleCloudMessage(const char* payload, size_t length) {
             s_cloudDeviceId
         );
         s_cloudWs.sendTXT(ackMsg);
+        return;
+    }
+
+    // 7. Device Rename Command
+    if (strcmp(cmd, "device_rename") == 0 || strcmp(cmd, "rename") == 0) {
+        char newName[28] = {0};
+        if (getJsonStr(payload, "name", newName, sizeof(newName)) && strlen(newName) > 0) {
+            strncpy(s_deviceName, newName, sizeof(s_deviceName) - 1);
+            s_deviceName[sizeof(s_deviceName) - 1] = '\0';
+            Preferences prefs;
+            prefs.begin("desk_cfg", false);
+            prefs.putString("dev_name", s_deviceName);
+            prefs.end();
+            initBleServer(s_deviceName);
+            broadcastCloudState();
+            Serial.printf(">>> [CLOUD WS] Device Renamed to: '%s'\n", s_deviceName);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"device_rename\",\"name\":\"%s\",\"success\":true}",
+                s_cloudDeviceId, s_deviceName
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 8. NeoPixel Primary Strip Dynamic Length Command
+    if (strcmp(cmd, "strip_length") == 0 || strcmp(cmd, "strip") == 0) {
+        int newLen = getJsonInt(payload, "length", s_stripLen);
+        if (newLen >= 1 && newLen <= 800) {
+            s_stripLen = (uint16_t)newLen;
+            Preferences prefs;
+            prefs.begin("desk_cfg", false);
+            prefs.putUShort("strip_len", s_stripLen);
+            prefs.end();
+            s_strip.updateLength(s_stripLen);
+            broadcastCloudState();
+            Serial.printf(">>> [CLOUD WS] Strip Length set to %d LEDs\n", s_stripLen);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"strip_length\",\"length\":%d,\"success\":true}",
+                s_cloudDeviceId, s_stripLen
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 9. 2D Matrix Mode, Text, Speed & Color Command
+    if (strcmp(cmd, "matrix_set") == 0 || strcmp(cmd, "matrix") == 0) {
+        s_matrixConfig.mode   = (uint8_t)getJsonInt(payload, "mode", s_matrixConfig.mode);
+        s_matrixConfig.speed  = (uint8_t)getJsonInt(payload, "speed", s_matrixConfig.speed);
+        s_matrixConfig.bri    = (uint8_t)getJsonInt(payload, "bri", s_matrixConfig.bri);
+        s_matrixConfig.colorR = (uint8_t)getJsonInt(payload, "r", s_matrixConfig.colorR);
+        s_matrixConfig.colorG = (uint8_t)getJsonInt(payload, "g", s_matrixConfig.colorG);
+        s_matrixConfig.colorB = (uint8_t)getJsonInt(payload, "b", s_matrixConfig.colorB);
+        char txt[64] = {0};
+        if (getJsonStr(payload, "text", txt, sizeof(txt))) {
+            strncpy(s_matrixConfig.text, txt, sizeof(s_matrixConfig.text) - 1);
+            s_matrixConfig.text[sizeof(s_matrixConfig.text) - 1] = '\0';
+        }
+        saveMatrixConfigToNVS();
+        notifyEnvState();
+        broadcastCloudState();
+        Serial.printf(">>> [CLOUD WS] Matrix display set: Mode=%d, Text='%s'\n", s_matrixConfig.mode, s_matrixConfig.text);
+
+        char ackMsg[128];
+        snprintf(ackMsg, sizeof(ackMsg),
+            "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"matrix_set\",\"mode\":%d,\"success\":true}",
+            s_cloudDeviceId, s_matrixConfig.mode
+        );
+        s_cloudWs.sendTXT(ackMsg);
+        return;
+    }
+
+    // 10. Temperature Calibration Offset Command
+    if (strcmp(cmd, "temp_offset") == 0 || strcmp(cmd, "cal_offset") == 0) {
+        float offset = (float)getJsonInt(payload, "offset", 0);
+        char offsetStr[16] = {0};
+        if (getJsonStr(payload, "offset", offsetStr, sizeof(offsetStr))) {
+            offset = atof(offsetStr);
+        }
+        setTempOffset(offset);
+        broadcastCloudState();
         return;
     }
 

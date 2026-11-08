@@ -22,6 +22,7 @@ import TopHeader from "../components/TopHeader";
 import CustomAlertModal, { ModalAlertProps } from "../components/CustomAlertModal";
 import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
+import { PresenceConfig, PresenceData } from "../types/smartdesk";
 
 export default function SmartDeskApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("aod");
@@ -144,6 +145,49 @@ export default function SmartDeskApp() {
     return ble.matrixConfig;
   }, [ble.connected, ble.wifiConnected, ble.matrixConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.matrix]);
 
+  const effectivePresenceConfig = useMemo((): PresenceConfig => {
+    if (ble.connected) {
+      return ble.presenceConfig;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.presence) {
+      const p = remote.deviceState.presence;
+      return {
+        enabled: p.enabled !== undefined ? p.enabled : ble.presenceConfig.enabled,
+        awayDelayMin: (p.awayDelayMin !== undefined && p.awayDelayMin > 0) ? p.awayDelayMin : ble.presenceConfig.awayDelayMin,
+        awayRelayMask: p.awayRelayMask !== undefined ? p.awayRelayMask : ble.presenceConfig.awayRelayMask,
+        awayRgbOff: p.awayRgbOff !== undefined ? p.awayRgbOff : ble.presenceConfig.awayRgbOff,
+        arrivalRelayMask: p.arrivalRelayMask !== undefined ? p.arrivalRelayMask : ble.presenceConfig.arrivalRelayMask,
+        arrivalRgbOn: p.arrivalRgbOn !== undefined ? p.arrivalRgbOn : ble.presenceConfig.arrivalRgbOn,
+        arrivalRgbMode: p.arrivalRgbMode !== undefined ? p.arrivalRgbMode : ble.presenceConfig.arrivalRgbMode,
+      };
+    }
+    return ble.presenceConfig;
+  }, [ble.connected, ble.presenceConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.presence]);
+
+  const effectivePresenceData = useMemo((): PresenceData => {
+    if (ble.connected) {
+      return ble.presenceData;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.presence) {
+      return {
+        enabled: remote.deviceState.presence.enabled ?? false,
+        state: remote.deviceState.presence.state ?? 0,
+        remainingMin: remote.deviceState.presence.remainingMin ?? 0,
+      };
+    }
+    return ble.presenceData;
+  }, [ble.connected, ble.presenceData, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.presence]);
+
+  const effectiveDesignatedDevice = useMemo(() => {
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.presence?.masterDevice) {
+      return remote.deviceState.presence.masterDevice;
+    }
+    if (ble.designatedPresenceDevice) {
+      return ble.designatedPresenceDevice;
+    }
+    return remote.deviceState.presence?.masterDevice || "";
+  }, [remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.presence?.masterDevice, ble.designatedPresenceDevice]);
+
   const handleToggleRelay = useCallback((idx: number, explicitTarget?: boolean) => {
     if (ble.connected || ble.wifiConnected) {
       ble.toggleRelay(idx, explicitTarget);
@@ -262,6 +306,55 @@ export default function SmartDeskApp() {
     showToast(`Temperature offset set to ${offset > 0 ? `+${offset}` : offset}°C`);
   }, [remote, showToast]);
 
+  const handleSavePresenceConfig = useCallback(
+    (nextCfg: PresenceConfig) => {
+      if (ble.connected) {
+        ble.savePresenceConfig(nextCfg, effectiveDesignatedDevice);
+      }
+      if (remote.isWsConnected && remote.isDeviceOnline) {
+        remote.sendPresenceConfigCommand({
+          enabled: nextCfg.enabled,
+          awayDelayMin: nextCfg.awayDelayMin,
+          awayRelayMask: nextCfg.awayRelayMask,
+          awayRgbOff: nextCfg.awayRgbOff,
+          arrivalRelayMask: nextCfg.arrivalRelayMask,
+          arrivalRgbOn: nextCfg.arrivalRgbOn,
+          arrivalRgbMode: nextCfg.arrivalRgbMode,
+          masterDevice: effectiveDesignatedDevice,
+        });
+        showToast(`[Cloud Remote] Presence settings updated (${nextCfg.awayDelayMin}m)`);
+      } else if (!ble.connected) {
+        ble.savePresenceConfig(nextCfg, effectiveDesignatedDevice);
+      }
+    },
+    [ble, remote, showToast, effectiveDesignatedDevice]
+  );
+
+  const handleSetDesignatedDevice = useCallback(
+    (name: string) => {
+      ble.setAsDesignatedPresenceDevice(name);
+      if (remote.isWsConnected && remote.isDeviceOnline) {
+        remote.sendMasterDeviceCommand(name);
+        showToast(`[Cloud Remote] Master presence device set to "${name}"`);
+      }
+    },
+    [ble, remote, showToast]
+  );
+
+  const handleRemoveDesignatedDevice = useCallback(() => {
+    ble.removeDesignatedPresenceDevice();
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendMasterDeviceCommand("");
+      showToast("[Cloud Remote] Master presence device cleared");
+    }
+  }, [ble, remote, showToast]);
+
+  useEffect(() => {
+    if (remote.deviceState.presence?.awayDelayMin) {
+      ble.setCustomDelayInput(String(remote.deviceState.presence.awayDelayMin));
+    }
+  }, [remote.deviceState.presence?.awayDelayMin]);
+
   // Cloud & BLE RGB Sleep Timer Support
   const [cloudRgbTimerRemMin, setCloudRgbTimerRemMin] = useState<number>(0);
   const cloudRgbTimerEndMsRef = useRef<number>(0);
@@ -304,165 +397,206 @@ export default function SmartDeskApp() {
     : cloudRgbTimerRemMin;
 
   return (
-    <main className="min-h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col font-sans">
-      {/* ── UNIFIED TOP CONTROL HEADER: Renders across all views (AOD, Remote, Settings, etc.) ── */}
-      <TopHeader
-        currentDeskName={currentDeskName}
-        isDeskConnected={isDeskConnected}
-        bleConnected={ble.connected}
-        bleConnecting={ble.connecting}
-        onConnectBle={ble.handleConnect}
-        isWsConnected={remote.isWsConnected}
-        isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
-        onOpenHandshake={() => setShowHandshakeModal(true)}
-        wifiConnected={ble.wifiConnected}
-        wifiState={ble.wifiState}
-        wifiSsid={ble.wifiSsid}
-        wifiIp={ble.wifiIp}
-        onOpenWifiModal={() => setShowWifiModal(true)}
-        onOpenFlasher={() => setShowFlasherModal(true)}
-        activeTab={activeTab}
-        onToggleAod={() => setActiveTab(activeTab === "aod" ? "remote" : "aod")}
-      />
-
-      {/* ── SCREEN CONTENT VIEWPORT ── */}
-      {activeTab === "aod" ? (
-        <AodFaceScreen
-          connected={isDeskConnected}
-          connecting={ble.connecting}
-          deviceName={currentDeskName}
+    <main className="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col font-sans">
+      
+      {/* ── 1. TOP HEADER (FIXED TO TOP) ── */}
+      <div className="w-full shrink-0 z-50 bg-black">
+        <TopHeader
+          currentDeskName={currentDeskName}
+          isDeskConnected={isDeskConnected}
+          bleConnected={ble.connected}
+          bleConnecting={ble.connecting}
+          onConnectBle={ble.handleConnect}
+          isWsConnected={remote.isWsConnected}
+          isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
+          onOpenHandshake={() => setShowHandshakeModal(true)}
           wifiConnected={ble.wifiConnected}
           wifiState={ble.wifiState}
           wifiSsid={ble.wifiSsid}
           wifiIp={ble.wifiIp}
-          isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
-          isWsConnected={remote.isWsConnected}
           onOpenWifiModal={() => setShowWifiModal(true)}
-          onOpenHandshakeModal={() => setShowHandshakeModal(true)}
-          relays={effectiveRelays}
-          relayConfigs={effectiveConfigs}
-          envData={effectiveEnvData}
-          presenceData={ble.presenceData}
-          rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
-          onConnect={ble.handleConnect}
-          onOpenRemote={() => setActiveTab("remote")}
-          onToggleRelay={handleToggleRelay}
-          onAllRelaysOff={handleAllRelaysOff}
-          onSendLed={handleSendLed}
-          onSetMatrixMode={(mode, text) => handleSetMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
-          onStartMusic={ble.startMusicSync}
-          onStopMusic={ble.stopMusicSync}
+          onOpenFlasher={() => setShowFlasherModal(true)}
+          activeTab={activeTab}
+          onToggleAod={() => setActiveTab(activeTab === "aod" ? "remote" : "aod")}
         />
-      ) : (
-        <div className="flex-1 flex flex-col w-full max-w-7xl mx-auto px-2 sm:px-6 overflow-hidden">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide py-3 pb-24 flex flex-col">
-            <div className="flex-1 flex flex-col justify-center max-w-full w-full mx-auto">
-              {activeTab === "remote" && (
-                <QuickRemotePanel
-                  connected={isDeskConnected}
-                  deviceName={currentDeskName}
-                  relays={effectiveRelays}
-                  configs={effectiveConfigs}
-                  led={effectiveLed}
-                  matrixConfig={effectiveMatrixConfig}
-                  rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
-                  onToggleRelay={handleToggleRelay}
-                  onSetRelayTimer={handleSetRelayTimer}
-                  onAllRelaysOff={handleAllRelaysOff}
-                  onSendLed={handleSendLed}
-                  onSetRgbTimer={handleSetRgbTimer}
-                  onSetMatrixDisplay={handleSetMatrixDisplay}
-                  onStartMusic={ble.startMusicSync}
-                  onStopMusic={ble.stopMusicSync}
-                  onNavigateTab={(tab) => setActiveTab(tab)}
-                />
-              )}
-              {activeTab === "relays" && (
-                <RelayPanel
-                  relays={effectiveRelays}
-                  configs={effectiveConfigs}
-                  uiAnim={ble.uiAnim}
-                  connected={isDeskConnected}
-                  onToggleRelay={handleToggleRelay}
-                  onSetTimer={handleSetRelayTimer}
-                  onAllOff={handleAllRelaysOff}
-                  onSaveConfig={handleSaveRelayConfig}
-                />
-              )}
-              {activeTab === "leds" && (
-                <LedPanel
-                  led={effectiveLed}
-                  previewTick={ble.previewTick}
-                  stripLength={effectiveStripLength}
-                  onSaveStripLength={handleSaveStripLength}
-                  matrixConfig={effectiveMatrixConfig}
-                  onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
-                  onSetMatrixDisplay={handleSetMatrixDisplay}
-                  musicSyncActive={ble.musicSyncActive}
-                  musicBri={ble.musicBri}
-                  setMusicBri={ble.setMusicBri}
-                  musicSensitivity={ble.musicSensitivity}
-                  setMusicSensitivity={ble.setMusicSensitivity}
-                  musicSubMode={ble.musicSubMode}
-                  setMusicSubMode={ble.setMusicSubMode}
-                  soloColor={ble.soloColor}
-                  setSoloColor={ble.setSoloColor}
-                  micVolume={ble.micVolume}
-                  beatPulse={ble.beatPulse}
-                  onSendLed={handleSendLed}
-                  onStartMusic={ble.startMusicSync}
-                  onStopMusic={ble.stopMusicSync}
-                />
-              )}
-              {activeTab === "schedule" && (
-                <SchedulePanel schedules={ble.schedules} espClock={ble.espClock} onSaveRule={ble.saveScheduleRule} onDeleteRule={ble.deleteScheduleRule} onTestRule={ble.handleTestScheduleRule} onSyncClock={ble.syncRealTime} />
-              )}
-              {activeTab === "presence" && (
-                <PresencePanel presenceData={ble.presenceData} presenceConfig={ble.presenceConfig} storedClients={ble.storedClients} clientNickname={ble.clientNickname} setClientNickname={ble.setClientNickname} designatedPresenceDevice={ble.designatedPresenceDevice} onSetDesignatedDevice={ble.setAsDesignatedPresenceDevice} onRemoveDesignatedDevice={ble.removeDesignatedPresenceDevice} customDelayInput={ble.customDelayInput} setCustomDelayInput={ble.setCustomDelayInput} connected={ble.connected} onSavePresenceConfig={ble.savePresenceConfig} onDeleteStoredClient={(slotIdx) => showAlert("Delete", `Remove slot #${slotIdx + 1}?`, () => ble.deleteStoredClient(slotIdx), true)} onClearKnownClients={() => showAlert("Clear", "Clear all 10 slots?", () => ble.clearKnownClients(), true)} onRegisterClientName={ble.registerClientName} />
-              )}
-              {activeTab === "settings" && (
-                <SettingsPanel
-                  envData={effectiveEnvData}
-                  masterBuzzer={ble.masterBuzzer}
-                  deviceName={currentDeskName}
-                  connected={isDeskConnected}
-                  connecting={ble.connecting}
-                  infoString={ble.infoString}
-                  logs={ble.logs}
-                  showAllDevices={ble.showAllDevices}
-                  setShowAllDevices={ble.setShowAllDevices}
-                  stripLength={effectiveStripLength}
-                  onSaveStripLength={handleSaveStripLength}
-                  matrixConfig={effectiveMatrixConfig}
-                  onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
-                  onSetMatrixDisplay={handleSetMatrixDisplay}
-                  onToggleMasterBuzzer={ble.toggleMasterBuzzer}
-                  onTestBuzzer={ble.testBuzzerBeep}
-                  onRename={handleRename}
-                  onConnect={ble.handleConnect}
-                  onDisconnect={ble.handleDisconnected}
-                  onClearLogs={ble.clearLogs}
-                  wifiHost={ble.wifiHost}
-                  wifiConnected={ble.wifiConnected}
-                  wifiIp={ble.wifiIp}
-                  wifiSsid={ble.wifiSsid}
-                  wifiOnAwayOnly={ble.wifiOnAwayOnly}
-                  onUpdateWifiHost={ble.updateWifiHost}
-                  onToggleWifiOnAwayOnly={ble.toggleWifiOnAwayOnly}
-                  onConfigureOverBle={ble.configureWifiOverBle}
-                  cloudUser={remote.userId}
-                  cloudPassword={remote.password}
-                  onUpdateCloudCredentials={remote.updateCredentials}
-                  onSetTempOffset={handleSetTempOffset}
-                />
-              )}
-            </div>
-          </div>
+      </div>
 
+      {/* ── 2. MAIN SCROLLABLE CONTENT AREA ── */}
+      <div className={`flex-1 w-full min-h-0 relative ${activeTab === "aod" ? "flex flex-col overflow-hidden" : "overflow-y-auto overflow-x-hidden custom-scrollbar"}`}>
+        {activeTab === "aod" ? (
+          <AodFaceScreen
+            connected={isDeskConnected}
+            connecting={ble.connecting}
+            deviceName={currentDeskName}
+            wifiConnected={ble.wifiConnected}
+            wifiState={ble.wifiState}
+            wifiSsid={ble.wifiSsid}
+            wifiIp={ble.wifiIp}
+            isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
+            isWsConnected={remote.isWsConnected}
+            onOpenWifiModal={() => setShowWifiModal(true)}
+            onOpenHandshakeModal={() => setShowHandshakeModal(true)}
+            relays={effectiveRelays}
+            relayConfigs={effectiveConfigs}
+            envData={effectiveEnvData}
+            presenceData={effectivePresenceData}
+            rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
+            onConnect={ble.handleConnect}
+            onOpenRemote={() => setActiveTab("remote")}
+            onToggleRelay={handleToggleRelay}
+            onAllRelaysOff={handleAllRelaysOff}
+            onSendLed={handleSendLed}
+            onSetMatrixMode={(mode, text) => handleSetMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
+            onStartMusic={ble.startMusicSync}
+            onStopMusic={ble.stopMusicSync}
+          />
+        ) : (
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 pb-28">
+            {/* 
+              This container is wide open (max-w-7xl). 
+              If your panels have grids (e.g., grid-cols-2 md:grid-cols-4), 
+              they will perfectly expand to 4 columns here without being crushed. 
+            */}
+            
+            {activeTab === "remote" && (
+              <QuickRemotePanel
+                connected={isDeskConnected}
+                deviceName={currentDeskName}
+                relays={effectiveRelays}
+                configs={effectiveConfigs}
+                led={effectiveLed}
+                matrixConfig={effectiveMatrixConfig}
+                rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
+                onToggleRelay={handleToggleRelay}
+                onSetRelayTimer={handleSetRelayTimer}
+                onAllRelaysOff={handleAllRelaysOff}
+                onSendLed={handleSendLed}
+                onSetRgbTimer={handleSetRgbTimer}
+                onSetMatrixDisplay={handleSetMatrixDisplay}
+                onStartMusic={ble.startMusicSync}
+                onStopMusic={ble.stopMusicSync}
+                onNavigateTab={(tab) => setActiveTab(tab)}
+              />
+            )}
+            
+            {activeTab === "relays" && (
+              <RelayPanel
+                relays={effectiveRelays}
+                configs={effectiveConfigs}
+                uiAnim={ble.uiAnim}
+                connected={isDeskConnected}
+                onToggleRelay={handleToggleRelay}
+                onSetTimer={handleSetRelayTimer}
+                onAllOff={handleAllRelaysOff}
+                onSaveConfig={handleSaveRelayConfig}
+              />
+            )}
+            
+            {activeTab === "leds" && (
+              <LedPanel
+                led={effectiveLed}
+                previewTick={ble.previewTick}
+                stripLength={effectiveStripLength}
+                onSaveStripLength={handleSaveStripLength}
+                matrixConfig={effectiveMatrixConfig}
+                onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
+                onSetMatrixDisplay={handleSetMatrixDisplay}
+                musicSyncActive={ble.musicSyncActive}
+                musicBri={ble.musicBri}
+                setMusicBri={ble.setMusicBri}
+                musicSensitivity={ble.musicSensitivity}
+                setMusicSensitivity={ble.setMusicSensitivity}
+                musicSubMode={ble.musicSubMode}
+                setMusicSubMode={ble.setMusicSubMode}
+                soloColor={ble.soloColor}
+                setSoloColor={ble.setSoloColor}
+                micVolume={ble.micVolume}
+                beatPulse={ble.beatPulse}
+                onSendLed={handleSendLed}
+                onStartMusic={ble.startMusicSync}
+                onStopMusic={ble.stopMusicSync}
+              />
+            )}
+            
+            {activeTab === "schedule" && (
+              <SchedulePanel 
+                schedules={ble.schedules} 
+                espClock={ble.espClock} 
+                onSaveRule={ble.saveScheduleRule} 
+                onDeleteRule={ble.deleteScheduleRule} 
+                onTestRule={ble.handleTestScheduleRule} 
+                onSyncClock={ble.syncRealTime} 
+              />
+            )}
+            
+            {activeTab === "presence" && (
+              <PresencePanel 
+                presenceData={effectivePresenceData} 
+                presenceConfig={effectivePresenceConfig} 
+                storedClients={ble.storedClients} 
+                clientNickname={ble.clientNickname} 
+                setClientNickname={ble.setClientNickname} 
+                designatedPresenceDevice={effectiveDesignatedDevice} 
+                onSetDesignatedDevice={handleSetDesignatedDevice} 
+                onRemoveDesignatedDevice={handleRemoveDesignatedDevice} 
+                customDelayInput={ble.customDelayInput} 
+                setCustomDelayInput={ble.setCustomDelayInput} 
+                connected={isDeskConnected} 
+                onSavePresenceConfig={handleSavePresenceConfig} 
+                onDeleteStoredClient={(slotIdx) => showAlert("Delete", `Remove slot #${slotIdx + 1}?`, () => ble.deleteStoredClient(slotIdx), true)} 
+                onClearKnownClients={() => showAlert("Clear", "Clear all 10 slots?", () => ble.clearKnownClients(), true)} 
+                onRegisterClientName={ble.registerClientName} 
+              />
+            )}
+            
+            {activeTab === "settings" && (
+              <SettingsPanel
+                envData={effectiveEnvData}
+                masterBuzzer={ble.masterBuzzer}
+                deviceName={currentDeskName}
+                connected={isDeskConnected}
+                connecting={ble.connecting}
+                infoString={ble.infoString}
+                logs={ble.logs}
+                showAllDevices={ble.showAllDevices}
+                setShowAllDevices={ble.setShowAllDevices}
+                stripLength={effectiveStripLength}
+                onSaveStripLength={handleSaveStripLength}
+                matrixConfig={effectiveMatrixConfig}
+                onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
+                onSetMatrixDisplay={handleSetMatrixDisplay}
+                onToggleMasterBuzzer={ble.toggleMasterBuzzer}
+                onTestBuzzer={ble.testBuzzerBeep}
+                onRename={handleRename}
+                onConnect={ble.handleConnect}
+                onDisconnect={ble.handleDisconnected}
+                onClearLogs={ble.clearLogs}
+                wifiHost={ble.wifiHost}
+                wifiConnected={ble.wifiConnected}
+                wifiIp={ble.wifiIp}
+                wifiSsid={ble.wifiSsid}
+                wifiOnAwayOnly={ble.wifiOnAwayOnly}
+                onUpdateWifiHost={ble.updateWifiHost}
+                onToggleWifiOnAwayOnly={ble.toggleWifiOnAwayOnly}
+                onConfigureOverBle={ble.configureWifiOverBle}
+                cloudUser={remote.userId}
+                cloudPassword={remote.password}
+                onUpdateCloudCredentials={remote.updateCredentials}
+                onSetTempOffset={handleSetTempOffset}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── 3. BOTTOM NAVBAR (FIXED TO BOTTOM) ── */}
+      {activeTab !== "aod" && (
+        <div className="absolute bottom-0 left-0 w-full z-40 bg-black/80 backdrop-blur-md">
           <BottomNavbar activeTab={activeTab} onChangeTab={setActiveTab} connected={isDeskConnected} />
         </div>
       )}
 
+      {/* ── 4. MODALS ── */}
       {relayConfigModalIdx !== null && (
         <RelayConfigModal
           isOpen={true}
@@ -474,6 +608,7 @@ export default function SmartDeskApp() {
       )}
       <CustomAlertModal isOpen={alertState.isOpen} title={alertState.title} message={alertState.message} confirmLabel={alertState.confirmLabel} cancelLabel={alertState.cancelLabel} isConfirm={alertState.isConfirm} onConfirm={closeAlert} onCancel={() => setAlertState((prev) => ({ ...prev, isOpen: false }))} />
       <ToastNotification message={toastState.message} type={toastState.type} onClose={closeToast} />
+      
       <WifiManagerModal
         isOpen={showWifiModal}
         onClose={() => setShowWifiModal(false)}

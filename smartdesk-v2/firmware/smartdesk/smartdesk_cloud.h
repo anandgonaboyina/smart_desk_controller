@@ -121,16 +121,31 @@ extern uint16_t s_stripLen;
 extern Adafruit_NeoPixel s_strip;
 extern MatrixConfig s_matrixConfig;
 extern void setTempOffset(float offset);
+extern PresenceConfig s_presenceConfig;
+extern char s_masterDeviceName[24];
+extern uint32_t s_awayTimerEndMs;
+extern void savePresenceConfigToNVS();
 
 /* ── Broadcast Hardware State to Cloud Relay ─────────────────────────────── */
 inline void broadcastCloudState() {
     if (!s_cloudConnected) return;
 
+    uint8_t presState = 0;
+    uint16_t presRemMin = 0;
+    if (s_connected) {
+        presState = 1;
+    } else if (s_awayTimerEndMs > 0) {
+        presState = 2;
+        long remMs = (long)(s_awayTimerEndMs - millis());
+        presRemMin = (remMs > 0) ? (uint16_t)((remMs + 59999UL) / 60000UL) : 0;
+    }
+
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
-    char msg[1600];
+    char msg[1800];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\",\"deviceName\":\"%s\",\"stripLen\":%u,"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
+        "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -145,6 +160,7 @@ inline void broadcastCloudState() {
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
         "\"state\":{\"deviceName\":\"%s\",\"stripLen\":%u,"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
+        "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -159,6 +175,7 @@ inline void broadcastCloudState() {
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
         s_cloudDeviceId, s_deviceName, s_stripLen,
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
+        s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
@@ -171,6 +188,7 @@ inline void broadcastCloudState() {
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
         s_deviceName, s_stripLen,
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
+        s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
@@ -492,6 +510,47 @@ static void handleCloudMessage(const char* payload, size_t length) {
         }
         setTempOffset(offset);
         broadcastCloudState();
+        return;
+    }
+
+    // 11. Presence Configuration Command over Cloud WS
+    if (strcmp(cmd, "presence_set") == 0 || strcmp(cmd, "presence_config") == 0) {
+        if (strstr(payload, "\"enabled\":")) {
+            s_presenceConfig.enabled = getJsonBool(payload, "enabled", s_presenceConfig.enabled);
+        }
+        int delay = getJsonInt(payload, "awayDelayMin", -1);
+        if (delay < 0) delay = getJsonInt(payload, "delay", -1);
+        if (delay > 0) s_presenceConfig.awayDelayMin = (uint16_t)delay;
+
+        int awayMask = getJsonInt(payload, "awayRelayMask", -1);
+        if (awayMask >= 0) s_presenceConfig.awayRelayMask = (uint8_t)awayMask;
+
+        if (strstr(payload, "\"awayRgbOff\":")) {
+            s_presenceConfig.awayRgbOff = getJsonBool(payload, "awayRgbOff", s_presenceConfig.awayRgbOff);
+        }
+        char masterName[24] = {0};
+        if (getJsonStr(payload, "masterDevice", masterName, sizeof(masterName))) {
+            strncpy(s_masterDeviceName, masterName, sizeof(s_masterDeviceName) - 1);
+            s_masterDeviceName[sizeof(s_masterDeviceName) - 1] = '\0';
+        }
+        savePresenceConfigToNVS();
+        Serial.printf(">>> [CLOUD WS] Presence configured: enabled=%d, awayDelay=%u min, master='%s'\n",
+                      s_presenceConfig.enabled, s_presenceConfig.awayDelayMin, s_masterDeviceName);
+        notifyEnvState();
+        broadcastCloudState();
+        return;
+    }
+
+    // 12. Set Master Device Command over Cloud WS
+    if (strcmp(cmd, "set_master_device") == 0) {
+        char masterName[24] = {0};
+        if (getJsonStr(payload, "name", masterName, sizeof(masterName))) {
+            strncpy(s_masterDeviceName, masterName, sizeof(s_masterDeviceName) - 1);
+            s_masterDeviceName[sizeof(s_masterDeviceName) - 1] = '\0';
+            savePresenceConfigToNVS();
+            Serial.printf(">>> [CLOUD WS] Set Master Presence Device: '%s'\n", s_masterDeviceName);
+            broadcastCloudState();
+        }
         return;
     }
 

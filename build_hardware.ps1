@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host ">>> COMPILING ESP32-S3 FIRMWARE (WITH PROGRESS) <<<" -ForegroundColor Cyan
+Write-Host ">>> COMPILING ESP32-S3 FIRMWARE (LIVE STREAM) <<<" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $firmwareDir = "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk"
@@ -11,44 +11,38 @@ $cliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\ard
 
 Write-Host "Starting compiler (First run takes 1-3 minutes to build cache)...`n" -ForegroundColor Yellow
 
-# Configure the background compiler process
-$processInfo = New-Object System.Diagnostics.ProcessStartInfo
-$processInfo.FileName = $cliPath
-$processInfo.Arguments = "compile --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi --build-path `"$objDir`" --output-dir `"$buildDir`" `"$firmwareDir`""
-$processInfo.RedirectStandardOutput = $true
-$processInfo.RedirectStandardError = $true
-$processInfo.UseShellExecute = $false
-$processInfo.CreateNoWindow = $true
+# Build arguments array
+$arguments = @(
+    "compile",
+    "--fqbn", "esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi",
+    "--build-path", $objDir,
+    "--output-dir", $buildDir,
+    $firmwareDir
+)
 
-$process = New-Object System.Diagnostics.Process
-$process.StartInfo = $processInfo
-$process.Start() | Out-Null
+# Run arduino-cli with direct inherited output so you can see every error/warning live
+& $cliPath @arguments
+$exitCode = $LASTEXITCODE
 
-# Animated Spinner Array
-$spinner = @('-', '\', '|', '/')
-$counter = 0
-
-# Loop and update the visual spinner while the compiler runs in the background
-while (-not $process.HasExited) {
-    Write-Host -NoNewline "`r[$($spinner[$counter % 4])] Compiling in background... Please wait."
-    $counter++
-    Start-Sleep -Milliseconds 150
+if ($exitCode -ne 0) {
+    Write-Host "`n[X] Firmware compilation failed with exit code $exitCode." -ForegroundColor Red
+    Pause
+    exit $exitCode
 }
 
-# Clear the spinner line and announce completion
-Write-Host "`r[+] Compilation finished successfully!                                " -ForegroundColor Green
-
-if ($process.ExitCode -ne 0) {
-    $errorOut = $process.StandardError.ReadToEnd()
-    Write-Error "`nFirmware compilation failed:`n$errorOut"
-    exit $process.ExitCode
-}
+Write-Host "`n[+] Compilation finished successfully!" -ForegroundColor Green
 
 Write-Host "`n>>> BRIDGING COMPILED BINARY TO PWA PUBLIC FOLDER <<<" -ForegroundColor Green
 
 $sourcePath = "$buildDir\smartdesk.ino.bin"
 if (-not (Test-Path $sourcePath)) {
     $sourcePath = "$buildDir\esp32.esp32.esp32s3\smartdesk.ino.bin"
+}
+
+if (-not (Test-Path $sourcePath)) {
+    Write-Host "[X] Error: Could not locate compiled .bin file at $sourcePath" -ForegroundColor Red
+    Pause
+    exit 1
 }
 
 $destPath = "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\pwa\public\smartdesk_latest.bin"
