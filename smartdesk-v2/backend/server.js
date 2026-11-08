@@ -353,6 +353,13 @@ wss.on("connection", (ws, req) => {
         msg.type === "presence_set" ||
         msg.type === "presence_config" ||
         msg.type === "set_master_device" ||
+        msg.type === "rgb_timer" ||
+        msg.type === "set_rgb_timer" ||
+        msg.type === "matrix_config" ||
+        msg.type === "buzzer_set" ||
+        msg.type === "set_buzzer" ||
+        msg.type === "buzzer_beep" ||
+        msg.type === "test_buzzer" ||
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||

@@ -122,16 +122,40 @@ extern uint16_t s_stripLen;
 extern Adafruit_NeoPixel s_strip;
 extern MatrixConfig s_matrixConfig;
 extern void setTempOffset(float offset);
+extern PresenceConfig s_presenceConfig;
+extern char s_masterDeviceName[24];
+extern uint32_t s_awayTimerEndMs;
+extern uint32_t s_rgbTimerEndMs;
+extern void setRgbTimer(uint16_t mins);
+extern bool s_buzzerMasterEnabled;
+extern void buzzerBeepTimerEnd();
+extern void saveMatrixConfigToNVS();
+extern void initMatrixHardware();
+extern void savePresenceConfigToNVS();
 
 /* ── Broadcast Hardware State to Cloud Relay ─────────────────────────────── */
 inline void broadcastCloudState() {
     if (!s_cloudConnected) return;
 
+    uint8_t presState = 0;
+    uint16_t presRemMin = 0;
+    if (s_connected) {
+        presState = 1;
+    } else if (s_awayTimerEndMs > 0) {
+        presState = 2;
+        long remMs = (long)(s_awayTimerEndMs - millis());
+        presRemMin = (remMs > 0) ? (uint16_t)((remMs + 59999UL) / 60000UL) : 0;
+    }
+
+    uint16_t rgbRemMin = (s_rgbTimerEndMs > 0 && millis() < s_rgbTimerEndMs)
+        ? (uint16_t)(((s_rgbTimerEndMs - millis()) + 59999UL) / 60000UL) : 0;
+
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
-    char msg[1600];
+    char msg[2000];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\",\"deviceName\":\"%s\",\"stripLen\":%u,"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
+        "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -142,10 +166,11 @@ inline void broadcastCloudState() {
         "{\"name\":\"%s\",\"wiring\":%u},"
         "{\"name\":\"%s\",\"wiring\":%u},"
         "{\"name\":\"%s\",\"wiring\":%u}],"
-        "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
+        "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
         "\"state\":{\"deviceName\":\"%s\",\"stripLen\":%u,"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
+        "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -156,10 +181,11 @@ inline void broadcastCloudState() {
         "{\"name\":\"%s\",\"wiring\":%u},"
         "{\"name\":\"%s\",\"wiring\":%u},"
         "{\"name\":\"%s\",\"wiring\":%u}],"
-        "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
+        "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
         s_cloudDeviceId, s_deviceName, s_stripLen,
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
+        s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
@@ -168,10 +194,11 @@ inline void broadcastCloudState() {
         s_relayConfigs[1].name, s_relayConfigs[1].wiring,
         s_relayConfigs[2].name, s_relayConfigs[2].wiring,
         s_relayConfigs[3].name, s_relayConfigs[3].wiring,
-        s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
+        s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd, rgbRemMin,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
         s_deviceName, s_stripLen,
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
+        s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
         s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
@@ -180,7 +207,7 @@ inline void broadcastCloudState() {
         s_relayConfigs[1].name, s_relayConfigs[1].wiring,
         s_relayConfigs[2].name, s_relayConfigs[2].wiring,
         s_relayConfigs[3].name, s_relayConfigs[3].wiring,
-        s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
+        s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd, rgbRemMin,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false"
     );
 
@@ -496,6 +523,47 @@ static void handleCloudMessage(const char* payload, size_t length) {
         return;
     }
 
+    // 11. Presence Configuration Command over Cloud WS
+    if (strcmp(cmd, "presence_set") == 0 || strcmp(cmd, "presence_config") == 0) {
+        if (strstr(payload, "\"enabled\":")) {
+            s_presenceConfig.enabled = getJsonBool(payload, "enabled", s_presenceConfig.enabled);
+        }
+        int delay = getJsonInt(payload, "awayDelayMin", -1);
+        if (delay < 0) delay = getJsonInt(payload, "delay", -1);
+        if (delay > 0) s_presenceConfig.awayDelayMin = (uint16_t)delay;
+
+        int awayMask = getJsonInt(payload, "awayRelayMask", -1);
+        if (awayMask >= 0) s_presenceConfig.awayRelayMask = (uint8_t)awayMask;
+
+        if (strstr(payload, "\"awayRgbOff\":")) {
+            s_presenceConfig.awayRgbOff = getJsonBool(payload, "awayRgbOff", s_presenceConfig.awayRgbOff);
+        }
+        char masterName[24] = {0};
+        if (getJsonStr(payload, "masterDevice", masterName, sizeof(masterName))) {
+            strncpy(s_masterDeviceName, masterName, sizeof(s_masterDeviceName) - 1);
+            s_masterDeviceName[sizeof(s_masterDeviceName) - 1] = '\0';
+        }
+        savePresenceConfigToNVS();
+        Serial.printf(">>> [CLOUD WS] Presence configured: enabled=%d, awayDelay=%u min, master='%s'\n",
+                      s_presenceConfig.enabled, s_presenceConfig.awayDelayMin, s_masterDeviceName);
+        notifyEnvState();
+        broadcastCloudState();
+        return;
+    }
+
+    // 12. Set Master Device Command over Cloud WS
+    if (strcmp(cmd, "set_master_device") == 0) {
+        char masterName[24] = {0};
+        if (getJsonStr(payload, "name", masterName, sizeof(masterName))) {
+            strncpy(s_masterDeviceName, masterName, sizeof(s_masterDeviceName) - 1);
+            s_masterDeviceName[sizeof(s_masterDeviceName) - 1] = '\0';
+            savePresenceConfigToNVS();
+            Serial.printf(">>> [CLOUD WS] Set Master Presence Device: '%s'\n", s_masterDeviceName);
+            broadcastCloudState();
+        }
+        return;
+    }
+
     // 5. State Request or Ping from Client
     if (strcmp(cmd, "request_state") == 0 || strcmp(cmd, "get_state") == 0 || strcmp(cmd, "ping") == 0) {
         Serial.println(">>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...");
@@ -503,16 +571,79 @@ static void handleCloudMessage(const char* payload, size_t length) {
         return;
     }
 
-    // 6. Dynamic Device Credential Update over WebSocket
+    // 13. RGB Sleep Timer Command over Cloud WS
+    if (strcmp(cmd, "rgb_timer") == 0 || strcmp(cmd, "set_rgb_timer") == 0) {
+        int mins = getJsonInt(payload, "minutes", -1);
+        if (mins < 0) mins = getJsonInt(payload, "min", 0);
+        setRgbTimer((uint16_t)(mins > 0 ? mins : 0));
+        return;
+    }
+
+    // 14. Matrix Hardware Config Command over Cloud WS
+    if (strcmp(cmd, "matrix_config") == 0) {
+        int rows = getJsonInt(payload, "rows", s_matrixConfig.rows);
+        int cols = getJsonInt(payload, "cols", s_matrixConfig.cols);
+        if (rows > 0 && cols > 0 && ((uint32_t)rows * (uint32_t)cols) <= MAX_MATRIX_LEDS) {
+            s_matrixConfig.rows = (uint16_t)rows;
+            s_matrixConfig.cols = (uint16_t)cols;
+        }
+        int wiring = getJsonInt(payload, "wiringType", -1);
+        if (wiring >= 0) s_matrixConfig.wiringType = (uint8_t)wiring;
+        int pin = getJsonInt(payload, "pin", -1);
+        if (pin > 0 && isSafeMatrixPin((uint8_t)pin)) s_matrixConfig.pin = (uint8_t)pin;
+        if (strstr(payload, "\"enabled\":")) {
+            s_matrixConfig.enabled = getJsonBool(payload, "enabled", s_matrixConfig.enabled);
+        }
+        saveMatrixConfigToNVS();
+        initMatrixHardware();
+        notifyEnvState();
+        broadcastCloudState();
+        return;
+    }
+
+    // 15. Master Buzzer Command over Cloud WS
+    if (strcmp(cmd, "buzzer_set") == 0 || strcmp(cmd, "set_buzzer") == 0) {
+        if (strstr(payload, "\"enabled\":")) {
+            s_buzzerMasterEnabled = getJsonBool(payload, "enabled", s_buzzerMasterEnabled);
+            Preferences prefs;
+            prefs.begin("desk_cfg", false);
+            prefs.putBool("bz_master", s_buzzerMasterEnabled);
+            prefs.end();
+            notifyEnvState();
+            broadcastCloudState();
+        }
+        return;
+    }
+    if (strcmp(cmd, "buzzer_beep") == 0 || strcmp(cmd, "test_buzzer") == 0) {
+        buzzerBeepTimerEnd();
+        return;
+    }
+
+    // 16. Dynamic Device Credential & Mapping Update over WebSocket
     if (strcmp(cmd, "set_credentials") == 0) {
         char newUser[36] = {0};
         char newPass[36] = {0};
+        char newDevId[36] = {0};
+        char newDevName[28] = {0};
         bool hasUser = getJsonStr(payload, "userId", newUser, sizeof(newUser));
         bool hasPass = getJsonStr(payload, "password", newPass, sizeof(newPass));
-        if (hasUser || hasPass) {
-            saveCloudConfigToNVS(NULL, 0, NULL, NULL, hasUser ? newUser : NULL, hasPass ? newPass : NULL);
-            Serial.printf(">>> [CLOUD WS] Updated Device Credentials (User: %s, Pass: %s)\n",
-                          s_cloudUser, strlen(s_cloudPassword) > 0 ? "******" : "(disabled)");
+        bool hasDevId = getJsonStr(payload, "deviceId", newDevId, sizeof(newDevId));
+        bool hasDevName = getJsonStr(payload, "deviceName", newDevName, sizeof(newDevName));
+
+        if (hasDevName && strlen(newDevName) > 0) {
+            strncpy(s_deviceName, newDevName, sizeof(s_deviceName) - 1);
+            s_deviceName[sizeof(s_deviceName) - 1] = '\0';
+            Preferences prefs;
+            prefs.begin("desk_cfg", false);
+            prefs.putString("dev_name", s_deviceName);
+            prefs.end();
+            initBleServer(s_deviceName);
+        }
+
+        if (hasUser || hasPass || hasDevId) {
+            saveCloudConfigToNVS(NULL, 0, NULL, hasDevId ? newDevId : NULL, hasUser ? newUser : NULL, hasPass ? newPass : NULL);
+            Serial.printf(">>> [CLOUD WS] Updated Device Credentials (DevId: %s, User: %s, Desk: %s)\n",
+                          s_cloudDeviceId, s_cloudUser, s_deviceName);
             broadcastCloudState();
         }
         return;

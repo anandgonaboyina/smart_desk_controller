@@ -25,7 +25,7 @@ export interface RemoteRelayConfig {
 export interface RemoteDeviceState {
   relays: RemoteRelayState[];
   configs?: RemoteRelayConfig[];
-  led: { mode: number; r: number; g: number; b: number; bri: number; spd: number };
+  led: { mode: number; r: number; g: number; b: number; bri: number; spd: number; remainingMin?: number };
   env: { tempC: number; humidity: number; valid: boolean };
   presence?: {
     enabled?: boolean;
@@ -612,6 +612,91 @@ export function useRemoteDeskWs({
     );
   }, [currentDeviceId, onStateUpdate]);
 
+  // Send RGB Sleep Timer Command
+  const sendRgbTimerCommand = useCallback(
+    (minutes: number) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      setDeviceState((prev) => {
+        const nextLed = { ...prev.led, remainingMin: minutes > 0 ? minutes : 0 };
+        const updated: RemoteDeviceState = { ...prev, led: nextLed };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+      wsRef.current.send(
+        JSON.stringify({
+          type: "rgb_timer",
+          deviceId: currentDeviceId,
+          minutes,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate]
+  );
+
+  // Send Matrix Hardware Configuration (rows, cols, wiring, pin, enabled)
+  const sendMatrixHardwareConfigCommand = useCallback(
+    (cfg: { rows: number; cols: number; wiringType: number; pin: number; enabled: boolean }) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(
+        JSON.stringify({
+          type: "matrix_config",
+          deviceId: currentDeviceId,
+          ...cfg,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId]
+  );
+
+  // Send Master Buzzer Toggle Command
+  const sendBuzzerCommand = useCallback(
+    (enabled: boolean) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(
+        JSON.stringify({
+          type: "buzzer_set",
+          deviceId: currentDeviceId,
+          enabled,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId]
+  );
+
+  // Send Test Buzzer Beep Command
+  const sendBuzzerBeepCommand = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "buzzer_beep",
+        deviceId: currentDeviceId,
+        timestamp: Date.now(),
+      })
+    );
+  }, [currentDeviceId]);
+
+  // Send Cloud Credentials & Device Name Mapping Command
+  const sendCloudCredentialsCommand = useCallback(
+    (userId: string, password?: string, newDeviceId?: string, deviceName?: string) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(
+        JSON.stringify({
+          type: "set_credentials",
+          deviceId: currentDeviceId,
+          userId,
+          password: password || "",
+          newDeviceId: newDeviceId || currentDeviceId,
+          deviceName: deviceName || "",
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId]
+  );
+
   return {
     wsUrl: effectiveWsUrl,
     userId: currentUserId,
@@ -631,9 +716,14 @@ export function useRemoteDeskWs({
     sendRenameCommand,
     sendStripLengthCommand,
     sendMatrixCommand,
+    sendMatrixHardwareConfigCommand,
     sendTempOffsetCommand,
     sendPresenceConfigCommand,
     sendMasterDeviceCommand,
+    sendRgbTimerCommand,
+    sendBuzzerCommand,
+    sendBuzzerBeepCommand,
+    sendCloudCredentialsCommand,
     sendAllOff,
   };
 }

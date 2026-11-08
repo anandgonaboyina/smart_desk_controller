@@ -355,46 +355,50 @@ export default function SmartDeskApp() {
     }
   }, [remote.deviceState.presence?.awayDelayMin]);
 
-  // Cloud & BLE RGB Sleep Timer Support
-  const [cloudRgbTimerRemMin, setCloudRgbTimerRemMin] = useState<number>(0);
-  const cloudRgbTimerEndMsRef = useRef<number>(0);
-
-  const handleSetRgbTimer = useCallback((minutes: number) => {
-    if (ble.connected || ble.wifiConnected) {
-      ble.setRgbTimer(minutes);
-    } else {
-      if (minutes <= 0) {
-        cloudRgbTimerEndMsRef.current = 0;
-        setCloudRgbTimerRemMin(0);
-        showToast("[Cloud Remote] RGB Sleep Timer cancelled.");
-      } else {
-        cloudRgbTimerEndMsRef.current = Date.now() + minutes * 60000;
-        setCloudRgbTimerRemMin(minutes);
-        showToast(`[Cloud Remote] RGB Sleep Timer set for ${minutes} min!`);
-      }
+  // Matrix Hardware Config synced across BLE & Cloud WS
+  const handleSaveMatrixHardwareConfig = useCallback((rows: number, cols: number, wiringType: number, pin?: number, enabled?: boolean) => {
+    ble.saveMatrixHardwareConfig(rows, cols, wiringType, pin, enabled);
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendMatrixHardwareConfigCommand({ rows, cols, wiringType, pin: pin ?? 11, enabled: enabled ?? true });
+      showToast("[Cloud Remote] Matrix hardware configuration synced");
     }
-  }, [ble, showToast]);
+  }, [ble, remote, showToast]);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (cloudRgbTimerEndMsRef.current > 0) {
-        const diffMs = cloudRgbTimerEndMsRef.current - Date.now();
-        if (diffMs <= 0) {
-          cloudRgbTimerEndMsRef.current = 0;
-          setCloudRgbTimerRemMin(0);
-          handleSendLed(0, 0, 0, 0, 0, 0);
-          showToast("[Cloud Remote] RGB Light turned OFF by sleep timer!", "info");
-        } else {
-          setCloudRgbTimerRemMin(Math.ceil(diffMs / 60000));
-        }
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [handleSendLed, showToast]);
+  // Master Buzzer synced across BLE & Cloud WS
+  const handleToggleMasterBuzzer = useCallback(() => {
+    ble.toggleMasterBuzzer();
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendBuzzerCommand(!ble.masterBuzzer);
+      showToast(`[Cloud Remote] Master Buzzer ${!ble.masterBuzzer ? "Enabled" : "Disabled"}`);
+    }
+  }, [ble, remote, showToast]);
 
-  const effectiveRgbTimerRemainingMin = (ble.connected || ble.wifiConnected)
-    ? ble.rgbTimerRemainingMin
-    : cloudRgbTimerRemMin;
+  const handleTestBuzzer = useCallback(() => {
+    ble.testBuzzerBeep();
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendBuzzerBeepCommand();
+      showToast("[Cloud Remote] Master Buzzer test beep triggered");
+    }
+  }, [ble, remote, showToast]);
+
+  // Cloud & BLE RGB Sleep Timer Support
+  const handleSetRgbTimer = useCallback((minutes: number) => {
+    ble.setRgbTimer(minutes);
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendRgbTimerCommand(minutes);
+      showToast(minutes > 0 ? `[Cloud Remote] RGB Sleep Timer set to ${minutes}m` : "[Cloud Remote] RGB Sleep Timer cancelled");
+    }
+  }, [ble, remote, showToast]);
+
+  const effectiveRgbTimerRemainingMin = useMemo(() => {
+    if (ble.connected) {
+      return ble.rgbTimerRemainingMin;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led?.remainingMin !== undefined) {
+      return remote.deviceState.led.remainingMin;
+    }
+    return ble.rgbTimerRemainingMin;
+  }, [ble.connected, ble.rgbTimerRemainingMin, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.led?.remainingMin]);
 
   return (
     <main className="h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col font-sans">
@@ -407,6 +411,7 @@ export default function SmartDeskApp() {
           bleConnected={ble.connected}
           bleConnecting={ble.connecting}
           onConnectBle={ble.handleConnect}
+          onDisconnectBle={ble.handleDisconnected}
           isWsConnected={remote.isWsConnected}
           isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
           onOpenHandshake={() => setShowHandshakeModal(true)}
@@ -563,10 +568,10 @@ export default function SmartDeskApp() {
                 stripLength={effectiveStripLength}
                 onSaveStripLength={handleSaveStripLength}
                 matrixConfig={effectiveMatrixConfig}
-                onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
+                onSaveMatrixConfig={handleSaveMatrixHardwareConfig}
                 onSetMatrixDisplay={handleSetMatrixDisplay}
-                onToggleMasterBuzzer={ble.toggleMasterBuzzer}
-                onTestBuzzer={ble.testBuzzerBeep}
+                onToggleMasterBuzzer={handleToggleMasterBuzzer}
+                onTestBuzzer={handleTestBuzzer}
                 onRename={handleRename}
                 onConnect={ble.handleConnect}
                 onDisconnect={ble.handleDisconnected}
@@ -654,7 +659,13 @@ export default function SmartDeskApp() {
         isWsConnected={remote.isWsConnected}
         isDeviceOnline={remote.isDeviceOnline}
         onSendCloudRelayCommand={remote.sendRelayCommand}
-        onUpdateCloudCredentials={remote.updateCredentials}
+        onUpdateCloudCredentials={(user, pass, newDevId, newDevName) => {
+          remote.updateCredentials(user, pass, newDevId);
+          remote.sendCloudCredentialsCommand(user, pass, newDevId, newDevName);
+          if (newDevName && newDevName !== currentDeskName) {
+            handleRename(newDevName);
+          }
+        }}
         onToast={showToast}
         recentLogs={ble.logs}
       />

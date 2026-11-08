@@ -133,61 +133,63 @@ static bool readDHT11(float* outTemp, float* outHum);
 void loadEnvConfigFromNVS();
 #line 231 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setTempOffset(float offset);
-#line 288 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 290 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void getLocalTime(uint8_t* outH, uint8_t* outM, uint8_t* outS, uint8_t* outDOW);
-#line 327 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 329 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void buildRelayPayload(uint8_t* out12);
-#line 342 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 344 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void buildConfigPayload(uint8_t* payload, size_t maxLen);
-#line 389 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 398 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason);
-#line 401 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
-static void triggerRelayAnimation(uint8_t idx, bool turningOn, uint8_t mode, uint8_t durationSec);
 #line 410 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+static void triggerRelayAnimation(uint8_t idx, bool turningOn, uint8_t mode, uint8_t durationSec);
+#line 419 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void setRelayLoad(uint8_t idx, uint8_t load, const char* source);
-#line 434 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 443 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setRelayTimer(uint8_t idx, uint16_t mins);
-#line 446 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
-void allRelaysOff(const char* source);
 #line 455 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+void allRelaysOff(const char* source);
+#line 463 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+void setRgbTimer(uint16_t mins);
+#line 476 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadConfigsFromNVS();
-#line 491 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 512 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadPresenceFromNVS();
-#line 525 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
-static void savePresenceConfigToNVS();
-#line 538 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 551 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+void savePresenceConfigToNVS();
+#line 567 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadRelayLoadsFromNVS();
-#line 548 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 577 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void saveRelayLoadsToNVS();
-#line 559 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 588 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadLedStateFromNVS();
-#line 572 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 601 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void saveLedStateToNVS();
-#line 666 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 695 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadSchedulesFromNVS();
-#line 704 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 733 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void executeScheduleAction(uint8_t ruleIdx, uint8_t action);
-#line 732 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 761 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void checkSchedules();
-#line 771 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 800 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadTimeBaseFromNVS();
-#line 779 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 808 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void saveTimeBaseToNVS();
-#line 787 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 816 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void registerClientDevice(const char* macAddr, const char* friendlyName);
-#line 819 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 848 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void handleClientConnected(const char* macAddr);
-#line 851 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 880 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void handleClientDisconnected();
-#line 857 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 891 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static uint8_t scaleBri(uint8_t userPercent);
-#line 862 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 896 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static uint32_t gammaCorrect(uint8_t r, uint8_t g, uint8_t b, uint8_t bri);
-#line 874 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 908 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void renderLeds();
-#line 1265 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 1299 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setup();
-#line 1335 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 1369 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void loop();
 #line 117 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static inline void triggerBuzzerPattern(uint16_t onMs, uint16_t offMs, uint8_t repeats) {
@@ -338,7 +340,7 @@ struct PresenceConfig {
     uint8_t  arrivalRgbMode;
 };
 
-static PresenceConfig s_presenceConfig = {
+PresenceConfig s_presenceConfig = {
     false,  // Inactive by default
     5,
     0x0F,
@@ -349,9 +351,11 @@ static PresenceConfig s_presenceConfig = {
 };
 
 static PairedClient s_knownClients[MAX_PAIRED_CLIENTS];
-static uint32_t     s_awayTimerEndMs = 0;
-static bool         s_isAwayTriggered = false;
-static char         s_connectedClientName[24] = "Unknown Device";
+uint32_t     s_awayTimerEndMs = 0;
+uint32_t     s_rgbTimerEndMs  = 0;
+static bool  s_isAwayTriggered = false;
+char         s_connectedClientName[24] = "Unknown Device";
+char         s_masterDeviceName[24]    = "";
 
 // Time Sync (Browser Real Time)
 struct TimeSync {
@@ -455,6 +459,13 @@ void buildConfigPayload(uint8_t* payload, size_t maxLen) {
         payload[off + 2] = (uint8_t)nlen;
         memcpy(&payload[off + 3], s_knownClients[i].name, nlen);
     }
+
+    if (maxLen >= 360) {
+        size_t mlen = strlen(s_masterDeviceName);
+        if (mlen > 23) mlen = 23;
+        payload[335] = (uint8_t)mlen;
+        if (mlen > 0) memcpy(&payload[336], s_masterDeviceName, mlen);
+    }
 }
 
 /* ── Forward Declaration ─────────────────────────────────────────────────── */
@@ -527,6 +538,18 @@ void allRelaysOff(const char* source) {
     broadcastCloudState();
 }
 
+void setRgbTimer(uint16_t mins) {
+    if (mins == 0) {
+        s_rgbTimerEndMs = 0;
+        Serial.println(">>> [RGB TIMER] Cancelled.");
+    } else {
+        s_rgbTimerEndMs = millis() + ((uint32_t)mins * 60000UL);
+        Serial.printf(">>> [RGB TIMER] Set for %u min (expires at %lu ms)\n", mins, s_rgbTimerEndMs);
+    }
+    notifyLedState();
+    broadcastCloudState();
+}
+
 /* ── NVS Configurations Storage ─────────────────────────────────────────── */
 static void loadConfigsFromNVS() {
     s_prefs.begin("desk_cfg", false);
@@ -573,7 +596,12 @@ static void loadPresenceFromNVS() {
     s_presenceConfig.arrivalRelayMask = s_prefs.getUChar("arr_mask", 0x0F);
     s_presenceConfig.arrivalRgbOn     = s_prefs.getBool("arr_rgb", true);
     s_presenceConfig.arrivalRgbMode   = s_prefs.getUChar("arr_mode", 1);
+    String master = s_prefs.getString("master_dev", "");
+    strncpy(s_masterDeviceName, master.c_str(), sizeof(s_masterDeviceName) - 1);
+    s_masterDeviceName[sizeof(s_masterDeviceName) - 1] = '\0';
     s_prefs.end();
+    Serial.printf("[PRESENCE] Loaded: enabled=%d, awayDelay=%u min, master='%s'\n",
+                  s_presenceConfig.enabled, s_presenceConfig.awayDelayMin, s_masterDeviceName);
 
     s_prefs.begin("desk_clients", true);
     for (int i = 0; i < MAX_PAIRED_CLIENTS; i++) {
@@ -598,7 +626,7 @@ static void loadPresenceFromNVS() {
     s_prefs.end();
 }
 
-static void savePresenceConfigToNVS() {
+void savePresenceConfigToNVS() {
     s_prefs.begin("desk_pres", false);
     s_prefs.putBool("en", s_presenceConfig.enabled);
     s_prefs.putUShort("delay", s_presenceConfig.awayDelayMin);
@@ -607,7 +635,10 @@ static void savePresenceConfigToNVS() {
     s_prefs.putUChar("arr_mask", s_presenceConfig.arrivalRelayMask);
     s_prefs.putBool("arr_rgb", s_presenceConfig.arrivalRgbOn);
     s_prefs.putUChar("arr_mode", s_presenceConfig.arrivalRgbMode);
+    s_prefs.putString("master_dev", s_masterDeviceName);
     s_prefs.end();
+    Serial.printf("[PRESENCE] Saved to NVS: enabled=%d, awayDelay=%u min, master='%s'\n",
+                  s_presenceConfig.enabled, s_presenceConfig.awayDelayMin, s_masterDeviceName);
 }
 
 /* ── Relay Load States NVS Persistence ───────────────────────────────────── */
@@ -925,8 +956,13 @@ static void handleClientConnected(const char* macAddr) {
 }
 
 static void handleClientDisconnected() {
+    Serial.printf(">>> [PRESENCE] Client disconnected. Config: enabled=%d, awayDelay=%u min\n",
+                  s_presenceConfig.enabled ? 1 : 0, s_presenceConfig.awayDelayMin);
     if (!s_presenceConfig.enabled || s_presenceConfig.awayDelayMin == 0) return;
     s_awayTimerEndMs = millis() + ((uint32_t)s_presenceConfig.awayDelayMin * 60000UL);
+    Serial.printf(">>> [PRESENCE] Away timer started: countdown %u min (ends at %lu ms)\n",
+                  s_presenceConfig.awayDelayMin, s_awayTimerEndMs);
+    broadcastCloudState();
 }
 
 /* ── Strip Color Math & Gamma Correction (Uncapped 255 Scale) ───────────── */
@@ -1441,8 +1477,11 @@ void loop() {
             } else if (op == 3) {
                 allRelaysOff("BLE All-Off");
             }
-        } else if (cmd.type == WT_LED && cmd.len >= 6) {
-            if (cmd.data[0] == 16) {
+        } else if (cmd.type == WT_LED) {
+            if (cmd.len >= 3 && cmd.data[0] == 0xFD) { // 0xFD: RGB Sleep Timer [0xFD, minsLo, minsHi]
+                uint16_t mins = cmd.data[1] | ((uint16_t)cmd.data[2] << 8);
+                setRgbTimer(mins);
+            } else if (cmd.len >= 6 && cmd.data[0] == 16) {
                 s_ledMode = 16;
                 s_musicBri = cmd.data[1];
                 if (cmd.len >= 15) {
@@ -1620,8 +1659,20 @@ void loop() {
                 s_presenceConfig.arrivalRelayMask = cmd.data[6];
                 s_presenceConfig.arrivalRgbOn     = (cmd.data[7] == 1);
                 s_presenceConfig.arrivalRgbMode   = (cmd.len >= 9) ? cmd.data[8] : 1;
+                if (cmd.len >= 10) {
+                    uint8_t mlen = cmd.data[9];
+                    if (mlen > 0 && cmd.len >= 10 + mlen) {
+                        memset(s_masterDeviceName, 0, sizeof(s_masterDeviceName));
+                        memcpy(s_masterDeviceName, &cmd.data[10], (mlen < 23) ? mlen : 23);
+                    } else if (mlen == 0) {
+                        memset(s_masterDeviceName, 0, sizeof(s_masterDeviceName));
+                    }
+                }
                 savePresenceConfigToNVS();
+                Serial.printf(">>> [PRESENCE] BLE updated: enabled=%d, awayDelay=%u min, master='%s'\n",
+                              s_presenceConfig.enabled, s_presenceConfig.awayDelayMin, s_masterDeviceName);
                 notifyEnvState();
+                broadcastCloudState();
             } else if (cmd.data[0] == 0xF7 && cmd.len >= 2) { // Register Client Name
                 uint8_t nlen = (cmd.data[1] > 23) ? 23 : cmd.data[1];
                 if (cmd.len >= 2 + nlen) {
@@ -1779,11 +1830,14 @@ void loop() {
 
     // Check Presence Away Timeout
     if (s_awayTimerEndMs > 0 && (long)(now - s_awayTimerEndMs) >= 0) {
+        Serial.println(">>> [PRESENCE TIMEOUT] Away countdown expired! Turning OFF away-configured loads & RGB...");
         s_awayTimerEndMs = 0;
         s_isAwayTriggered = true;
         if (s_presenceConfig.awayRelayMask != 0) {
             for (int r = 0; r < RELAY_COUNT; r++) {
-                if ((s_presenceConfig.awayRelayMask & (1 << r)) != 0) setRelayLoad(r, 0, "Away Timeout");
+                if ((s_presenceConfig.awayRelayMask & (1 << r)) != 0) {
+                    setRelayLoad(r, 0, "Away Timeout");
+                }
             }
         }
         if (s_presenceConfig.awayRgbOff) {
@@ -1795,6 +1849,7 @@ void loop() {
             tryAutoConnectToSaved();
         }
         notifyEnvState();
+        broadcastCloudState();
     }
 
     updateActiveBuzzer(now);
@@ -1832,6 +1887,16 @@ void loop() {
         s_lastTimerNotifyMs = now;
         notifyRelayState();
         broadcastCloudState();
+    }
+
+    // Check RGB Sleep Timer
+    if (s_rgbTimerEndMs > 0 && (long)(now - s_rgbTimerEndMs) >= 0) {
+        s_rgbTimerEndMs = 0;
+        s_ledMode = 0;
+        saveLedStateToNVS();
+        notifyLedState();
+        broadcastCloudState();
+        Serial.println(">>> [RGB TIMER] Sleep timer expired! Turn OFF RGB strip.");
     }
 
     // Render Primary Strip LEDs (GPIO 8)

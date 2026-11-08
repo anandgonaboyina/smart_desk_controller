@@ -274,6 +274,7 @@ PresenceConfig s_presenceConfig = {
 
 static PairedClient s_knownClients[MAX_PAIRED_CLIENTS];
 uint32_t     s_awayTimerEndMs = 0;
+uint32_t     s_rgbTimerEndMs  = 0;
 static bool  s_isAwayTriggered = false;
 char         s_connectedClientName[24] = "Unknown Device";
 char         s_masterDeviceName[24]    = "";
@@ -456,6 +457,18 @@ void allRelaysOff(const char* source) {
         s_timerEndMs[i] = 0;
         setRelayLoad(i, 0, source);
     }
+    broadcastCloudState();
+}
+
+void setRgbTimer(uint16_t mins) {
+    if (mins == 0) {
+        s_rgbTimerEndMs = 0;
+        Serial.println(">>> [RGB TIMER] Cancelled.");
+    } else {
+        s_rgbTimerEndMs = millis() + ((uint32_t)mins * 60000UL);
+        Serial.printf(">>> [RGB TIMER] Set for %u min (expires at %lu ms)\n", mins, s_rgbTimerEndMs);
+    }
+    notifyLedState();
     broadcastCloudState();
 }
 
@@ -1386,8 +1399,11 @@ void loop() {
             } else if (op == 3) {
                 allRelaysOff("BLE All-Off");
             }
-        } else if (cmd.type == WT_LED && cmd.len >= 6) {
-            if (cmd.data[0] == 16) {
+        } else if (cmd.type == WT_LED) {
+            if (cmd.len >= 3 && cmd.data[0] == 0xFD) { // 0xFD: RGB Sleep Timer [0xFD, minsLo, minsHi]
+                uint16_t mins = cmd.data[1] | ((uint16_t)cmd.data[2] << 8);
+                setRgbTimer(mins);
+            } else if (cmd.len >= 6 && cmd.data[0] == 16) {
                 s_ledMode = 16;
                 s_musicBri = cmd.data[1];
                 if (cmd.len >= 15) {
@@ -1793,6 +1809,16 @@ void loop() {
         s_lastTimerNotifyMs = now;
         notifyRelayState();
         broadcastCloudState();
+    }
+
+    // Check RGB Sleep Timer
+    if (s_rgbTimerEndMs > 0 && (long)(now - s_rgbTimerEndMs) >= 0) {
+        s_rgbTimerEndMs = 0;
+        s_ledMode = 0;
+        saveLedStateToNVS();
+        notifyLedState();
+        broadcastCloudState();
+        Serial.println(">>> [RGB TIMER] Sleep timer expired! Turn OFF RGB strip.");
     }
 
     // Render Primary Strip LEDs (GPIO 8)

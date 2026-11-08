@@ -145,23 +145,23 @@ export default function AodFaceScreen({
             <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${envData.valid ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "bg-white/20"}`} />
           </div>
           <div className="flex items-baseline gap-2 sm:gap-3">
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-base sm:text-2xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg sm:text-2xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
                 {envData.valid ? envData.tempC.toFixed(1) : "--"}
               </span>
-              <span className="text-[9px] sm:text-xs font-bold text-cyan-400">°C</span>
+              <span className="text-xs sm:text-sm font-bold text-cyan-400">°C</span>
             </div>
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-base sm:text-2xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg sm:text-2xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
                 {envData.valid ? Math.round(envData.humidity) : "--"}
               </span>
-              <span className="text-[9px] sm:text-xs font-bold text-cyan-400">%</span>
+              <span className="text-xs sm:text-sm font-bold text-cyan-400">%</span>
             </div>
           </div>
         </div>
 
-        {/* Presence Radar Indicator - Compact Padding */}
-        <div className="flex items-center gap-1 text-[9px] sm:text-xs font-bold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-black/60 border border-white/10 shrink-0">
+        {/* Presence Radar Indicator */}
+        <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-black/60 border border-white/10 shrink-0">
           {presenceData.state === 1 ? (
             <span className="text-emerald-400 flex items-center gap-1">
               <span>👤</span> <span>At Desk</span>
@@ -184,23 +184,23 @@ export default function AodFaceScreen({
           
           {/* Ambient High-Contrast Digital Clock */}
           <div className="flex flex-col items-center text-center">
-            <div className="flex items-baseline justify-center gap-2 sm:gap-3 relative">
+            <div className="flex items-baseline justify-center gap-2 sm:gap-4">
               <span
                 suppressHydrationWarning
-                className="text-6xl sm:text-8xl md:text-[120px] leading-none font-black tracking-tighter text-white drop-shadow-[0_0_35px_rgba(255,255,255,0.15)]"
+                className="text-6xl sm:text-8xl md:text-[110px] leading-none font-black tracking-tighter text-white drop-shadow-[0_0_35px_rgba(255,255,255,0.15)]"
               >
                 {timeString}
               </span>
               <span
                 suppressHydrationWarning
-                className="text-xl sm:text-3xl md:text-5xl font-bold text-cyan-400 absolute -right-7 sm:-right-8 md:-right-16 bottom-1 sm:bottom-2 md:bottom-6"
+                className="text-2xl sm:text-4xl md:text-5xl font-extrabold text-cyan-400 select-none"
               >
                 {secString}
               </span>
             </div>
             <span
               suppressHydrationWarning
-              className="text-[11px] sm:text-sm md:text-lg font-bold text-white/30 tracking-widest mt-1 sm:mt-2 md:mt-3 uppercase"
+              className="text-xs sm:text-base md:text-lg font-bold text-white/40 tracking-widest mt-2 sm:mt-3 uppercase"
             >
               {dateString}
             </span>
@@ -269,15 +269,15 @@ export default function AodFaceScreen({
       )}
 
       {/* ── 3. BOTTOM CONTROLS: All-Off, Sleek Mic, Remote ── */}
-      <div className="shrink-0 w-full mt-auto flex justify-between items-center px-3 py-2 sm:px-5 sm:py-3 border-t border-white/10 bg-[#050505]/95 backdrop-blur-xl z-30">
+      <div className="shrink-0 w-full mt-auto flex justify-between items-center px-3 py-2.5 sm:px-6 sm:py-3.5 border-t border-white/10 bg-[#050505]/95 backdrop-blur-xl z-30">
         
         {/* Left: Quick Emergency "All Power Off" button */}
         <button
           onClick={onAllRelaysOff}
-          className="px-2.5 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-[9px] sm:text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-[0_0_12px_rgba(244,63,94,0.1)]"
+          className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer active:scale-95 shadow-[0_0_12px_rgba(244,63,94,0.15)]"
           title="Turn off all 4 relays immediately"
         >
-          <span className="text-xs sm:text-sm">🛑</span>
+          <span className="text-sm sm:text-base">🛑</span>
           <span className="hidden sm:inline tracking-wider">ALL OFF</span>
         </button>
 
@@ -289,7 +289,7 @@ export default function AodFaceScreen({
             onMouseUp={voice.handleMicMouseUp}
             onTouchStart={voice.handleMicMouseDown}
             onTouchEnd={voice.handleMicMouseUp}
-            className={`w-10 h-10 sm:w-13 sm:h-13 rounded-full flex items-center justify-center transition-all cursor-pointer active:scale-90 border-2 ${
+            className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all cursor-pointer active:scale-90 border-2 ${
               voice.isContinuous
                 ? "bg-rose-500/20 border-rose-500/60 text-rose-300 shadow-[0_0_25px_rgba(244,63,94,0.4)] animate-pulse"
                 : voice.isListening
@@ -298,29 +298,29 @@ export default function AodFaceScreen({
             }`}
             title="Tap for voice command • Hold for continuous listening"
           >
-            <span className="text-lg sm:text-2xl">
+            <span className="text-xl sm:text-2xl">
               {voice.isContinuous ? "🔴" : voice.isListening ? "🎙️" : "🎤"}
             </span>
           </button>
         </div>
 
         {/* Right: Open Remote Button */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-2">
           {!connected && (
             <button
               onClick={onConnect}
               disabled={connecting}
-              className="px-2.5 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold text-[9px] sm:text-xs flex items-center gap-1 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 active:scale-95 transition-all cursor-pointer"
+              className="px-3 py-2 sm:py-2.5 rounded-xl font-extrabold text-xs sm:text-sm flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 active:scale-95 transition-all cursor-pointer"
             >
-              <span className="text-xs sm:text-sm">{connecting ? "⏳" : "🔗"}</span>
+              <span className="text-sm">{connecting ? "⏳" : "🔗"}</span>
               <span className="hidden sm:inline tracking-wider">{connecting ? "LINKING..." : "CONNECT"}</span>
             </button>
           )}
           <button
             onClick={onOpenRemote}
-            className="px-3 sm:px-5 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold text-[9px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2 transition-all border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)] active:scale-95 cursor-pointer bg-cyan-500 hover:bg-cyan-400 text-black tracking-wide"
+            className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.25)] active:scale-95 cursor-pointer bg-cyan-500 hover:bg-cyan-400 text-black tracking-wide"
           >
-            <span className="text-xs sm:text-sm">⚡</span>
+            <span className="text-sm sm:text-base">⚡</span>
             <span>OPEN REMOTE</span>
           </button>
         </div>

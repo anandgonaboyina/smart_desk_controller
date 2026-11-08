@@ -1080,10 +1080,11 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         dev.removeEventListener("gattserverdisconnected", handleDisconnected);
         dev.addEventListener("gattserverdisconnected", handleDisconnected);
 
-        if (typeof window !== "undefined" && dev.name) {
+        if (typeof window !== "undefined" && dev.id) {
           localStorage.setItem("smartdesk_last_device_id", dev.id);
-          localStorage.setItem("smartdesk_last_device_name", dev.name);
-          setPersistedDeviceName(dev.name);
+          const nameToSave = dev.name || deviceName || "smartDesk Controller";
+          localStorage.setItem("smartdesk_last_device_name", nameToSave);
+          setPersistedDeviceName(nameToSave);
         }
 
         addLog(`Step 2: Connecting to GATT server for '${dev.name}'...`, "info");
@@ -1281,8 +1282,10 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           const knownDevices = await nav.bluetooth.getDevices();
           if (knownDevices && knownDevices.length > 0) {
             const lastId = localStorage.getItem("smartdesk_last_device_id");
+            const lastName = localStorage.getItem("smartdesk_last_device_name");
             const matched = (lastId && knownDevices.find((d) => d.id === lastId)) ||
-              knownDevices.find((d) => d.name?.toLowerCase().includes("smartdesk") || d.name?.toLowerCase().includes("controller") || d.name?.toLowerCase().includes("sd")) ||
+              (lastName && knownDevices.find((d) => d.name === lastName)) ||
+              knownDevices.find((d) => d.name?.toLowerCase().includes("smartdesk") || d.name?.toLowerCase().includes("controller") || d.name?.toLowerCase().includes("sd") || d.name?.toLowerCase().includes("desk")) ||
               knownDevices[0];
 
             if (matched) {
@@ -1326,7 +1329,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
     timeoutId = setTimeout(() => {
       checkPersistentDevices();
-    }, 800);
+    }, 200);
 
     return () => {
       clearTimeout(timeoutId);
@@ -1416,17 +1419,29 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   );
 
   /* RGB Sleep Timer Handlers */
-  const setRgbTimer = useCallback((minutes: number) => {
-    if (minutes <= 0) {
-      rgbTimerEndMsRef.current = 0;
-      setRgbTimerRemainingMin(0);
-      onToastRef.current?.("RGB Sleep Timer cancelled.");
-    } else {
-      rgbTimerEndMsRef.current = Date.now() + minutes * 60000;
-      setRgbTimerRemainingMin(minutes);
-      onToastRef.current?.(`RGB Sleep Timer set for ${minutes} min!`);
-    }
-  }, []);
+  const setRgbTimer = useCallback(
+    (minutes: number) => {
+      const clamped = Math.max(0, Math.min(1440, minutes));
+      if (clamped <= 0) {
+        rgbTimerEndMsRef.current = 0;
+        setRgbTimerRemainingMin(0);
+        onToastRef.current?.("RGB Sleep Timer cancelled.");
+      } else {
+        rgbTimerEndMsRef.current = Date.now() + clamped * 60000;
+        setRgbTimerRemainingMin(clamped);
+        onToastRef.current?.(`RGB Sleep Timer set for ${clamped} min!`);
+      }
+
+      if (ledCharRef.current) {
+        const payload = new Uint8Array([0xFD, clamped & 0xff, (clamped >> 8) & 0xff]);
+        enqueueWrite("Set RGB Timer", async () => {
+          addLog(`[TX LED] ${bytesToHex(payload)} (Set RGB Timer: ${clamped} min)`, "tx");
+          await writeCharFast(ledCharRef.current, payload);
+        });
+      }
+    },
+    [enqueueWrite, addLog]
+  );
 
   useEffect(() => {
     const timer = setInterval(() => {

@@ -37,7 +37,7 @@ export interface CloudHandshakeModalProps {
   isDeviceOnline: boolean;
   deviceId?: string;
   onSendCloudRelayCommand?: (relayIdx: number, load: boolean) => void;
-  onUpdateCloudCredentials?: (user: string, pass: string) => void;
+  onUpdateCloudCredentials?: (user: string, pass: string, deviceId?: string, deviceName?: string) => void;
   onToast?: (msg: string, type?: "info" | "warn" | "error" | "success") => void;
   recentLogs?: { text: string; type?: string }[];
 }
@@ -93,15 +93,29 @@ export default function CloudHandshakeModal({
     }
     return "";
   });
+  const [cloudDeviceId, setCloudDeviceId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_cloud_device_id") || deviceId || "desk_anand_s3";
+    }
+    return deviceId || "desk_anand_s3";
+  });
+  const [cloudDeskName, setCloudDeskName] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_last_device_name") || deviceName || "SmartDesk S3";
+    }
+    return deviceName || "SmartDesk S3";
+  });
   const [showCloudPass, setShowCloudPass] = useState<boolean>(false);
 
   const handleSaveCloudCredentials = () => {
     if (typeof window !== "undefined") {
       localStorage.setItem("smartdesk_cloud_user", cloudUser.trim());
       localStorage.setItem("smartdesk_cloud_pass", cloudPass);
+      localStorage.setItem("smartdesk_cloud_device_id", cloudDeviceId.trim());
+      localStorage.setItem("smartdesk_last_device_name", cloudDeskName.trim());
     }
-    onUpdateCloudCredentials?.(cloudUser.trim(), cloudPass);
-    onToast?.("Cloud credentials saved and cached in PWA!", "success");
+    onUpdateCloudCredentials?.(cloudUser.trim(), cloudPass, cloudDeviceId.trim(), cloudDeskName.trim());
+    onToast?.("Cloud credentials & ESP32 mapping saved in PWA!", "success");
   };
 
   // Step 3 Health check state
@@ -559,16 +573,36 @@ export default function CloudHandshakeModal({
           </div>
 
           {/* Device Username & Password Handshake Config */}
-          <div className="mt-3 p-3 rounded-xl bg-black/60 border border-zinc-700/80 space-y-2.5">
+          <div className="mt-3 p-3.5 rounded-xl bg-black/60 border border-zinc-700/80 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-zinc-200 font-extrabold uppercase tracking-wider">Device Cloud Credentials (NVS &amp; PWA Cache):</span>
-              <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${cloudPass ? "bg-amber-950 text-amber-300 border-amber-800" : "bg-emerald-950 text-emerald-300 border-emerald-800"}`}>
-                {cloudPass ? "Password Protected" : "No Password (Initial Setup)"}
+              <span className="text-xs text-zinc-200 font-extrabold uppercase tracking-wider">Device Cloud Credentials &amp; Mapping:</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${cloudPass ? "bg-amber-950 text-amber-300 border-amber-800" : "bg-emerald-950 text-emerald-300 border-emerald-800"}`}>
+                {cloudPass ? "Password Protected" : "No Password (Open Setup)"}
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[9px] text-zinc-400 block font-bold mb-1">Device Username / Identifier:</label>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">Target Cloud Device ID (Unique Hardware):</label>
+                <input
+                  type="text"
+                  value={cloudDeviceId}
+                  onChange={(e) => setCloudDeviceId(e.target.value)}
+                  placeholder="desk_anand_s3"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">Desk Display Name (BLE/Cloud):</label>
+                <input
+                  type="text"
+                  value={cloudDeskName}
+                  onChange={(e) => setCloudDeskName(e.target.value)}
+                  placeholder="SmartDesk S3"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold focus:border-cyan-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">User Account ID:</label>
                 <input
                   type="text"
                   value={cloudUser}
@@ -578,7 +612,7 @@ export default function CloudHandshakeModal({
                 />
               </div>
               <div>
-                <label className="text-[9px] text-zinc-400 block font-bold mb-1">Device Password (Optional):</label>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">Device Password (Optional):</label>
                 <div className="relative">
                   <input
                     type={showCloudPass ? "text" : "password"}
@@ -601,7 +635,7 @@ export default function CloudHandshakeModal({
             <button
               type="button"
               onClick={handleSaveCloudCredentials}
-              className="w-full py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 hover:text-cyan-200 border border-cyan-800 font-extrabold text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-98"
+              className="w-full py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 shadow-md"
             >
               <span>💾</span>
               <span>Save &amp; Cache Credentials in PWA</span>

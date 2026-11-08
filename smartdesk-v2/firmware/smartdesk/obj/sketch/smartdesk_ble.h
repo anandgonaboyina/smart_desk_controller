@@ -114,9 +114,12 @@ class ServerCallbacks : public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
         (void)connInfo;
         s_discReason = reason;
+        size_t count = pServer->getConnectedCount();
+        Serial.printf(">>> [BLE] onDisconnect: reason=%d, connectedCount=%u\n", reason, (unsigned int)count);
 
-        // Only mark disconnected and trigger presence Away when NO clients remain connected!
-        if (pServer->getConnectedCount() == 0) {
+        // In NimBLE 2.x, the disconnecting connection may still be counted in m_vConnList.
+        // If count <= 1, no OTHER clients remain connected!
+        if (count <= 1) {
             s_connected = false;
             s_flagDisconnected = true;
         }
@@ -158,7 +161,7 @@ class LedCallbacks : public NimBLECharacteristicCallbacks {
 class ConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[335];
+        uint8_t payload[360];
         memset(payload, 0, sizeof(payload));
         buildConfigPayload(payload, sizeof(payload));
         pChr->setValue(payload, sizeof(payload));
