@@ -15,8 +15,8 @@
 #include <WebSocketsClient.h>
 
 /* ── Default Cloud Relay Settings (Configurable in NVS) ─────────────────── */
-#define DEFAULT_CLOUD_HOST "192.168.80.113"
-#define DEFAULT_CLOUD_PORT 3001
+#define DEFAULT_CLOUD_HOST "smart-desk-controller.onrender.com"
+#define DEFAULT_CLOUD_PORT 443
 #define DEFAULT_CLOUD_PATH "/ws"
 #define CLOUD_DEVICE_ID    "desk_anand_s3"
 #define CLOUD_AUTH_KEY     "SmartDesk_Cloud_Secret_2026"
@@ -26,6 +26,28 @@ static bool             s_cloudConnected    = false;
 static uint32_t         s_lastCloudPingMs   = 0;
 static char             s_cloudHost[64]     = DEFAULT_CLOUD_HOST;
 static uint16_t         s_cloudPort         = DEFAULT_CLOUD_PORT;
+
+static inline void loadCloudConfigFromNVS() {
+    Preferences prefs;
+    prefs.begin("desk_cloud", true);
+    String host = prefs.getString("host", DEFAULT_CLOUD_HOST);
+    s_cloudPort = prefs.getUShort("port", DEFAULT_CLOUD_PORT);
+    prefs.end();
+    strncpy(s_cloudHost, host.c_str(), sizeof(s_cloudHost) - 1);
+    s_cloudHost[sizeof(s_cloudHost) - 1] = '\0';
+}
+
+static inline void saveCloudConfigToNVS(const char* host, uint16_t port) {
+    if (!host || strlen(host) == 0) return;
+    Preferences prefs;
+    prefs.begin("desk_cloud", false);
+    prefs.putString("host", host);
+    prefs.putUShort("port", port);
+    prefs.end();
+    strncpy(s_cloudHost, host, sizeof(s_cloudHost) - 1);
+    s_cloudHost[sizeof(s_cloudHost) - 1] = '\0';
+    s_cloudPort = port;
+}
 
 /* Forward declarations of functions implemented in smartdesk.ino */
 void setRelayLoad(uint8_t idx, uint8_t load, const char* source);
@@ -202,9 +224,14 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 /* ── Cloud Client Lifecycle ──────────────────────────────────────────────── */
 static void startCloudClient() {
-    Serial.printf(">>> [CLOUD WS] Initializing WebSocket client -> ws://%s:%d%s\n",
-                  s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
-    s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+    bool isSsl = (s_cloudPort == 443 || strstr(s_cloudHost, ".onrender.com") != NULL || strstr(s_cloudHost, ".vercel.app") != NULL);
+    Serial.printf(">>> [CLOUD WS] Initializing WebSocket client -> %s://%s:%d%s\n",
+                  isSsl ? "wss" : "ws", s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+    if (isSsl) {
+        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+    } else {
+        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+    }
     s_cloudWs.onEvent(onCloudWsEvent);
     s_cloudWs.setReconnectInterval(5000);
     s_cloudWs.enableHeartbeat(15000, 3000, 2);

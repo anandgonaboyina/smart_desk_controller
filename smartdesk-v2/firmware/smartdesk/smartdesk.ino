@@ -1225,6 +1225,9 @@ void setup() {
     // Initialize BLE Server with HID Auto-Connect
     initBleServer(s_deviceName);
 
+    // Initialize Cloud Configuration
+    loadCloudConfigFromNVS();
+
     // Initialize Wi-Fi Subsystem, Multi-Network Auto-Connect & Web Dashboard
     initWifiSubsystem();
 
