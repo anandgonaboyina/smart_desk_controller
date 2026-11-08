@@ -355,6 +355,9 @@ export default function SmartDeskApp() {
                   onUpdateWifiHost={ble.updateWifiHost}
                   onToggleWifiOnAwayOnly={ble.toggleWifiOnAwayOnly}
                   onConfigureOverBle={ble.configureWifiOverBle}
+                  cloudUser={remote.userId}
+                  cloudPassword={remote.password}
+                  onUpdateCloudCredentials={remote.updateCredentials}
                 />
               )}
             </div>
@@ -414,6 +417,7 @@ export default function SmartDeskApp() {
         isWsConnected={remote.isWsConnected}
         isDeviceOnline={remote.isDeviceOnline}
         onSendCloudRelayCommand={remote.sendRelayCommand}
+        onUpdateCloudCredentials={remote.updateCredentials}
         onToast={showToast}
         recentLogs={ble.logs}
       />

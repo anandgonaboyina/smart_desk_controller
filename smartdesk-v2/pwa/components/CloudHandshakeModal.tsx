@@ -37,6 +37,7 @@ export interface CloudHandshakeModalProps {
   isDeviceOnline: boolean;
   deviceId?: string;
   onSendCloudRelayCommand?: (relayIdx: number, load: boolean) => void;
+  onUpdateCloudCredentials?: (user: string, pass: string) => void;
   onToast?: (msg: string, type?: "info" | "warn" | "error" | "success") => void;
   recentLogs?: { text: string; type?: string }[];
 }
@@ -61,6 +62,7 @@ export default function CloudHandshakeModal({
   isDeviceOnline,
   deviceId = "desk_anand_s3",
   onSendCloudRelayCommand,
+  onUpdateCloudCredentials,
   onToast,
   recentLogs = [],
 }: CloudHandshakeModalProps) {
@@ -75,6 +77,29 @@ export default function CloudHandshakeModal({
   const [isCollege, setIsCollege] = useState<boolean>(false);
   const [cpUser, setCpUser] = useState<string>("");
   const [cpPass, setCpPass] = useState<string>("");
+
+  // Device Username & Password for Cloud Handshake
+  const [cloudUser, setCloudUser] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_cloud_user") || "user_anand_primary";
+    }
+    return "user_anand_primary";
+  });
+  const [cloudPass, setCloudPass] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_cloud_pass") || "";
+    }
+    return "";
+  });
+
+  const handleSaveCloudCredentials = () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_cloud_user", cloudUser.trim());
+      localStorage.setItem("smartdesk_cloud_pass", cloudPass);
+    }
+    onUpdateCloudCredentials?.(cloudUser.trim(), cloudPass);
+    onToast?.("Cloud credentials saved and cached in PWA!", "success");
+  };
 
   // Step 3 Health check state
   const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
@@ -508,6 +533,46 @@ export default function CloudHandshakeModal({
                 ✕ Cannot reach backend server at <code>{wsUrl}</code>. Make sure <code>node server.js</code> is running in <code>smartdesk-v2/backend</code>.
               </p>
             )}
+          </div>
+
+          {/* Device Username & Password Handshake Config */}
+          <div className="mt-3 p-3 rounded-xl bg-black/60 border border-zinc-700/80 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-zinc-200 font-extrabold uppercase tracking-wider">Device Cloud Credentials (NVS &amp; PWA Cache):</span>
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${cloudPass ? "bg-amber-950 text-amber-300 border-amber-800" : "bg-emerald-950 text-emerald-300 border-emerald-800"}`}>
+                {cloudPass ? "Password Protected" : "No Password (Initial Setup)"}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[9px] text-zinc-400 block font-bold mb-1">Device Username / Identifier:</label>
+                <input
+                  type="text"
+                  value={cloudUser}
+                  onChange={(e) => setCloudUser(e.target.value)}
+                  placeholder="user_anand_primary"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[9px] text-zinc-400 block font-bold mb-1">Device Password (Optional):</label>
+                <input
+                  type="password"
+                  value={cloudPass}
+                  onChange={(e) => setCloudPass(e.target.value)}
+                  placeholder="Leave empty for open setup"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveCloudCredentials}
+              className="w-full py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 hover:text-cyan-200 border border-cyan-800 font-extrabold text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-98"
+            >
+              <span>💾</span>
+              <span>Save &amp; Cache Credentials in PWA</span>
+            </button>
           </div>
         </div>
 

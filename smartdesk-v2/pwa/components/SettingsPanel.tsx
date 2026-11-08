@@ -38,6 +38,9 @@ export interface SettingsPanelProps {
   onUpdateWifiHost?: (host: string) => void;
   onToggleWifiOnAwayOnly?: (enabled: boolean) => void;
   onConfigureOverBle?: (ssid: string, pass?: string, user?: string, cpPass?: string) => Promise<void>;
+  cloudUser?: string;
+  cloudPassword?: string;
+  onUpdateCloudCredentials?: (user: string, pass: string) => void;
 }
 
 export default function SettingsPanel({
@@ -67,6 +70,9 @@ export default function SettingsPanel({
   onUpdateWifiHost,
   onToggleWifiOnAwayOnly,
   onConfigureOverBle,
+  cloudUser = "user_anand_primary",
+  cloudPassword = "",
+  onUpdateCloudCredentials,
 }: SettingsPanelProps) {
   const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
@@ -74,6 +80,24 @@ export default function SettingsPanel({
   const [hostInput, setHostInput] = useState<string>(wifiHost);
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [testingWifi, setTestingWifi] = useState<boolean>(false);
+
+  const [inputCloudUser, setInputCloudUser] = useState<string>(cloudUser);
+  const [inputCloudPass, setInputCloudPass] = useState<string>(cloudPassword);
+  const [credSavedMsg, setCredSavedMsg] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (cloudUser) setInputCloudUser(cloudUser);
+  }, [cloudUser]);
+
+  useEffect(() => {
+    if (cloudPassword !== undefined) setInputCloudPass(cloudPassword);
+  }, [cloudPassword]);
+
+  const handleSaveCredentials = () => {
+    onUpdateCloudCredentials?.(inputCloudUser.trim(), inputCloudPass);
+    setCredSavedMsg(true);
+    setTimeout(() => setCredSavedMsg(false), 2500);
+  };
 
   useEffect(() => {
     if (wifiHost) setHostInput(wifiHost);
@@ -305,6 +329,55 @@ export default function SettingsPanel({
           <div>• Supports College Wi-Fi / Restricted Captive Portals with auto-login credentials.</div>
           <div>• Real-time NTP clock sync keeps schedules accurate without phone connection.</div>
         </div>
+      </div>
+
+      {/* ── WORLDWIDE CLOUD REMOTE CREDENTIALS (NVS & PWA CACHE) ── */}
+      <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 space-y-3 shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-base">☁️</span>
+            <span className="text-xs text-white font-extrabold uppercase">Cloud Remote Credentials (NVS &amp; PWA Cache)</span>
+          </div>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${inputCloudPass ? "bg-amber-950 text-amber-300 border-amber-800" : "bg-emerald-950 text-emerald-300 border-emerald-800"}`}>
+            {inputCloudPass ? "Password Protected" : "No Password (Initial Setup)"}
+          </span>
+        </div>
+
+        <p className="text-[11px] text-zinc-400">
+          Set a unique Device Username and optional Password. When connecting over the cloud WebSocket, the PWA and ESP32 authenticate with these credentials.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <div>
+            <label className="text-[10px] text-zinc-300 font-bold block mb-1">Device Username / ID:</label>
+            <input
+              type="text"
+              value={inputCloudUser}
+              onChange={(e) => setInputCloudUser(e.target.value)}
+              placeholder="user_anand_primary"
+              className="w-full bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-zinc-300 font-bold block mb-1">Device Password (Optional):</label>
+            <input
+              type="password"
+              value={inputCloudPass}
+              onChange={(e) => setInputCloudPass(e.target.value)}
+              placeholder="Leave blank for open access"
+              className="w-full bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+            />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveCredentials}
+          className="w-full py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all active:scale-95 shadow cursor-pointer flex items-center justify-center gap-2 mt-1"
+        >
+          <span>💾</span>
+          <span>{credSavedMsg ? "✓ Credentials Saved & Cached in PWA!" : "Save Credentials to PWA Cache"}</span>
+        </button>
       </div>
 
       {/* ── HARDWARE LIGHTING & 2D MATRIX CONFIG ── */}

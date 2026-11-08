@@ -2,9 +2,10 @@
  * useRemoteDeskWs.ts — Next.js Cloud WebSocket Hook for SmartDesk V2
  *
  * Purpose : Connects the PWA to the Render IoT relay backend from anywhere in the world.
- *           Handles multi-user authentication, device state telemetry, and Remote Mode toggle.
+ *           Handles multi-user authentication with configurable username/password,
+ *           robust bidirectional state telemetry, and Remote Mode toggle.
  * Depends : React (useState, useEffect, useCallback, useRef)
- * Used by : QuickRemotePanel.tsx, SettingsPanel.tsx, AodFaceScreen.tsx
+ * Used by : QuickRemotePanel.tsx, SettingsPanel.tsx, CloudHandshakeModal.tsx, page.tsx
  */
 
 "use client";
@@ -26,7 +27,9 @@ export interface RemoteDeviceState {
 export interface UseRemoteDeskWsOptions {
   wsUrl?: string;
   userId?: string;
+  password?: string;
   deviceId?: string;
+  deviceKey?: string;
   onStateUpdate?: (state: RemoteDeviceState) => void;
   onToast?: (message: string, type?: "info" | "success" | "error" | "warn") => void;
 }
@@ -46,11 +49,36 @@ const resolveDefaultWsUrl = () => {
 export function useRemoteDeskWs({
   wsUrl,
   userId = "user_anand_primary",
+  password = "",
   deviceId = "desk_anand_s3",
+  deviceKey = "SmartDesk_Cloud_Secret_2026",
   onStateUpdate,
   onToast,
 }: UseRemoteDeskWsOptions = {}) {
   const effectiveWsUrl = wsUrl || resolveDefaultWsUrl();
+
+  // Load cached credentials from localStorage if available
+  const [currentUserId, setCurrentUserId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_cloud_user") || userId;
+    }
+    return userId;
+  });
+
+  const [currentPassword, setCurrentPassword] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_cloud_pass") || password;
+    }
+    return password;
+  });
+
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("smartdesk_cloud_device_id") || deviceId;
+    }
+    return deviceId;
+  });
+
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [remoteModeEnabled, setRemoteModeEnabled] = useState<boolean>(false);
@@ -66,6 +94,27 @@ export function useRemoteDeskWs({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const updateCredentials = useCallback((newUser: string, newPass?: string, newDevId?: string) => {
+    if (typeof window !== "undefined") {
+      if (newUser !== undefined) {
+        localStorage.setItem("smartdesk_cloud_user", newUser);
+        setCurrentUserId(newUser);
+      }
+      if (newPass !== undefined) {
+        localStorage.setItem("smartdesk_cloud_pass", newPass);
+        setCurrentPassword(newPass);
+      }
+      if (newDevId !== undefined) {
+        localStorage.setItem("smartdesk_cloud_device_id", newDevId);
+        setCurrentDeviceId(newDevId);
+      }
+    }
+    // Force reconnect with new credentials
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+  }, []);
+
   const connect = useCallback(() => {
     if (typeof window === "undefined") return;
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
@@ -80,12 +129,14 @@ export function useRemoteDeskWs({
         setIsWsConnected(true);
         console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl}`);
 
-        // Send Multi-User Authentication Handshake
+        // Send Multi-User Authentication Handshake with Device Username & Password
         const authPayload = {
           type: "auth",
           role: "client",
-          userId,
-          deviceId,
+          userId: currentUserId,
+          password: currentPassword,
+          deviceId: currentDeviceId,
+          deviceKey,
           timestamp: Date.now(),
         };
         socket.send(JSON.stringify(authPayload));
@@ -99,12 +150,23 @@ export function useRemoteDeskWs({
             if (data.ok) {
               setIsDeviceOnline(Boolean(data.deviceOnline));
               setRemoteModeEnabled(Boolean(data.remoteModeEnabled));
-              if (data.currentState) {
-                setDeviceState(data.currentState);
-                if (onStateUpdate) onStateUpdate(data.currentState);
+              const stateObj = data.currentState || data.cachedState || data.state;
+              if (stateObj) {
+                const relays = stateObj.relays || data.relays;
+                if (Array.isArray(relays) && relays.length > 0) {
+                  const updated: RemoteDeviceState = {
+                    relays,
+                    led: stateObj.led || data.led,
+                    env: stateObj.env || data.env,
+                    presence: stateObj.presence,
+                  };
+                  setDeviceState(updated);
+                  if (onStateUpdate) onStateUpdate(updated);
+                }
               }
             } else {
               console.error("[CLOUD WS] Authentication failed:", data.error);
+              if (onToast) onToast(`Cloud Auth Failed: ${data.error || "Unauthorized"}`, "error");
             }
           }
 
@@ -121,10 +183,18 @@ export function useRemoteDeskWs({
 
           if (data.type === "state_update") {
             setDeviceState((prev) => {
-              const updated = { ...prev, ...data };
+              const relays = data.relays || data.state?.relays || prev.relays;
+              const led = data.led || data.state?.led || prev.led;
+              const env = data.env || data.state?.env || prev.env;
+              const presence = data.presence || data.state?.presence || prev.presence;
+              const updated: RemoteDeviceState = { relays, led, env, presence };
               if (onStateUpdate) onStateUpdate(updated);
               return updated;
             });
+          }
+
+          if (data.type === "cmd_ack") {
+            console.log(`[CLOUD WS ACK] Action "${data.action}" confirmed on ${data.deviceId}`);
           }
 
           if (data.type === "error") {
@@ -150,7 +220,7 @@ export function useRemoteDeskWs({
       console.error("[CLOUD WS] Connection attempt error", err);
       reconnectTimeoutRef.current = setTimeout(connect, 5000);
     }
-  }, [effectiveWsUrl, userId, deviceId, onStateUpdate, onToast]);
+  }, [effectiveWsUrl, currentUserId, currentPassword, currentDeviceId, deviceKey, onStateUpdate, onToast]);
 
   useEffect(() => {
     connect();
@@ -160,6 +230,19 @@ export function useRemoteDeskWs({
     };
   }, [connect]);
 
+  // Request State from Hardware ESP32
+  const requestState = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "request_state",
+          deviceId: currentDeviceId,
+          timestamp: Date.now(),
+        })
+      );
+    }
+  }, [currentDeviceId]);
+
   // Toggle Remote Mode ("User Away" Mode)
   const toggleRemoteMode = useCallback(
     (enabled: boolean) => {
@@ -168,16 +251,16 @@ export function useRemoteDeskWs({
         wsRef.current.send(
           JSON.stringify({
             type: "set_remote_mode",
-            deviceId,
+            deviceId: currentDeviceId,
             enabled,
           })
         );
       }
     },
-    [deviceId]
+    [currentDeviceId]
   );
 
-  // Send Remote Relay Control Command
+  // Send Remote Relay Control Command (Includes both channel & idx, and state & load for universal ESP32 compatibility)
   const sendRelayCommand = useCallback(
     (channel: number, state: boolean) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -187,14 +270,16 @@ export function useRemoteDeskWs({
       wsRef.current.send(
         JSON.stringify({
           type: "relay_set",
-          deviceId,
+          deviceId: currentDeviceId,
           channel,
+          idx: channel,
           state,
+          load: state,
           timestamp: Date.now(),
         })
       );
     },
-    [deviceId, onToast]
+    [currentDeviceId, onToast]
   );
 
   // Send Remote LED Command
@@ -204,7 +289,7 @@ export function useRemoteDeskWs({
       wsRef.current.send(
         JSON.stringify({
           type: "led_set",
-          deviceId,
+          deviceId: currentDeviceId,
           mode,
           r,
           g,
@@ -215,7 +300,7 @@ export function useRemoteDeskWs({
         })
       );
     },
-    [deviceId]
+    [currentDeviceId]
   );
 
   // Emergency All Relays Off Command
@@ -224,14 +309,19 @@ export function useRemoteDeskWs({
     wsRef.current.send(
       JSON.stringify({
         type: "all_off",
-        deviceId,
+        deviceId: currentDeviceId,
         timestamp: Date.now(),
       })
     );
-  }, [deviceId]);
+  }, [currentDeviceId]);
 
   return {
     wsUrl: effectiveWsUrl,
+    userId: currentUserId,
+    password: currentPassword,
+    deviceId: currentDeviceId,
+    updateCredentials,
+    requestState,
     isWsConnected,
     isDeviceOnline,
     remoteModeEnabled,
