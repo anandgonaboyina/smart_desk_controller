@@ -17,10 +17,16 @@ export interface RemoteRelayState {
   remainingMin: number;
 }
 
+export interface RemoteRelayConfig {
+  name: string;
+  wiring: number;
+}
+
 export interface RemoteDeviceState {
   relays: RemoteRelayState[];
-  led?: { mode: number; r: number; g: number; b: number; bri: number; spd: number };
-  env?: { tempC: number; humidity: number; valid: boolean };
+  configs?: RemoteRelayConfig[];
+  led: { mode: number; r: number; g: number; b: number; bri: number; spd: number };
+  env: { tempC: number; humidity: number; valid: boolean };
   presence?: { state: number; distanceM: number; remainingMin: number };
 }
 
@@ -89,6 +95,14 @@ export function useRemoteDeskWs({
       { load: false, remainingMin: 0 },
       { load: false, remainingMin: 0 },
     ],
+    configs: [
+      { name: "Relay 1", wiring: 0 },
+      { name: "Relay 2", wiring: 0 },
+      { name: "Relay 3", wiring: 0 },
+      { name: "Relay 4", wiring: 0 },
+    ],
+    led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
+    env: { tempC: 0, humidity: 0, valid: false },
   });
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -156,8 +170,9 @@ export function useRemoteDeskWs({
                 if (Array.isArray(relays) && relays.length > 0) {
                   const updated: RemoteDeviceState = {
                     relays,
-                    led: stateObj.led || data.led,
-                    env: stateObj.env || data.env,
+                    configs: stateObj.configs || data.configs,
+                    led: stateObj.led || data.led || { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
+                    env: stateObj.env || data.env || { tempC: 0, humidity: 0, valid: false },
                     presence: stateObj.presence,
                   };
                   setDeviceState(updated);
@@ -184,10 +199,11 @@ export function useRemoteDeskWs({
           if (data.type === "state_update") {
             setDeviceState((prev) => {
               const relays = data.relays || data.state?.relays || prev.relays;
+              const configs = data.configs || data.state?.configs || prev.configs;
               const led = data.led || data.state?.led || prev.led;
               const env = data.env || data.state?.env || prev.env;
               const presence = data.presence || data.state?.presence || prev.presence;
-              const updated: RemoteDeviceState = { relays, led, env, presence };
+              const updated: RemoteDeviceState = { relays, configs, led, env, presence };
               if (onStateUpdate) onStateUpdate(updated);
               return updated;
             });
@@ -293,10 +309,80 @@ export function useRemoteDeskWs({
     [currentDeviceId, onStateUpdate, onToast]
   );
 
+  // Send Remote Relay Countdown Timer Command
+  const sendRelayTimerCommand = useCallback(
+    (channel: number, minutes: number) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot set timer: Cloud WebSocket offline", "warn");
+        return;
+      }
+
+      // Optimistically update countdown minutes in UI
+      setDeviceState((prev) => {
+        const nextRelays = prev.relays.map((r, i) =>
+          i === channel ? { ...r, remainingMin: minutes, load: minutes > 0 ? true : r.load } : r
+        );
+        const updated: RemoteDeviceState = { ...prev, relays: nextRelays };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "relay_timer",
+          deviceId: currentDeviceId,
+          channel,
+          idx: channel,
+          minutes,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate, onToast]
+  );
+
+  // Send Remote Relay Configuration (Name & NO/NC Wiring)
+  const sendRelayConfigCommand = useCallback(
+    (channel: number, name: string, wiring: number) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+      // Optimistically update config in UI
+      setDeviceState((prev) => {
+        const nextConfigs = (prev.configs || []).map((c, i) =>
+          i === channel ? { name, wiring } : c
+        );
+        const updated: RemoteDeviceState = { ...prev, configs: nextConfigs };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "relay_config",
+          deviceId: currentDeviceId,
+          channel,
+          idx: channel,
+          name,
+          wiring,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate]
+  );
+
   // Send Remote LED Command
   const sendLedCommand = useCallback(
     (mode: number, r: number, g: number, b: number, bri: number, spd: number) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+      // Optimistically update LED state in UI
+      setDeviceState((prev) => {
+        const updated: RemoteDeviceState = { ...prev, led: { mode, r, g, b, bri, spd } };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+
       wsRef.current.send(
         JSON.stringify({
           type: "led_set",
@@ -311,7 +397,7 @@ export function useRemoteDeskWs({
         })
       );
     },
-    [currentDeviceId]
+    [currentDeviceId, onStateUpdate]
   );
 
   // Emergency All Relays Off Command
@@ -348,6 +434,8 @@ export function useRemoteDeskWs({
     deviceState,
     toggleRemoteMode,
     sendRelayCommand,
+    sendRelayTimerCommand,
+    sendRelayConfigCommand,
     sendLedCommand,
     sendAllOff,
   };

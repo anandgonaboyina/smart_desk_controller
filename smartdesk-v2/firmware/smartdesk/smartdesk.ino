@@ -95,6 +95,8 @@ static RelayBuzzerConfig s_buzzerConfigs[RELAY_COUNT] = {
     { true, true, true }
 };
 
+void broadcastCloudState();
+
 struct ActiveBuzzer {
     bool     active;
     uint32_t endTimeMs;
@@ -358,7 +360,7 @@ static void setRelayLoad(uint8_t idx, uint8_t load, const char* source) {
     }
 }
 
-static void setRelayTimer(uint8_t idx, uint16_t mins) {
+void setRelayTimer(uint8_t idx, uint16_t mins) {
     if (idx >= RELAY_COUNT) return;
     if (mins == 0) {
         s_timerEndMs[idx] = 0;
@@ -367,13 +369,15 @@ static void setRelayTimer(uint8_t idx, uint16_t mins) {
         if (s_relayLoads[idx] == 0) setRelayLoad(idx, 1, "Timer Start");
     }
     notifyRelayState();
+    broadcastCloudState();
 }
 
-static void allRelaysOff(const char* source) {
+void allRelaysOff(const char* source) {
     for (int i = 0; i < RELAY_COUNT; i++) {
         s_timerEndMs[i] = 0;
         setRelayLoad(i, 0, source);
     }
+    broadcastCloudState();
 }
 
 /* ── NVS Configurations Storage ─────────────────────────────────────────── */
@@ -1310,6 +1314,7 @@ void loop() {
                 s_ledSpd  = cmd.data[5];
                 saveLedStateToNVS();
                 notifyLedState();
+                broadcastCloudState();
             }
         } else if (cmd.type == WT_CONFIG && cmd.len >= 1) {
             if (cmd.data[0] < RELAY_COUNT && cmd.len >= 9) { // 0..3: Relay Config [idx, wiring, onEn, onMd, onDu, offEn, offMd, offDu, nameLen, ...name]
@@ -1354,6 +1359,7 @@ void loop() {
                 // Re-apply physical coil level with new wiring configuration immediately
                 applyRelayPin(idx, s_relayLoads[idx], "Config Wiring Update");
                 notifyRelayState();
+                broadcastCloudState();
             } else if (cmd.data[0] == 0xFE) { // Rename Device
                 uint8_t nameLen = cmd.data[1];
                 if (nameLen > 20) nameLen = 20;
@@ -1670,12 +1676,14 @@ void loop() {
                 applyRelayPin(i, 0, "Timer Expiration");
                 if (s_buzzerConfigs[i].beepTimerEnd) buzzerBeepTimerEnd();
                 notifyRelayState();
+                broadcastCloudState();
             }
         }
     }
     if (hasActiveTimer && (now - s_lastTimerNotifyMs >= 15000)) {
         s_lastTimerNotifyMs = now;
         notifyRelayState();
+        broadcastCloudState();
     }
 
     // Render Primary Strip LEDs (GPIO 8)

@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useSmartDeskBle } from "../hooks/useSmartDeskBle";
 import AodFaceScreen from "../components/AodFaceScreen";
 import BottomNavbar, { NavTab } from "../components/BottomNavbar";
@@ -70,6 +70,29 @@ export default function SmartDeskApp() {
       }))
     : ble.relays;
 
+  const effectiveConfigs = (ble.connected || ble.wifiConnected)
+    ? ble.configs
+    : (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.configs)
+    ? ble.configs.map((c, i) => {
+        const remCfg = remote.deviceState.configs?.[i];
+        return remCfg
+          ? { ...c, name: remCfg.name || c.name, wiring: remCfg.wiring !== undefined ? remCfg.wiring : c.wiring }
+          : c;
+      })
+    : ble.configs;
+
+  const effectiveLed = (ble.connected || ble.wifiConnected)
+    ? ble.led
+    : (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led)
+    ? remote.deviceState.led
+    : ble.led;
+
+  const effectiveEnvData = (ble.connected || ble.wifiConnected)
+    ? ble.envData
+    : (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.env?.valid)
+    ? remote.deviceState.env
+    : ble.envData;
+
   const handleToggleRelay = useCallback((idx: number, explicitTarget?: boolean) => {
     if (ble.connected || ble.wifiConnected) {
       ble.toggleRelay(idx, explicitTarget);
@@ -80,6 +103,38 @@ export default function SmartDeskApp() {
       showToast(`[Cloud Remote] Relay ${idx + 1} turned ${target ? "ON" : "OFF"}`);
     } else {
       ble.toggleRelay(idx, explicitTarget);
+    }
+  }, [ble, remote, showToast]);
+
+  const handleSetRelayTimer = useCallback((idx: number, minutes: number) => {
+    if (ble.connected || ble.wifiConnected) {
+      ble.setRelayTimer(idx, minutes);
+    } else if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendRelayTimerCommand(idx, minutes);
+      showToast(minutes > 0 ? `[Cloud Remote] Relay ${idx + 1} timer set to ${minutes}m` : `[Cloud Remote] Relay ${idx + 1} timer cancelled`);
+    } else {
+      ble.setRelayTimer(idx, minutes);
+    }
+  }, [ble, remote, showToast]);
+
+  const handleSaveRelayConfig = useCallback((
+    idx: number,
+    newName: string,
+    wiring: number,
+    onEn: boolean,
+    onMd: number,
+    onDu: number,
+    offEn: boolean,
+    offMd: number,
+    offDu: number,
+    beepOn: boolean,
+    beepOff: boolean,
+    beepEnd: boolean
+  ) => {
+    ble.saveRelayConfig(idx, newName, wiring, onEn, onMd, onDu, offEn, offMd, offDu, beepOn, beepOff, beepEnd);
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendRelayConfigCommand(idx, newName, wiring);
+      showToast(`[Cloud Remote] Relay ${idx + 1} config synced`);
     }
   }, [ble, remote, showToast]);
 
@@ -105,6 +160,47 @@ export default function SmartDeskApp() {
     }
   }, [ble, remote, showToast]);
 
+  // Cloud & BLE RGB Sleep Timer Support
+  const [cloudRgbTimerRemMin, setCloudRgbTimerRemMin] = useState<number>(0);
+  const cloudRgbTimerEndMsRef = useRef<number>(0);
+
+  const handleSetRgbTimer = useCallback((minutes: number) => {
+    if (ble.connected || ble.wifiConnected) {
+      ble.setRgbTimer(minutes);
+    } else {
+      if (minutes <= 0) {
+        cloudRgbTimerEndMsRef.current = 0;
+        setCloudRgbTimerRemMin(0);
+        showToast("[Cloud Remote] RGB Sleep Timer cancelled.");
+      } else {
+        cloudRgbTimerEndMsRef.current = Date.now() + minutes * 60000;
+        setCloudRgbTimerRemMin(minutes);
+        showToast(`[Cloud Remote] RGB Sleep Timer set for ${minutes} min!`);
+      }
+    }
+  }, [ble, showToast]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (cloudRgbTimerEndMsRef.current > 0) {
+        const diffMs = cloudRgbTimerEndMsRef.current - Date.now();
+        if (diffMs <= 0) {
+          cloudRgbTimerEndMsRef.current = 0;
+          setCloudRgbTimerRemMin(0);
+          handleSendLed(0, 0, 0, 0, 0, 0);
+          showToast("[Cloud Remote] RGB Light turned OFF by sleep timer!", "info");
+        } else {
+          setCloudRgbTimerRemMin(Math.ceil(diffMs / 60000));
+        }
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [handleSendLed, showToast]);
+
+  const effectiveRgbTimerRemainingMin = (ble.connected || ble.wifiConnected)
+    ? ble.rgbTimerRemainingMin
+    : cloudRgbTimerRemMin;
+
   return (
     <main className="min-h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col font-sans">
       {activeTab === "aod" ? (
@@ -121,10 +217,10 @@ export default function SmartDeskApp() {
           onOpenWifiModal={() => setShowWifiModal(true)}
           onOpenHandshakeModal={() => setShowHandshakeModal(true)}
           relays={effectiveRelays}
-          relayConfigs={ble.configs}
-          envData={ble.envData}
+          relayConfigs={effectiveConfigs}
+          envData={effectiveEnvData}
           presenceData={ble.presenceData}
-          rgbTimerRemainingMin={ble.rgbTimerRemainingMin}
+          rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
           onConnect={ble.handleConnect}
           onOpenRemote={() => setActiveTab("remote")}
           onToggleRelay={handleToggleRelay}
@@ -276,15 +372,15 @@ export default function SmartDeskApp() {
                   connected={isDeskConnected}
                   deviceName={currentDeskName}
                   relays={effectiveRelays}
-                  configs={ble.configs}
-                  led={ble.led}
+                  configs={effectiveConfigs}
+                  led={effectiveLed}
                   matrixConfig={ble.matrixConfig}
-                  rgbTimerRemainingMin={ble.rgbTimerRemainingMin}
+                  rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
                   onToggleRelay={handleToggleRelay}
-                  onSetRelayTimer={ble.setRelayTimer}
+                  onSetRelayTimer={handleSetRelayTimer}
                   onAllRelaysOff={handleAllRelaysOff}
                   onSendLed={handleSendLed}
-                  onSetRgbTimer={ble.setRgbTimer}
+                  onSetRgbTimer={handleSetRgbTimer}
                   onSetMatrixDisplay={ble.setMatrixDisplay}
                   onStartMusic={ble.startMusicSync}
                   onStopMusic={ble.stopMusicSync}
@@ -292,11 +388,20 @@ export default function SmartDeskApp() {
                 />
               )}
               {activeTab === "relays" && (
-                <RelayPanel relays={ble.relays} configs={ble.configs} uiAnim={ble.uiAnim} connected={ble.connected} onToggleRelay={ble.toggleRelay} onSetTimer={ble.setRelayTimer} onAllOff={ble.allRelaysOff} onSaveConfig={ble.saveRelayConfig} />
+                <RelayPanel
+                  relays={effectiveRelays}
+                  configs={effectiveConfigs}
+                  uiAnim={ble.uiAnim}
+                  connected={isDeskConnected}
+                  onToggleRelay={handleToggleRelay}
+                  onSetTimer={handleSetRelayTimer}
+                  onAllOff={handleAllRelaysOff}
+                  onSaveConfig={handleSaveRelayConfig}
+                />
               )}
               {activeTab === "leds" && (
                 <LedPanel
-                  led={ble.led}
+                  led={effectiveLed}
                   previewTick={ble.previewTick}
                   stripLength={ble.stripLength}
                   onSaveStripLength={ble.saveStripLength}
@@ -314,7 +419,7 @@ export default function SmartDeskApp() {
                   setSoloColor={ble.setSoloColor}
                   micVolume={ble.micVolume}
                   beatPulse={ble.beatPulse}
-                  onSendLed={ble.sendLedCommand}
+                  onSendLed={handleSendLed}
                   onStartMusic={ble.startMusicSync}
                   onStopMusic={ble.stopMusicSync}
                 />
@@ -327,7 +432,7 @@ export default function SmartDeskApp() {
               )}
               {activeTab === "settings" && (
                 <SettingsPanel
-                  envData={ble.envData}
+                  envData={effectiveEnvData}
                   masterBuzzer={ble.masterBuzzer}
                   deviceName={ble.deviceName}
                   connected={isDeskConnected}
@@ -368,7 +473,13 @@ export default function SmartDeskApp() {
       )}
 
       {relayConfigModalIdx !== null && (
-        <RelayConfigModal isOpen={true} relayIndex={relayConfigModalIdx} config={ble.configs[relayConfigModalIdx]} onSave={ble.saveRelayConfig} onClose={() => setRelayConfigModalIdx(null)} />
+        <RelayConfigModal
+          isOpen={true}
+          relayIndex={relayConfigModalIdx}
+          config={effectiveConfigs[relayConfigModalIdx]}
+          onSave={handleSaveRelayConfig}
+          onClose={() => setRelayConfigModalIdx(null)}
+        />
       )}
       <CustomAlertModal isOpen={alertState.isOpen} title={alertState.title} message={alertState.message} confirmLabel={alertState.confirmLabel} cancelLabel={alertState.cancelLabel} isConfirm={alertState.isConfirm} onConfirm={closeAlert} onCancel={() => setAlertState((prev) => ({ ...prev, isOpen: false }))} />
       <ToastNotification message={toastState.message} type={toastState.type} onClose={closeToast} />

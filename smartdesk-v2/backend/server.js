@@ -281,6 +281,7 @@ wss.on("connection", (ws, req) => {
       // Device State Telemetry Update
       if (msg.type === "state_update") {
         if (msg.relays) dev.state.relays = msg.relays;
+        if (msg.configs) dev.state.configs = msg.configs;
         if (msg.led) dev.state.led = msg.led;
         if (msg.env) dev.state.env = msg.env;
         if (msg.presence) dev.state.presence = msg.presence;
@@ -330,8 +331,20 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
-      // Device Control Commands (Relay, LED, All-Off, State Request, Credentials)
-      if (msg.type === "relay_set" || msg.type === "led_set" || msg.type === "all_off" || msg.type === "timer_set" || msg.type === "request_state" || msg.type === "get_state" || msg.type === "ping" || msg.type === "set_credentials") {
+      // Device Control Commands (Relay, Countdown Timers, Configurations, LED, All-Off, State Request, Credentials)
+      if (
+        msg.type === "relay_set" ||
+        msg.type === "relay_timer" ||
+        msg.type === "timer_set" ||
+        msg.type === "relay_config" ||
+        msg.type === "config_set" ||
+        msg.type === "led_set" ||
+        msg.type === "all_off" ||
+        msg.type === "request_state" ||
+        msg.type === "get_state" ||
+        msg.type === "ping" ||
+        msg.type === "set_credentials"
+      ) {
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
           return ws.send(
             JSON.stringify({

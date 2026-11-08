@@ -94,12 +94,15 @@ static inline void saveCloudConfigToNVS(const char* host, uint16_t port, const c
 
 /* Forward declarations of functions implemented in smartdesk.ino */
 void setRelayLoad(uint8_t idx, uint8_t load, const char* source);
+void setRelayTimer(uint8_t idx, uint16_t mins);
+void applyRelayPin(uint8_t idx, uint8_t load, const char* reason);
 void allRelaysOff(const char* source);
 void saveLedStateToNVS();
 void notifyRelayState();
 void notifyLedState();
 void notifyEnvState();
 
+extern RelayConfig s_relayConfigs[RELAY_COUNT];
 extern uint8_t s_relayLoads[RELAY_COUNT];
 extern uint32_t s_timerEndMs[RELAY_COUNT];
 extern uint8_t s_ledMode;
@@ -117,7 +120,7 @@ inline void broadcastCloudState() {
     if (!s_cloudConnected) return;
 
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
-    char msg[896];
+    char msg[1400];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\","
         "\"relays\":["
@@ -125,6 +128,11 @@ inline void broadcastCloudState() {
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u}],"
+        "\"configs\":["
+        "{\"name\":\"%s\",\"wiring\":%u},"
+        "{\"name\":\"%s\",\"wiring\":%u},"
+        "{\"name\":\"%s\",\"wiring\":%u},"
+        "{\"name\":\"%s\",\"wiring\":%u}],"
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
         "\"state\":{\"relays\":["
@@ -132,19 +140,32 @@ inline void broadcastCloudState() {
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u}],"
+        "\"configs\":["
+        "{\"name\":\"%s\",\"wiring\":%u},"
+        "{\"name\":\"%s\",\"wiring\":%u},"
+        "{\"name\":\"%s\",\"wiring\":%u},"
+        "{\"name\":\"%s\",\"wiring\":%u}],"
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
         s_cloudDeviceId,
-        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)((s_timerEndMs[0] - millis()) / 60000UL) : 0,
-        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)((s_timerEndMs[1] - millis()) / 60000UL) : 0,
-        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)((s_timerEndMs[2] - millis()) / 60000UL) : 0,
-        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0 && millis() < s_timerEndMs[3]) ? (uint16_t)((s_timerEndMs[3] - millis()) / 60000UL) : 0,
+        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0 && millis() < s_timerEndMs[3]) ? (uint16_t)(((s_timerEndMs[3] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayConfigs[0].name, s_relayConfigs[0].wiring,
+        s_relayConfigs[1].name, s_relayConfigs[1].wiring,
+        s_relayConfigs[2].name, s_relayConfigs[2].wiring,
+        s_relayConfigs[3].name, s_relayConfigs[3].wiring,
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
-        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)((s_timerEndMs[0] - millis()) / 60000UL) : 0,
-        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)((s_timerEndMs[1] - millis()) / 60000UL) : 0,
-        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)((s_timerEndMs[2] - millis()) / 60000UL) : 0,
-        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0 && millis() < s_timerEndMs[3]) ? (uint16_t)((s_timerEndMs[3] - millis()) / 60000UL) : 0,
+        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)(((s_timerEndMs[1] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)(((s_timerEndMs[2] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0 && millis() < s_timerEndMs[3]) ? (uint16_t)(((s_timerEndMs[3] - millis()) + 59999UL) / 60000UL) : 0,
+        s_relayConfigs[0].name, s_relayConfigs[0].wiring,
+        s_relayConfigs[1].name, s_relayConfigs[1].wiring,
+        s_relayConfigs[2].name, s_relayConfigs[2].wiring,
+        s_relayConfigs[3].name, s_relayConfigs[3].wiring,
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false"
     );
@@ -290,7 +311,69 @@ static void handleCloudMessage(const char* payload, size_t length) {
         return;
     }
 
-    // 4. LED Lighting Command
+    // 4. Relay Countdown Timer Command
+    if (strcmp(cmd, "relay_timer") == 0 || strcmp(cmd, "timer_set") == 0) {
+        int channel = getJsonInt(payload, "channel", -1);
+        if (channel < 0) channel = getJsonInt(payload, "idx", -1);
+        if (channel < 0) channel = getJsonInt(payload, "relay", -1);
+        int minutes = getJsonInt(payload, "minutes", 0);
+        if (minutes < 0) minutes = 0;
+
+        if (channel >= 0 && channel < RELAY_COUNT) {
+            Serial.printf(">>> [CLOUD WS] Set Relay %d Timer -> %d min (Source: Cloud Remote)\n", channel + 1, minutes);
+            setRelayTimer((uint8_t)channel, (uint16_t)minutes);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"relay_timer\",\"channel\":%d,\"minutes\":%d,\"success\":true}",
+                s_cloudDeviceId, channel, minutes
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        } else {
+            Serial.printf(">>> [CLOUD WS WARN] Invalid relay index for timer: %d\n", channel);
+        }
+        return;
+    }
+
+    // 5. Relay Configuration Command (Name & Wiring NO/NC)
+    if (strcmp(cmd, "relay_config") == 0 || strcmp(cmd, "config_set") == 0) {
+        int channel = getJsonInt(payload, "channel", -1);
+        if (channel < 0) channel = getJsonInt(payload, "idx", -1);
+        if (channel >= 0 && channel < RELAY_COUNT) {
+            int wiring = getJsonInt(payload, "wiring", s_relayConfigs[channel].wiring);
+            s_relayConfigs[channel].wiring = (uint8_t)wiring;
+            char newName[24] = {0};
+            if (getJsonStr(payload, "name", newName, sizeof(newName)) && strlen(newName) > 0) {
+                strncpy(s_relayConfigs[channel].name, newName, sizeof(s_relayConfigs[channel].name) - 1);
+                s_relayConfigs[channel].name[sizeof(s_relayConfigs[channel].name) - 1] = '\0';
+            }
+
+            Preferences prefs;
+            prefs.begin("desk_cfg", false);
+            char kWire[16], kName[16];
+            snprintf(kWire, sizeof(kWire), "w_%d", channel);
+            snprintf(kName, sizeof(kName), "n_%d", channel);
+            prefs.putUChar(kWire, s_relayConfigs[channel].wiring);
+            prefs.putString(kName, s_relayConfigs[channel].name);
+            prefs.end();
+
+            applyRelayPin((uint8_t)channel, s_relayLoads[channel], "Cloud Config Update");
+            notifyRelayState();
+            broadcastCloudState();
+            Serial.printf(">>> [CLOUD WS] Saved Relay %d Config: Name='%s', Wiring=%s\n",
+                          channel + 1, s_relayConfigs[channel].name, s_relayConfigs[channel].wiring ? "NC" : "NO");
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"relay_config\",\"channel\":%d,\"success\":true}",
+                s_cloudDeviceId, channel
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 6. LED Lighting Command
     if (strcmp(cmd, "led_set") == 0 || strcmp(cmd, "led") == 0) {
         s_ledMode = (uint8_t)getJsonInt(payload, "mode", s_ledMode);
         s_ledR    = (uint8_t)getJsonInt(payload, "r", s_ledR);
@@ -301,6 +384,8 @@ static void handleCloudMessage(const char* payload, size_t length) {
         saveLedStateToNVS();
         notifyLedState();
         broadcastCloudState();
+        Serial.printf(">>> [CLOUD WS] LED Updated -> Mode=%d, RGB=(%d,%d,%d), Bri=%d, Spd=%d\n",
+                      s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd);
 
         char ackMsg[128];
         snprintf(ackMsg, sizeof(ackMsg),
