@@ -167,9 +167,9 @@ export default function CloudHandshakeModal({
     try {
       await onConfigureWifiOverBle(
         targetSsid.trim(),
-        targetPass,
-        isCollege ? cpUser.trim() : undefined,
-        isCollege ? cpPass : undefined
+        targetPass || "",
+        isCollege ? cpUser.trim() : "",
+        isCollege ? cpPass || "" : ""
       );
       onToast?.("Wi-Fi credentials saved on ESP32! Connecting...", "success");
     } catch (e: any) {
@@ -400,14 +400,16 @@ export default function CloudHandshakeModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
                 type="text"
-                placeholder="Wi-Fi SSID / Network Name"
+                maxLength={32}
+                placeholder="Wi-Fi SSID / Network Name (max 32 chars)"
                 value={targetSsid}
                 onChange={(e) => setTargetSsid(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
               />
               <input
                 type="password"
-                placeholder="Wi-Fi Password"
+                maxLength={63}
+                placeholder="Wi-Fi Password (max 63 chars, empty if open)"
                 value={targetPass}
                 onChange={(e) => setTargetPass(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"

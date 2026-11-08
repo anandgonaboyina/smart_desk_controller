@@ -37,6 +37,7 @@ export interface SettingsPanelProps {
   wifiOnAwayOnly?: boolean;
   onUpdateWifiHost?: (host: string) => void;
   onToggleWifiOnAwayOnly?: (enabled: boolean) => void;
+  onConfigureOverBle?: (ssid: string, pass?: string, user?: string, cpPass?: string) => Promise<void>;
 }
 
 export default function SettingsPanel({
@@ -65,6 +66,7 @@ export default function SettingsPanel({
   wifiOnAwayOnly = false,
   onUpdateWifiHost,
   onToggleWifiOnAwayOnly,
+  onConfigureOverBle,
 }: SettingsPanelProps) {
   const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
@@ -526,6 +528,9 @@ export default function SettingsPanel({
         deskHost={hostInput}
         currentSsid={wifiSsid}
         currentIp={wifiIp}
+        wifiConnected={wifiConnected}
+        isBleConnected={connected}
+        onConfigureOverBle={onConfigureOverBle}
         wifiOnAwayOnly={wifiOnAwayOnly}
         onToggleWifiOnAwayOnly={onToggleWifiOnAwayOnly}
       />

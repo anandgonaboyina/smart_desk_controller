@@ -19,8 +19,8 @@ enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
 
 struct WriteCmd {
     WriteType type;
-    uint8_t   len;
-    uint8_t   data[144];
+    uint16_t  len;
+    uint8_t   data[256];
 };
 
 #define CMD_QUEUE_SIZE 32
@@ -32,7 +32,7 @@ static inline bool enqueueCmd(WriteType type, const uint8_t* data, size_t len) {
     uint8_t next = (s_cmdHead + 1) % CMD_QUEUE_SIZE;
     if (next == s_cmdTail) return false; // Queue full
     s_cmdQueue[s_cmdHead].type = type;
-    s_cmdQueue[s_cmdHead].len  = (len > 144) ? 144 : (uint8_t)len;
+    s_cmdQueue[s_cmdHead].len  = (len > 256) ? 256 : (uint16_t)len;
     if (data && s_cmdQueue[s_cmdHead].len > 0) {
         memcpy(s_cmdQueue[s_cmdHead].data, data, s_cmdQueue[s_cmdHead].len);
     }

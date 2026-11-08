@@ -258,6 +258,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wifiHostRef = useRef<string>(wifiHost);
   wifiHostRef.current = wifiHost;
+  const lastEnvWifiKeyRef = useRef<string>("");
 
   /* Audio Refs */
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -475,6 +476,21 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       setLogs((prev) => {
         // Enforce 24-hour retention window + last 150 entries ring buffer
         const nonExpired = prev.filter((item) => !item.timestamp || item.timestamp >= cutoff24h);
+        if (nonExpired.length > 0) {
+          const last = nonExpired[nonExpired.length - 1];
+          const baseLastText = last.text.replace(/ \(\d+x\)$/, "");
+          if (last.type === type && baseLastText === text) {
+            const count = (last.count || 1) + 1;
+            const updatedLast: LogEntry = {
+              ...last,
+              time: timeStr,
+              timestamp: nowMs,
+              count,
+              text: `${baseLastText} (${count}x)`,
+            };
+            return [...nonExpired.slice(0, -1), updatedLast];
+          }
+        }
         return [...nonExpired.slice(-150), entry];
       });
       console.log(`[${timeStr}] [${type.toUpperCase()}] ${text}`);
@@ -886,7 +902,11 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           2: "Connecting...",
           3: "Hotspot Active (SoftAP)",
         };
-        addLog(`[RX ENV] Wi-Fi: ${stateLabels[wState] || `State ${wState}`} | SSID: ${ssidName || "(none)"} | IP: ${ipStr}`, "rx");
+        const envWifiKey = `${wState}|${ssidName}|${ipStr}`;
+        if (lastEnvWifiKeyRef.current !== envWifiKey) {
+          lastEnvWifiKeyRef.current = envWifiKey;
+          addLog(`[RX ENV] Wi-Fi: ${stateLabels[wState] || `State ${wState}`} | SSID: ${ssidName || "(none)"} | IP: ${ipStr}`, "rx");
+        }
       }
     },
     [addLog]
@@ -911,6 +931,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
   /* Disconnect Cleanup */
   const handleDisconnected = useCallback(() => {
+    lastEnvWifiKeyRef.current = "";
     addLog("Device disconnected from host.", "warn");
     setConnected(false);
     setConnecting(false);

@@ -13,6 +13,7 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
+#include <nvs_flash.h>
 
 #include "smartdesk_pins.h"
 #include "matrix_engine.h"
@@ -36,14 +37,6 @@ uint8_t     s_relayLoads[RELAY_COUNT]   = {0, 0, 0, 0}; // 0 = OFF, 1 = ON
 uint32_t    s_lastSwitchMs[RELAY_COUNT] = {0, 0, 0, 0};
 uint32_t    s_timerEndMs[RELAY_COUNT]   = {0, 0, 0, 0}; // 0 = no timer
 bool        s_connected                 = false;
-
-/* ── College Wi-Fi / Fortinet Captive Portal Credentials ─────────────────── */
-// Note: Each saved Wi-Fi network stores its own specific student credentials in NVS.
-// You can configure different credentials for any number of campus routers/networks
-// via the PWA App Settings or Web Portal (192.168.4.1).
-String studentUsername    = ""; // Optional default fallback
-String studentPassword    = ""; // Optional default fallback
-String fortinetGatewayUrl = "http://192.168.80.1:1000/fgtauth?"; // Default Fortinet gateway URL
 
 // Strip Dynamic Length & Strip Instance
 static uint16_t          s_stripLen = DEFAULT_STRIP_LEN; // Dynamic up to 800 LEDs
@@ -567,13 +560,15 @@ void buildEnvPayload(uint8_t* outPayload) {
     // Byte 24: Wi-Fi State: 0=Off, 1=Connected (STA), 2=Connecting, 3=SoftAP Active
     if (s_wifiConnected) {
         outPayload[24] = 1;
-    } else if (s_reqConnectSlot >= 0) {
+    } else if (s_reqConnectSlot >= 0 || s_reqConnectAny) {
         outPayload[24] = 2;
-    } else {
+    } else if (s_softApActive) {
         outPayload[24] = 3;
+    } else {
+        outPayload[24] = 0;
     }
     outPayload[25] = (uint8_t)abs(s_wifiRssi);
-    IPAddress curIp = s_wifiConnected ? WiFi.localIP() : WiFi.softAPIP();
+    IPAddress curIp = s_wifiConnected ? WiFi.localIP() : (s_softApActive ? WiFi.softAPIP() : IPAddress(0, 0, 0, 0));
     outPayload[26] = curIp[0];
     outPayload[27] = curIp[1];
     outPayload[28] = curIp[2];
@@ -581,12 +576,13 @@ void buildEnvPayload(uint8_t* outPayload) {
     outPayload[30] = s_ntpSynced ? 1 : 0;
 
     const char* displaySsid = s_wifiConnected ? s_currentSsid :
-                              (s_reqConnectSlot >= 0 && s_reqConnectSlot < MAX_WIFI_NETWORKS ? s_savedNetworks[s_reqConnectSlot].ssid : s_apConfig.ssid);
+                              (s_softApActive ? s_apConfig.ssid : "None");
     uint8_t slen = (uint8_t)strlen(displaySsid);
     if (slen > 15) slen = 15;
     outPayload[31] = slen;
 
     // Bytes 32..47: Null-padded SSID string (up to 15 characters)
+    memset(&outPayload[32], 0, 16);
     if (slen > 0) {
         memcpy(&outPayload[32], displaySsid, slen);
     }
@@ -1201,6 +1197,28 @@ void setup() {
     Serial.begin(115200);
     delay(100);
 
+    // Initialize and repair NVS if full or corrupted (prevents phy_init 0x1105 error)
+    nvs_flash_init();
+    nvs_stats_t nvs_stats;
+    esp_err_t statErr = nvs_get_stats(NULL, &nvs_stats);
+    if (statErr == ESP_OK) {
+        Serial.printf(">>> [NVS STATS] used=%d, free=%d, total=%d\n", (int)nvs_stats.used_entries, (int)nvs_stats.free_entries, (int)nvs_stats.total_entries);
+        if (nvs_stats.free_entries < 250) {
+            Serial.println(">>> [NVS REPAIR] Free pages exhausted (< 250). Formatting NVS to resolve PHY 0x1105 error...");
+            nvs_flash_erase();
+            nvs_flash_init();
+            Serial.println(">>> [NVS REPAIR] Formatting complete! Rebooting chip to apply clean PHY calibration...");
+            delay(500);
+            ESP.restart();
+        }
+    } else {
+        Serial.printf(">>> [NVS REPAIR] Could not read stats (err=0x%x). Formatting NVS...\n", statErr);
+        nvs_flash_erase();
+        nvs_flash_init();
+        delay(500);
+        ESP.restart();
+    }
+
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(BUZZER_PIN, LOW);
     pinMode(DHT_PIN, INPUT_PULLUP);
@@ -1222,11 +1240,11 @@ void setup() {
     s_strip.clear();
     s_strip.show();
 
-    // Initialize BLE Server with HID Auto-Connect
-    initBleServer(s_deviceName);
-
     // Initialize Cloud Configuration
     loadCloudConfigFromNVS();
+
+    // Initialize BLE Server with HID Auto-Connect
+    initBleServer(s_deviceName);
 
     // Initialize Wi-Fi Subsystem, Multi-Network Auto-Connect & Web Dashboard
     initWifiSubsystem();
@@ -1533,8 +1551,8 @@ void loop() {
                 uint8_t cpPassLen = cmd.data[5];
 
                 size_t expectedLen = 6 + ssidLen + passLen + userLen + cpPassLen;
-                if (cmd.len >= expectedLen && ssidLen > 0 && ssidLen <= 32) {
-                    char bleSsid[33]   = {0};
+                if (cmd.len >= expectedLen && ssidLen > 0 && ssidLen <= 64) {
+                    char bleSsid[65]   = {0};
                     char blePass[65]   = {0};
                     char bleUser[65]   = {0};
                     char bleCpPass[65] = {0};
@@ -1566,12 +1584,29 @@ void loop() {
                     saveWifiNetworkOverBle(bleSsid, blePass, bleUser, bleCpPass, connectNow);
                     notifyEnvState();
                 }
+            } else if (cmd.data[0] == '{') { // JSON Wi-Fi Provisioning via BLE
+                char jsonBuf[256];
+                size_t cLen = cmd.len < sizeof(jsonBuf) - 1 ? cmd.len : sizeof(jsonBuf) - 1;
+                memcpy(jsonBuf, cmd.data, cLen);
+                jsonBuf[cLen] = '\0';
+
+                char jSsid[65] = {0}, jPass[65] = {0}, jUser[65] = {0}, jCpPass[65] = {0};
+                if (getJsonStr(jsonBuf, "ssid", jSsid, sizeof(jSsid))) {
+                    getJsonStr(jsonBuf, "pass", jPass, sizeof(jPass));
+                    getJsonStr(jsonBuf, "user", jUser, sizeof(jUser));
+                    getJsonStr(jsonBuf, "cpPass", jCpPass, sizeof(jCpPass));
+                    saveWifiNetworkOverBle(jSsid, jPass, jUser, jCpPass, true);
+                    notifyEnvState();
+                }
             } else if (cmd.data[0] == 0xE2 && cmd.len >= 2) { // 0xE2: Connect to Wi-Fi Slot [0xE2, slotIdx]
                 uint8_t slot = cmd.data[1];
                 if (slot < MAX_WIFI_NETWORKS && s_savedNetworks[slot].valid) {
                     s_reqConnectSlot = slot;
                     notifyEnvState();
                 }
+            } else if (cmd.data[0] == 0xE3) { // 0xE3: Auto-connect to any saved network
+                s_reqConnectAny = true;
+                notifyEnvState();
             } else if (cmd.data[0] == 0xE0) { // 0xE0: Disconnect Wi-Fi
                 WiFi.disconnect();
                 s_wifiConnected = false;

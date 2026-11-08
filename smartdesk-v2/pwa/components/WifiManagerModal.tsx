@@ -236,57 +236,31 @@ export default function WifiManagerModal({
     }
   };
 
-  const handleSaveNetwork = async (useBleMode = false) => {
+  const handleSaveNetwork = async () => {
     if (!newSsid.trim()) {
       onToast?.("Please enter or select a Wi-Fi SSID", "warn");
       return;
     }
+    if (!onConfigureOverBle || !isBleConnected) {
+      onToast?.("Please connect to Desk via BLE (tap BLE in header) to save Wi-Fi credentials", "warn");
+      return;
+    }
     setSavingNet(true);
     try {
-      if (useBleMode && onConfigureOverBle) {
-        await onConfigureOverBle(
-          newSsid.trim(),
-          newPass || undefined,
-          isCollegeWifi ? newCpUser.trim() || undefined : undefined,
-          isCollegeWifi ? newCpPass || undefined : undefined
-        );
-        onToast?.(`Sent "${newSsid}" to ESP32 over BLE! Connecting...`, "success");
-        setNewSsid("");
-        setNewPass("");
-        setNewCpUser("");
-        setNewCpPass("");
-        setIsCollegeWifi(false);
-        return;
-      }
-
-      const payload: any = {
-        ssid: newSsid.trim(),
-        pass: newPass,
-        connectNow: true,
-      };
-      if (isCollegeWifi) {
-        payload.cpUrl = newCpUrl.trim() || "http://192.168.80.1:1000/fgtauth?";
-        payload.cpUser = newCpUser.trim();
-        payload.cpPass = newCpPass;
-      }
-      const res = await fetch(`http://${deskHost}/api/wifi/save`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        onToast?.(`Network "${newSsid}" saved! Connecting...`, "success");
-        setNewSsid("");
-        setNewPass("");
-        setNewCpUser("");
-        setNewCpPass("");
-        setIsCollegeWifi(false);
-        fetchStatus();
-      } else {
-        onToast?.("Failed to save network via Wi-Fi HTTP", "error");
-      }
+      await onConfigureOverBle(
+        newSsid.trim(),
+        newPass || "",
+        isCollegeWifi ? newCpUser.trim() : "",
+        isCollegeWifi ? newCpPass || "" : ""
+      );
+      onToast?.(`Sent "${newSsid}" to ESP32 over BLE! Connecting...`, "success");
+      setNewSsid("");
+      setNewPass("");
+      setNewCpUser("");
+      setNewCpPass("");
+      setIsCollegeWifi(false);
     } catch (e: any) {
-      onToast?.("Error: " + (e?.message || "Unreachable"), "error");
+      onToast?.("Failed to send Wi-Fi over BLE: " + (e?.message || "Error"), "error");
     } finally {
       setSavingNet(false);
     }
@@ -370,6 +344,32 @@ export default function WifiManagerModal({
                 : "Standby"}
             </span>
           </div>
+
+          {/* Fortinet & Cloud Bypass Visual Feedback */}
+          <div>
+            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Fortinet &amp; Cloud:</span>
+            <span className={`font-extrabold flex items-center gap-1.5 ${
+              portalStatus?.toLowerCase().includes("authenticated") || portalStatus?.toLowerCase().includes("online") || wifiConnected
+                ? "text-emerald-400"
+                : portalStatus?.toLowerCase().includes("bypassing") || portalStatus?.toLowerCase().includes("ok") || wifiState === 2
+                ? "text-amber-400"
+                : portalStatus?.toLowerCase().includes("err") || portalStatus?.toLowerCase().includes("failed") || portalStatus?.toLowerCase().includes("locked")
+                ? "text-rose-400"
+                : "text-zinc-400"
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                portalStatus?.toLowerCase().includes("authenticated") || portalStatus?.toLowerCase().includes("online") || wifiConnected
+                  ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                  : portalStatus?.toLowerCase().includes("bypassing") || portalStatus?.toLowerCase().includes("ok") || wifiState === 2
+                  ? "bg-amber-400 animate-ping"
+                  : portalStatus?.toLowerCase().includes("err") || portalStatus?.toLowerCase().includes("failed") || portalStatus?.toLowerCase().includes("locked")
+                  ? "bg-rose-400"
+                  : "bg-zinc-500"
+              }`} />
+              {portalStatus || (wifiConnected ? "Internet / Cloud Active" : wifiState === 2 ? "Bypassing Fortinet..." : "Standby")}
+            </span>
+          </div>
+
           <div>
             <span className="text-zinc-500 font-bold uppercase block text-[10px]">Active IP:</span>
             <span className="font-mono text-cyan-300 font-bold">{currentIp || (wifiConnected ? "--" : "192.168.4.1")}</span>
@@ -386,7 +386,7 @@ export default function WifiManagerModal({
           <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-600/40 text-[11px] text-amber-200 flex items-start gap-2">
             <span className="text-sm">⚠️</span>
             <span>
-              <strong>Desk not yet connected:</strong> Connect via <strong>BLE</strong> (tap <em>"BLE: Disconnected"</em> in the header) OR connect your device to the ESP32 Wi-Fi Hotspot: <strong>AnandSmartDesk</strong> (password: <code>Anandsmartdesk</code>).
+              <strong>Desk not yet connected:</strong> Connect via <strong>BLE</strong> (tap <em>"BLE: Disconnected"</em> in the header) to provision Wi-Fi credentials directly.
             </span>
           </div>
         )}
@@ -403,7 +403,6 @@ export default function WifiManagerModal({
               {isScanning ? "Scanning airwaves..." : isBleConnected ? "🔍 Scan Airwaves via BLE" : "🔍 Scan Airwaves"}
             </button>
           </div>
-
 
           {/* Detected Nearby Networks Chips */}
           {scannedNets.length > 0 && (
@@ -433,9 +432,10 @@ export default function WifiManagerModal({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-zinc-400 font-bold block mb-1">Wi-Fi Name (SSID):</label>
+              <label className="text-[10px] text-zinc-400 font-bold block mb-1">Wi-Fi Name (SSID, max 32 chars):</label>
               <input
                 type="text"
+                maxLength={32}
                 value={newSsid}
                 onChange={(e) => setNewSsid(e.target.value)}
                 placeholder="e.g. Campus_WiFi"
@@ -443,9 +443,10 @@ export default function WifiManagerModal({
               />
             </div>
             <div>
-              <label className="text-[10px] text-zinc-400 font-bold block mb-1">Wi-Fi Password (Empty if Open):</label>
+              <label className="text-[10px] text-zinc-400 font-bold block mb-1">Wi-Fi Password (Empty if Open, max 63 chars):</label>
               <input
                 type="password"
+                maxLength={63}
                 value={newPass}
                 onChange={(e) => setNewPass(e.target.value)}
                 placeholder="Password (if protected)"
@@ -512,31 +513,16 @@ export default function WifiManagerModal({
             )}
           </div>
 
-          {/* Action Buttons: Dual-Mode (BLE + Wi-Fi HTTP) */}
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
-            {isBleConnected && onConfigureOverBle && (
-              <button
-                onClick={() => handleSaveNetwork(true)}
-                disabled={savingNet}
-                className="flex-1 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
-                title="Transmits credentials instantly over Bluetooth without switching phone Wi-Fi"
-              >
-                <span>⚡</span>
-                <span>{savingNet ? "Transmitting..." : "Save & Connect via BLE"}</span>
-              </button>
-            )}
-
+          {/* Action Button: Dedicated BLE Save & Connect */}
+          <div className="pt-1">
             <button
-              onClick={() => handleSaveNetwork(false)}
-              disabled={savingNet}
-              className={`py-2.5 rounded-lg border font-extrabold text-xs transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 ${
-                isBleConnected
-                  ? "flex-1 bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-zinc-300"
-                  : "w-full bg-cyan-500 hover:bg-cyan-400 text-black shadow-md shadow-cyan-500/20"
-              }`}
+              onClick={handleSaveNetwork}
+              disabled={savingNet || !isBleConnected}
+              className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+              title="Transmits credentials instantly over Bluetooth without switching phone Wi-Fi"
             >
-              <span>🌐</span>
-              <span>{savingNet ? "Saving..." : "Save via Wi-Fi HTTP"}</span>
+              <span>⚡</span>
+              <span>{savingNet ? "Transmitting..." : isBleConnected ? "Save & Connect via BLE" : "Connect BLE First to Save"}</span>
             </button>
           </div>
         </div>

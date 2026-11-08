@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build:hardware": "powershell -ExecutionPolicy Bypass -File \"../../build_hardware.ps1\"",
     "predev": "npx @tailwindcss/cli -i app/input.css -o app/globals.css",
     "dev": "next dev",
     "prebuild": "npx @tailwindcss/cli -i app/input.css -o app/globals.css --minify",

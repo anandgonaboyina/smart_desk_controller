@@ -354,6 +354,7 @@ export default function SmartDeskApp() {
                   wifiOnAwayOnly={ble.wifiOnAwayOnly}
                   onUpdateWifiHost={ble.updateWifiHost}
                   onToggleWifiOnAwayOnly={ble.toggleWifiOnAwayOnly}
+                  onConfigureOverBle={ble.configureWifiOverBle}
                 />
               )}
             </div>
@@ -374,6 +375,15 @@ export default function SmartDeskApp() {
         deskHost={ble.wifiHost || "192.168.4.1"}
         currentSsid={ble.wifiSsid}
         currentIp={ble.wifiIp}
+        portalStatus={
+          ble.wifiConnected
+            ? "Authenticated & Online"
+            : ble.wifiState === 2
+            ? "Bypassing Fortinet..."
+            : ble.wifiState === 3
+            ? "Hotspot Active (SoftAP)"
+            : "Standby"
+        }
         wifiConnected={ble.wifiConnected}
         wifiState={ble.wifiState}
         isBleConnected={ble.connected}

@@ -17,26 +17,35 @@
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <time.h>
+#include <esp_wifi.h>
 #include "smartdesk_pins.h"
 #include "smartdesk_cloud.h"
 
 static volatile int8_t s_reqConnectSlot = -1;
+static volatile bool   s_reqConnectAny  = false;
 static volatile bool   s_reqBleWifiScan = false;
+bool                   s_softApActive   = false;
+
+/* Forward Declarations */
+static void startSoftApFallback();
+static void stopSoftApFallback();
+static void saveWifiNetworkToNVS(int idx);
 
 /* ── Wi-Fi Multi-Network Configurations ───────────────────────────────────── */
-#define MAX_WIFI_NETWORKS   6
-#define DEFAULT_AP_SSID     "AnandSmartDesk"
-#define DEFAULT_AP_PASS     "Anandsmartdesk"
-#define DNS_PORT            53
+#define MAX_WIFI_NETWORKS        6
+#define DEFAULT_AP_SSID          "AnandSmartDesk"
+#define DEFAULT_AP_PASS          "Anandsmartdesk"
+#define DEFAULT_FORTINET_GATEWAY "http://192.168.80.1:1000/"
+#define DNS_PORT                 53
 
 struct SavedNetwork {
     bool valid;
-    char ssid[33];
+    char ssid[65];
     char pass[65];
     char cpUrl[129];     // Optional Captive Portal Login URL
     char cpUser[65];     // Optional Username / Student ID
     char cpPass[65];     // Optional Password
-    char cpFields[129];  // Optional custom POST payload format (e.g. user={user}&pass={pass})
+    char cpFields[129];  // Optional custom POST payload format
 };
 
 struct ApConfig {
@@ -71,22 +80,18 @@ extern void saveLedStateToNVS();
 extern void saveRelayLoadsToNVS();
 extern void getLocalTime(uint8_t* outH, uint8_t* outM, uint8_t* outS, uint8_t* outDOW);
 
-/* ── Externs for Fortinet Captive Portal Bypass ───────────────────────────── */
-extern String studentUsername;
-extern String studentPassword;
-extern String fortinetGatewayUrl;
-
 /* ── Global Wi-Fi State ─────────────────────────────────────────────────── */
 static SavedNetwork  s_savedNetworks[MAX_WIFI_NETWORKS];
 static ApConfig      s_apConfig;
 static bool          s_wifiOnAwayOnly   = false; // Default: Wi-Fi on all the time
 static bool          s_wifiConnected    = false;
-static char          s_currentSsid[33]  = {0};
+static char          s_currentSsid[65]  = {0};
 static char          s_ipAddress[20]    = "0.0.0.0";
 static int8_t        s_wifiRssi         = 0;
 static bool          s_ntpSynced        = false;
 static char          s_lastPortalStatus[64] = "None";
 static uint32_t      s_lastInternetCheckMs  = 0;
+static volatile uint8_t s_fortinetRetryCount = 0;
 static char          s_wifiDebugLog[1200]   = "[BOOT] Wi-Fi Subsystem initialized\n";
 
 static void appendDebugLog(const char* msg) {
@@ -146,6 +151,31 @@ static void loadWifiFromNVS() {
     }
     s_wifiPrefs.end();
 
+    // Ensure College Network Profile has user's credentials pre-populated
+    bool hasNit = false;
+    for (int i = 0; i < MAX_WIFI_NETWORKS; i++) {
+        if (s_savedNetworks[i].valid && strstr(s_savedNetworks[i].ssid, "National Institute of Technology")) {
+            hasNit = true;
+            strncpy(s_savedNetworks[i].pass, "Nitgoa@2023", sizeof(s_savedNetworks[i].pass) - 1);
+            strncpy(s_savedNetworks[i].cpUser, "24eee1017", sizeof(s_savedNetworks[i].cpUser) - 1);
+            strncpy(s_savedNetworks[i].cpPass, "306888", sizeof(s_savedNetworks[i].cpPass) - 1);
+            if (strlen(s_savedNetworks[i].cpUrl) == 0) {
+                strncpy(s_savedNetworks[i].cpUrl, DEFAULT_FORTINET_GATEWAY, sizeof(s_savedNetworks[i].cpUrl) - 1);
+            }
+            saveWifiNetworkToNVS(i);
+            break;
+        }
+    }
+    if (!hasNit) {
+        s_savedNetworks[0].valid = true;
+        strncpy(s_savedNetworks[0].ssid, "National Institute of Technology", sizeof(s_savedNetworks[0].ssid) - 1);
+        strncpy(s_savedNetworks[0].pass, "Nitgoa@2023", sizeof(s_savedNetworks[0].pass) - 1);
+        strncpy(s_savedNetworks[0].cpUser, "24eee1017", sizeof(s_savedNetworks[0].cpUser) - 1);
+        strncpy(s_savedNetworks[0].cpPass, "306888", sizeof(s_savedNetworks[0].cpPass) - 1);
+        strncpy(s_savedNetworks[0].cpUrl, DEFAULT_FORTINET_GATEWAY, sizeof(s_savedNetworks[0].cpUrl) - 1);
+        saveWifiNetworkToNVS(0);
+    }
+
     // Load AP settings
     s_wifiPrefs.begin("desk_ap", true);
     String apS = s_wifiPrefs.getString("ssid", DEFAULT_AP_SSID);
@@ -168,21 +198,45 @@ static void saveWifiNetworkToNVS(int idx) {
     snprintf(kCPPass, sizeof(kCPPass), "cpp_%d", idx);
     snprintf(kFld, sizeof(kFld), "f_%d", idx);
 
-    s_wifiPrefs.putBool(kVal, s_savedNetworks[idx].valid);
+    // Flash Wear Protection: Read existing values before writing
+    bool oldVal = s_wifiPrefs.getBool(kVal, false);
+    String oldSsid = s_wifiPrefs.getString(kSsid, "");
+    String oldPass = s_wifiPrefs.getString(kPass, "");
+    String oldUrl = s_wifiPrefs.getString(kUrl, "");
+    String oldUser = s_wifiPrefs.getString(kUser, "");
+    String oldCPPass = s_wifiPrefs.getString(kCPPass, "");
+    String oldFld = s_wifiPrefs.getString(kFld, "");
+
+    if (oldVal != s_savedNetworks[idx].valid) {
+        s_wifiPrefs.putBool(kVal, s_savedNetworks[idx].valid);
+    }
+
     if (s_savedNetworks[idx].valid) {
-        s_wifiPrefs.putString(kSsid, s_savedNetworks[idx].ssid);
-        s_wifiPrefs.putString(kPass, s_savedNetworks[idx].pass);
-        s_wifiPrefs.putString(kUrl, s_savedNetworks[idx].cpUrl);
-        s_wifiPrefs.putString(kUser, s_savedNetworks[idx].cpUser);
-        s_wifiPrefs.putString(kCPPass, s_savedNetworks[idx].cpPass);
-        s_wifiPrefs.putString(kFld, s_savedNetworks[idx].cpFields);
+        if (!oldSsid.equals(s_savedNetworks[idx].ssid)) {
+            s_wifiPrefs.putString(kSsid, s_savedNetworks[idx].ssid);
+        }
+        if (!oldPass.equals(s_savedNetworks[idx].pass)) {
+            s_wifiPrefs.putString(kPass, s_savedNetworks[idx].pass);
+        }
+        if (!oldUrl.equals(s_savedNetworks[idx].cpUrl)) {
+            s_wifiPrefs.putString(kUrl, s_savedNetworks[idx].cpUrl);
+        }
+        if (!oldUser.equals(s_savedNetworks[idx].cpUser)) {
+            s_wifiPrefs.putString(kUser, s_savedNetworks[idx].cpUser);
+        }
+        if (!oldCPPass.equals(s_savedNetworks[idx].cpPass)) {
+            s_wifiPrefs.putString(kCPPass, s_savedNetworks[idx].cpPass);
+        }
+        if (!oldFld.equals(s_savedNetworks[idx].cpFields)) {
+            s_wifiPrefs.putString(kFld, s_savedNetworks[idx].cpFields);
+        }
     } else {
-        s_wifiPrefs.remove(kSsid);
-        s_wifiPrefs.remove(kPass);
-        s_wifiPrefs.remove(kUrl);
-        s_wifiPrefs.remove(kUser);
-        s_wifiPrefs.remove(kCPPass);
-        s_wifiPrefs.remove(kFld);
+        if (oldSsid.length() > 0) s_wifiPrefs.remove(kSsid);
+        if (oldPass.length() > 0) s_wifiPrefs.remove(kPass);
+        if (oldUrl.length() > 0) s_wifiPrefs.remove(kUrl);
+        if (oldUser.length() > 0) s_wifiPrefs.remove(kUser);
+        if (oldCPPass.length() > 0) s_wifiPrefs.remove(kCPPass);
+        if (oldFld.length() > 0) s_wifiPrefs.remove(kFld);
     }
     s_wifiPrefs.end();
 }
@@ -299,12 +353,12 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     }
 
     // Determine target URL, username, and password
-    String targetUrl = strlen(net.cpUrl) > 0 ? String(net.cpUrl) : fortinetGatewayUrl;
-    String user = strlen(net.cpUser) > 0 ? String(net.cpUser) : studentUsername;
-    String pass = strlen(net.cpPass) > 0 ? String(net.cpPass) : studentPassword;
+    String targetUrl = strlen(net.cpUrl) > 0 ? String(net.cpUrl) : String(DEFAULT_FORTINET_GATEWAY);
+    String user = String(net.cpUser);
+    String pass = String(net.cpPass);
 
-    if (user.length() == 0) {
-        Serial.println(">>> [FORTINET] No student username configured for this network. Skipping captive portal login.");
+    if (user.length() == 0 || pass.length() == 0) {
+        Serial.println(">>> [FORTINET] No student username or password configured for this network. Skipping captive portal login.");
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "No Credentials");
         return false;
     }
@@ -321,9 +375,16 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     int getCode = http.GET();
 
     if (getCode <= 0) {
-        Serial.printf(">>> [FORTINET ERROR] Could not reach portal gateway: %s\n", http.errorToString(getCode).c_str());
-        snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "GET Failed");
+        s_fortinetRetryCount++;
+        Serial.printf(">>> [FORTINET ERROR] Could not reach portal gateway: %s (Failure %d/3)\n", http.errorToString(getCode).c_str(), s_fortinetRetryCount);
+        snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "GET Failed (%d/3)", s_fortinetRetryCount);
         http.end();
+        if (s_fortinetRetryCount >= 3) {
+            Serial.println(">>> [FORTINET] Max retry limit (3) reached! Stopping firewall pings and triggering SoftAP fallback.");
+            appendDebugLog("Fortinet max retries (3) reached -> Starting SoftAP");
+            snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (Locked)");
+            startSoftApFallback();
+        }
         return false;
     }
 
@@ -348,6 +409,20 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     // CRITICAL: Clear large HTML string immediately to free heap memory
     html = "";
 
+    if (magicToken.length() == 0) {
+        s_fortinetRetryCount++;
+        Serial.printf(">>> [FORTINET WARN] 'magic' token not found in HTML or URL query (Failure %d/3).\n", s_fortinetRetryCount);
+        snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "No Magic (%d/3)", s_fortinetRetryCount);
+        appendDebugLog("Fortinet login failed: 'magic' token not found");
+        if (s_fortinetRetryCount >= 3) {
+            Serial.println(">>> [FORTINET] Max retry limit (3) reached! Stopping firewall pings and triggering SoftAP fallback.");
+            appendDebugLog("Fortinet max retries (3) reached -> Starting SoftAP");
+            snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (Locked)");
+            startSoftApFallback();
+        }
+        return false;
+    }
+
     char dbgBuf[128];
     snprintf(dbgBuf, sizeof(dbgBuf), "Scraped Magic=\"%s\", Redir=\"%s\"", magicToken.c_str(), redirUrl.c_str());
     appendDebugLog(dbgBuf);
@@ -366,7 +441,6 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     Serial.printf(">>> [FORTINET] URL-Encoded 4Tredir  : \"%s\"\n", encodedRedirect.c_str());
 
     // Step 5: Construct exact POST payload
-    // Structure: "4Tredir=" + redirectUrl + "&magic=" + magicToken + "&username=" + studentUsername + "&password=" + studentPassword
     String payload = "";
     if (strlen(net.cpFields) > 0) {
         payload = String(net.cpFields);
@@ -417,14 +491,41 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     delay(1500);
     bool internetOk = checkInternetAccess();
     if (internetOk) {
+        s_fortinetRetryCount = 0; // Reset counter on confirmed success!
         Serial.println(">>> [FORTINET SUCCESS] Internet access confirmed! Captive portal bypassed.");
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Authenticated");
         appendDebugLog("Internet access verified (Portal Bypassed OK)");
     } else {
-        Serial.println(">>> [FORTINET WARN] Internet check failed after login attempt.");
+        s_fortinetRetryCount++;
+        Serial.printf(">>> [FORTINET WARN] Internet check failed after login attempt (Failure %d/3).\n", s_fortinetRetryCount);
+        snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (%d/3)", s_fortinetRetryCount);
         appendDebugLog("Internet verification failed after Portal attempt");
+
+        if (s_fortinetRetryCount >= 3) {
+            Serial.println(">>> [FORTINET] Max retry limit (3) reached! Stopping firewall pings and triggering SoftAP fallback.");
+            appendDebugLog("Fortinet max retries (3) reached -> Starting SoftAP");
+            snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (Locked)");
+            startSoftApFallback();
+        }
     }
     return internetOk;
+}
+
+/* ── String Sanitization Helper ──────────────────────────────────────────── */
+static inline void sanitizeString(char* str) {
+    if (!str) return;
+    char* start = str;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') {
+        start++;
+    }
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
+    }
+    int len = (int)strlen(str);
+    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\r' || str[len - 1] == '\n')) {
+        str[len - 1] = '\0';
+        len--;
+    }
 }
 
 /* ── NTP Real-Time Clock Synchronization ─────────────────────────────────── */
@@ -449,69 +550,255 @@ static void syncTimeFromNTP() {
     }
 }
 
+/* ── SoftAP Fallback Control ─────────────────────────────────────────────── */
+static void startSoftApFallback() {
+    if (s_softApActive) return;
+    Serial.println(">>> [SOFTAP] Starting SoftAP fallback (AnandSmartDesk)...");
+    appendDebugLog("Starting SoftAP fallback (No Internet on saved Wi-Fis)");
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(s_apConfig.ssid, s_apConfig.pass);
+    IPAddress apIp = WiFi.softAPIP();
+    s_dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+    s_dnsServer.start(DNS_PORT, "*", apIp);
+    s_softApActive = true;
+    notifyEnvState();
+    Serial.printf(">>> [SOFTAP ACTIVE] SSID: \"%s\", IP: %s\n", s_apConfig.ssid, apIp.toString().c_str());
+}
+
+static void stopSoftApFallback() {
+    if (!s_softApActive) return;
+    if (WiFi.softAPgetStationNum() > 0) {
+        Serial.println(">>> [SOFTAP] Client currently connected to SoftAP. Keeping AP active.");
+        return;
+    }
+    Serial.println(">>> [SOFTAP] Stopping SoftAP fallback (Switching to pure Station mode)...");
+    appendDebugLog("Stopping SoftAP fallback (Pure STA mode)");
+    s_dnsServer.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    s_softApActive = false;
+    notifyEnvState();
+}
+
 /* ── Wi-Fi Station Connection Machine ────────────────────────────────────── */
 static bool connectToNetwork(const SavedNetwork& net) {
     if (!net.valid || strlen(net.ssid) == 0) return false;
-    Serial.printf(">>> [WIFI] Connecting to saved network \"%s\"...\n", net.ssid);
 
-    WiFi.disconnect();
+    char targetSsid[65] = {0};
+    char targetPass[65] = {0};
+    strncpy(targetSsid, net.ssid, sizeof(targetSsid) - 1);
+    strncpy(targetPass, net.pass, sizeof(targetPass) - 1);
+    sanitizeString(targetSsid);
+    sanitizeString(targetPass);
+
+    Serial.println("-------------------------------------------------------");
+    Serial.printf("Target SSID: [%s]\n", targetSsid);
+    Serial.printf("Pass length: %d\n", (int)strlen(targetPass));
+    Serial.printf("CP User:     [%s]\n", net.cpUser);
+    Serial.println("-------------------------------------------------------");
+
+    Serial.printf(">>> [WIFI] Scanning airwaves for strongest AP matching: [%s]\n", targetSsid);
+    
+    int nScan = WiFi.scanNetworks(false, true);
+    int bestNetworkIdx = -1;
+    int32_t bestRssi = -999;
+
+    for (int i = 0; i < nScan; i++) {
+        String scannedSsid = WiFi.SSID(i);
+        if (scannedSsid.equals(targetSsid)) {
+            int32_t currentRssi = WiFi.RSSI(i);
+            if (currentRssi > bestRssi) {
+                bestRssi = currentRssi;
+                bestNetworkIdx = i;
+            }
+        }
+    }
+
+    uint8_t targetBssid[6];
+    bool useBssid = false;
+    int32_t targetChannel = 0;
+
+    // EXTRACT DATA BEFORE DELETING SCAN!
+    if (bestNetworkIdx != -1) {
+        memcpy(targetBssid, WiFi.BSSID(bestNetworkIdx), 6);
+        targetChannel = WiFi.channel(bestNetworkIdx);
+        useBssid = true;
+        Serial.printf(">>> [WIFI] Best AP found! RSSI: %d dBm, Channel: %d\n", bestRssi, targetChannel);
+    } else {
+        Serial.println(">>> [WIFI WARN] Target SSID not found in scan! Attempting blind connection...");
+    }
+
+    // Now it is safe to clear the memory
+    WiFi.scanDelete();
+
+    char dLog[96];
+    snprintf(dLog, sizeof(dLog), "Target SSID: [%s]", targetSsid);
+    appendDebugLog(dLog);
+
+    // Safe Wi-Fi STA initialization preserving BLE
+    WiFi.persistent(false);
+    WiFi.disconnect(false);
     delay(50);
-    WiFi.begin(net.ssid, strlen(net.pass) > 0 ? net.pass : nullptr);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    delay(50);
+
+    // Force connection to the SPECIFIC strongest router
+    wl_status_t bStat;
+    if (strlen(targetPass) > 0) {
+        if (useBssid) {
+            bStat = WiFi.begin(targetSsid, targetPass, targetChannel, targetBssid);
+        } else {
+            bStat = WiFi.begin(targetSsid, targetPass);
+        }
+    } else {
+        if (useBssid) {
+            bStat = WiFi.begin(targetSsid, nullptr, targetChannel, targetBssid);
+        } else {
+            bStat = WiFi.begin(targetSsid);
+        }
+    }
+    Serial.printf(">>> [WIFI BEGIN] Initiated WiFi.begin, immediate return: %d\n", (int)bStat);
 
     uint32_t startMs = millis();
-    while (WiFi.status() != WL_CONNECTED && (millis() - startMs < 9000)) {
-        delay(150);
+    uint32_t lastPrintMs = 0;
+    while (WiFi.status() != WL_CONNECTED && (millis() - startMs < 16000)) {
+        delay(200);
+        if (millis() - lastPrintMs >= 1500) {
+            lastPrintMs = millis();
+            Serial.printf(">>> [WIFI CONNECTING] status=%d (%lu ms elapsed)\n", (int)WiFi.status(), millis() - startMs);
+        }
     }
 
     if (WiFi.status() == WL_CONNECTED) {
         s_wifiConnected = true;
-        strncpy(s_currentSsid, net.ssid, sizeof(s_currentSsid) - 1);
+        strncpy(s_currentSsid, targetSsid, sizeof(s_currentSsid) - 1);
         strncpy(s_ipAddress, WiFi.localIP().toString().c_str(), sizeof(s_ipAddress) - 1);
         s_wifiRssi = WiFi.RSSI();
         Serial.printf(">>> [WIFI CONNECTED] IP: %s (RSSI: %d dBm)\n", s_ipAddress, s_wifiRssi);
+        snprintf(dLog, sizeof(dLog), "Associated with '%s', IP %s", targetSsid, s_ipAddress);
+        appendDebugLog(dLog);
 
-        // Perform portal sign-in if configured in network OR if studentUsername is set
-        if (strlen(net.cpUrl) > 0 || strlen(net.cpUser) > 0 || (studentUsername.length() > 0 && !studentUsername.equals("YOUR_STUDENT_ID"))) {
-            performCaptivePortalLogin(net);
+        Serial.println(">>> [WIFI] Waiting 15 seconds for college network gateway & DHCP to stabilize...");
+        uint32_t stabStart = millis();
+        while (millis() - stabStart < 15000) {
+            delay(500);
         }
 
-        // Synchronize internet time
-        syncTimeFromNTP();
-        return true;
+        bool internetOk = checkInternetAccess();
+
+        if (!internetOk && strlen(net.cpUser) > 0 && strlen(net.cpPass) > 0) {
+            Serial.println(">>> [WIFI] Captive portal active. Attempting Fortinet login...");
+            appendDebugLog("Captive portal detected -> Running Fortinet login...");
+            internetOk = performCaptivePortalLogin(net);
+        }
+
+        if (internetOk) {
+            Serial.println(">>> [WIFI SUCCESS] Internet connection confirmed!");
+            appendDebugLog("Internet active & verified");
+            syncTimeFromNTP();
+            // --- NEW: WAKE UP RENDER SERVER ---
+            Serial.println(">>> [CLOUD] Pinging Render health endpoint to wake up server...");
+            HTTPClient httpPing;
+            httpPing.begin("https://smart-desk-controller.onrender.com/health");
+            httpPing.setTimeout(4000); 
+            int pingCode = httpPing.GET();
+            Serial.printf(">>> [CLOUD] Render wake-up ping HTTP code: %d\n", pingCode);
+            httpPing.end();
+            // ----------------------------------
+            return true;
+        } else {
+            Serial.println(">>> [WIFI FAILED] No true internet access on this network.");
+            appendDebugLog("No internet access on this network -> Disconnecting");
+            WiFi.disconnect(false);
+            s_wifiConnected = false;
+            return false;
+        }
     }
 
-    Serial.println(">>> [WIFI] Connection attempt failed or timed out.");
+    Serial.printf(">>> [WIFI] Connection attempt failed or timed out. Final status=%d (1=NO_SSID, 4=CONNECT_FAIL, 6=DISCONNECTED)\n", (int)WiFi.status());
+    snprintf(dLog, sizeof(dLog), "Failed to associate with '%s'", targetSsid);
+    appendDebugLog(dLog);
     return false;
 }
-
-static void tryAutoConnectToSaved() {
-    if (WiFi.status() == WL_CONNECTED) return;
-    if (WiFi.softAPgetStationNum() > 0) return;
-    if (s_connected) return; // Never block 2.4GHz radio with auto-scanning when client is connected over BLE!
-
-    // Check if any network is actually saved before attempting connection
+static bool connectToAnySavedNetwork() {
     int validCount = 0;
     for (int s = 0; s < MAX_WIFI_NETWORKS; s++) {
         if (s_savedNetworks[s].valid) validCount++;
     }
-    if (validCount == 0) return;
+    if (validCount == 0) {
+        Serial.println(">>> [WIFI] No saved networks configured in NVS.");
+        return false;
+    }
+
+    Serial.printf(">>> [WIFI] Iterating through %d saved networks...\n", validCount);
+    char dLog[64];
+    snprintf(dLog, sizeof(dLog), "Iterating through %d saved networks...", validCount);
+    appendDebugLog(dLog);
 
     for (int s = 0; s < MAX_WIFI_NETWORKS; s++) {
         if (!s_savedNetworks[s].valid) continue;
         if (connectToNetwork(s_savedNetworks[s])) {
-            startCloudClient();
-            return;
+            Serial.printf(">>> [WIFI] Connected to '%s' with confirmed internet!\n", s_savedNetworks[s].ssid);
+            return true;
         }
     }
+
+    Serial.println(">>> [WIFI] Failed to get internet access on ALL saved networks.");
+    Serial.println(">>> [WIFI DIAGNOSTIC] Scanning 2.4GHz airwaves to inspect visible networks...");
+    int nScan = WiFi.scanNetworks();
+    Serial.printf(">>> [WIFI SCAN] Found %d visible 2.4GHz networks:\n", nScan);
+    for (int i = 0; i < nScan && i < 15; i++) {
+        Serial.printf("    [%02d] SSID: [%-32s] RSSI: %3d dBm  Ch: %2d  Auth: %d\n",
+                      i + 1, WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i), (int)WiFi.encryptionType(i));
+    }
+    WiFi.scanDelete();
+    appendDebugLog("All saved networks failed to provide internet access");
+    return false;
+}
+
+static void tryAutoConnectToSaved() {
+    if (WiFi.status() == WL_CONNECTED && s_wifiConnected) return;
+    if (WiFi.softAPgetStationNum() > 0) return;
+    if (s_connected) return; // Do not scan airwaves when client is actively connected over BLE
+    s_reqConnectAny = true;
 }
 
 /* ── Wi-Fi Configuration over BLE (0xE1) ──────────────────────────────────── */
 static bool saveWifiNetworkOverBle(const char* ssid, const char* pass, const char* cpUser, const char* cpPass, bool connectNow) {
     if (!ssid || strlen(ssid) == 0) return false;
 
+    char cleanSsid[65]   = {0};
+    char cleanPass[65]   = {0};
+    char cleanUser[65]   = {0};
+    char cleanCpPass[65] = {0};
+
+    strncpy(cleanSsid, ssid, sizeof(cleanSsid) - 1);
+    sanitizeString(cleanSsid);
+    if (pass) {
+        strncpy(cleanPass, pass, sizeof(cleanPass) - 1);
+        sanitizeString(cleanPass);
+    }
+    if (cpUser) {
+        strncpy(cleanUser, cpUser, sizeof(cleanUser) - 1);
+        sanitizeString(cleanUser);
+    }
+    if (cpPass) {
+        strncpy(cleanCpPass, cpPass, sizeof(cleanCpPass) - 1);
+        sanitizeString(cleanCpPass);
+    }
+
+    Serial.println("-------------------------------------------------------");
+    Serial.printf("Target SSID: [%s]\n", cleanSsid);
+    Serial.printf("Pass length: %d\n", (int)strlen(cleanPass));
+    Serial.println("-------------------------------------------------------");
+
+    // Reset Fortinet retry counter only when new BLE credentials arrive!
+    s_fortinetRetryCount = 0;
+
     int targetSlot = -1;
     for (int i = 0; i < MAX_WIFI_NETWORKS; i++) {
-        if (s_savedNetworks[i].valid && strncmp(s_savedNetworks[i].ssid, ssid, 32) == 0) {
+        if (s_savedNetworks[i].valid && strncmp(s_savedNetworks[i].ssid, cleanSsid, 64) == 0) {
             targetSlot = i;
             break;
         }
@@ -527,32 +814,36 @@ static bool saveWifiNetworkOverBle(const char* ssid, const char* pass, const cha
     if (targetSlot < 0) targetSlot = 0;
 
     s_savedNetworks[targetSlot].valid = true;
-    strncpy(s_savedNetworks[targetSlot].ssid, ssid, sizeof(s_savedNetworks[targetSlot].ssid) - 1);
+    strncpy(s_savedNetworks[targetSlot].ssid, cleanSsid, sizeof(s_savedNetworks[targetSlot].ssid) - 1);
     s_savedNetworks[targetSlot].ssid[sizeof(s_savedNetworks[targetSlot].ssid) - 1] = '\0';
 
-    if (pass && strlen(pass) > 0) {
-        strncpy(s_savedNetworks[targetSlot].pass, pass, sizeof(s_savedNetworks[targetSlot].pass) - 1);
+    if (strlen(cleanPass) > 0) {
+        strncpy(s_savedNetworks[targetSlot].pass, cleanPass, sizeof(s_savedNetworks[targetSlot].pass) - 1);
         s_savedNetworks[targetSlot].pass[sizeof(s_savedNetworks[targetSlot].pass) - 1] = '\0';
     } else {
-        s_savedNetworks[targetSlot].pass[0] = '\0';
+        s_savedNetworks[targetSlot].pass[0] = '\0'; // Clears any previously saved password for open networks!
     }
 
-    if (cpUser && strlen(cpUser) > 0) {
-        strncpy(s_savedNetworks[targetSlot].cpUser, cpUser, sizeof(s_savedNetworks[targetSlot].cpUser) - 1);
+    if (strlen(cleanUser) > 0) {
+        strncpy(s_savedNetworks[targetSlot].cpUser, cleanUser, sizeof(s_savedNetworks[targetSlot].cpUser) - 1);
         s_savedNetworks[targetSlot].cpUser[sizeof(s_savedNetworks[targetSlot].cpUser) - 1] = '\0';
-        studentUsername = String(cpUser);
-
-        if (cpPass && strlen(cpPass) > 0) {
-            strncpy(s_savedNetworks[targetSlot].cpPass, cpPass, sizeof(s_savedNetworks[targetSlot].cpPass) - 1);
-            s_savedNetworks[targetSlot].cpPass[sizeof(s_savedNetworks[targetSlot].cpPass) - 1] = '\0';
-            studentPassword = String(cpPass);
+        if (strlen(s_savedNetworks[targetSlot].cpUrl) == 0) {
+            strncpy(s_savedNetworks[targetSlot].cpUrl, DEFAULT_FORTINET_GATEWAY, sizeof(s_savedNetworks[targetSlot].cpUrl) - 1);
         }
-        strncpy(s_savedNetworks[targetSlot].cpUrl, "http://192.168.80.1:1000/fgtauth?", sizeof(s_savedNetworks[targetSlot].cpUrl) - 1);
+    } else {
+        s_savedNetworks[targetSlot].cpUser[0] = '\0';
+    }
+
+    if (strlen(cleanCpPass) > 0) {
+        strncpy(s_savedNetworks[targetSlot].cpPass, cleanCpPass, sizeof(s_savedNetworks[targetSlot].cpPass) - 1);
+        s_savedNetworks[targetSlot].cpPass[sizeof(s_savedNetworks[targetSlot].cpPass) - 1] = '\0';
+    } else {
+        s_savedNetworks[targetSlot].cpPass[0] = '\0';
     }
 
     saveWifiNetworkToNVS(targetSlot);
-    char logMsg[80];
-    snprintf(logMsg, sizeof(logMsg), "BLE saved Wi-Fi '%s' (Slot %d)", ssid, targetSlot);
+    char logMsg[96];
+    snprintf(logMsg, sizeof(logMsg), "BLE saved Wi-Fi '%s' (Slot %d)", cleanSsid, targetSlot);
     appendDebugLog(logMsg);
 
     if (connectNow) {
@@ -1104,6 +1395,7 @@ static void handleCaptiveRedirect() {
 static TaskHandle_t s_wifiTaskHandle = NULL;
 
 static void wifiWorkerTask(void* pvParameters) {
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Allow Core 1 setup() & BLE to finish completely before Wi-Fi starts
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(25)); // 25ms tick for fast background response
 
@@ -1152,22 +1444,47 @@ static void wifiWorkerTask(void* pvParameters) {
             s_reqConnectSlot = -1;
             if (slot < MAX_WIFI_NETWORKS && s_savedNetworks[slot].valid) {
                 if (connectToNetwork(s_savedNetworks[slot])) {
-                    startCloudClient();
-                    notifyEnvState();
+                    stopSoftApFallback();
+                    startCloudClient(); // WebSocket ONLY connects when internet is confirmed!
                 } else {
-                    notifyEnvState();
+                    stopCloudClient();
+                    startSoftApFallback(); // Fallback to SoftAP if connection fails
+                }
+                notifyEnvState();
+            }
+        }
+
+        // 3. Handle Auto-Connect to Any Saved Network request
+        if (s_reqConnectAny) {
+            s_reqConnectAny = false;
+            if (connectToAnySavedNetwork()) {
+                stopSoftApFallback();
+                startCloudClient(); // WebSocket ONLY connects when internet is confirmed!
+            } else {
+                stopCloudClient();
+                startSoftApFallback(); // SoftAP only triggers if all saved networks fail!
+            }
+            notifyEnvState();
+        }
+
+        // 4. Update cloud WebSocket client if internet is active (with 5s auto-reconnect for Render spin-down)
+        if (s_wifiConnected) {
+            updateCloudClient();
+            if (!s_cloudConnected) {
+                static uint32_t s_lastWsAutoReconnectMs = 0;
+                if (millis() - s_lastWsAutoReconnectMs >= 5000UL) {
+                    s_lastWsAutoReconnectMs = millis();
+                    if (checkInternetAccess()) {
+                        Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (5s tick)...");
+                        startCloudClient();
+                    }
                 }
             }
         }
 
-        // 3. Keep cloud WebSocket client alive and pump packets
-        if (s_wifiConnected) {
-            updateCloudClient();
-        }
-
         uint32_t now = millis();
 
-        // 3. Periodic STA connection health & auto-reconnect (every 15s)
+        // 5. Periodic STA connection health & auto-reconnect (every 15s)
         if (now - s_lastWifiCheckMs >= 15000UL) {
             s_lastWifiCheckMs = now;
 
@@ -1187,8 +1504,7 @@ static void wifiWorkerTask(void* pvParameters) {
                 continue;
             }
 
-            if (WiFi.status() == WL_CONNECTED) {
-                s_wifiConnected = true;
+            if (WiFi.status() == WL_CONNECTED && s_wifiConnected) {
                 s_wifiRssi = WiFi.RSSI();
                 strncpy(s_ipAddress, WiFi.localIP().toString().c_str(), sizeof(s_ipAddress) - 1);
 
@@ -1196,33 +1512,55 @@ static void wifiWorkerTask(void* pvParameters) {
                 if (now - s_lastInternetCheckMs >= 30000UL) {
                     s_lastInternetCheckMs = now;
                     if (!checkInternetAccess()) {
-                        Serial.println(">>> [WATCHDOG] Captive portal drop detected. Re-authenticating...");
-                        SavedNetwork curNet;
-                        curNet.valid = true;
-                        strncpy(curNet.ssid, s_currentSsid, sizeof(curNet.ssid) - 1);
-                        curNet.pass[0] = '\0';
-                        curNet.cpUrl[0] = '\0';
-                        curNet.cpUser[0] = '\0';
-                        curNet.cpPass[0] = '\0';
-                        curNet.cpFields[0] = '\0';
+                        Serial.println(">>> [WATCHDOG] Captive portal / internet drop detected. Blocking cloud WebSocket...");
+                        stopCloudClient(); // BLOCK WebSocket immediately
 
+                        SavedNetwork curNet;
+                        bool found = false;
                         for (int s = 0; s < MAX_WIFI_NETWORKS; s++) {
                             if (s_savedNetworks[s].valid && strncmp(s_savedNetworks[s].ssid, s_currentSsid, 32) == 0) {
                                 curNet = s_savedNetworks[s];
+                                found = true;
                                 break;
                             }
                         }
-                        if (performCaptivePortalLogin(curNet)) {
+
+                        bool restored = false;
+                        if (found && strlen(curNet.cpUser) > 0 && strlen(curNet.cpPass) > 0) {
+                            restored = performCaptivePortalLogin(curNet);
+                        }
+
+                        if (restored && checkInternetAccess()) {
+                            Serial.println(">>> [WATCHDOG] Internet access restored. Resuming cloud WebSocket...");
                             startCloudClient();
+                        } else {
+                            Serial.println(">>> [WATCHDOG] Re-authentication failed. Triggering network reconnection...");
+                            WiFi.disconnect();
+                            s_wifiConnected = false;
+                            s_reqConnectAny = true;
                         }
                     }
                 }
             } else {
                 s_wifiConnected = false;
                 stopCloudClient();
-                tryAutoConnectToSaved();
+                if (!s_connected && WiFi.softAPgetStationNum() == 0) {
+                    s_reqConnectAny = true;
+                }
             }
         }
+    }
+}
+
+static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_START) {
+        Serial.println(">>> [WIFI EVENT] STA Started");
+    } else if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
+        Serial.println(">>> [WIFI EVENT] STA Connected to AP (L2 802.11 OK)");
+    } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+        Serial.printf(">>> [WIFI EVENT] STA Got IP: %s\n", IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str());
+    } else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+        Serial.printf(">>> [WIFI EVENT] STA Disconnected! Reason: %d\n", (int)info.wifi_sta_disconnected.reason);
     }
 }
 
@@ -1230,18 +1568,13 @@ static void wifiWorkerTask(void* pvParameters) {
 static void initWifiSubsystem() {
     loadWifiFromNVS();
 
-    // Start in AP + STA mode
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(s_apConfig.ssid, s_apConfig.pass);
-    IPAddress apIp = WiFi.softAPIP();
-
-    Serial.println("\n>>> [WIFI SUBSYSTEM STARTED] <<<");
-    Serial.printf("SoftAP SSID: \"%s\" (Pass: \"%s\")\n", s_apConfig.ssid, s_apConfig.pass);
-    Serial.printf("SoftAP IP  : %s\n", apIp.toString().c_str());
-
-    // Start Captive Portal DNS on port 53 (redirects all domains to 192.168.4.1)
-    s_dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
-    s_dnsServer.start(DNS_PORT, "*", apIp);
+    WiFi.onEvent(onWiFiEvent);
+    // Start in pure Station mode initially (SoftAP stays OFF until needed)
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    wifi_country_t country = { "IN", 1, 13, 20, WIFI_COUNTRY_POLICY_AUTO };
+    esp_wifi_set_country(&country);
+    s_softApActive = false;
 
     // Register Web Server Routes
     s_webServer.on("/", HTTP_GET, handleRoot);
@@ -1274,7 +1607,7 @@ static void initWifiSubsystem() {
     s_webServer.onNotFound(handleCaptiveRedirect);
 
     s_webServer.begin();
-    Serial.println(">>> [HTTP SERVER] Web Server & Captive Portal listening on port 80.");
+    Serial.println(">>> [HTTP SERVER] Web Server listening on port 80.");
 
     // Launch Wi-Fi background maintenance task on Core 0 (keeps Core 1 & BLE 100% latency-free!)
     xTaskCreatePinnedToCore(
@@ -1286,9 +1619,14 @@ static void initWifiSubsystem() {
         &s_wifiTaskHandle,
         0  // Pin to Core 0
     );
+
+    // Queue initial connection across saved networks
+    s_reqConnectAny = true;
 }
 
 static void updateWifiSubsystem() {
-    s_dnsServer.processNextRequest();
+    if (s_softApActive) {
+        s_dnsServer.processNextRequest();
+    }
     s_webServer.handleClient();
 }

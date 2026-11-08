@@ -129,6 +129,7 @@ export interface LogEntry {
   text: string;
   type: "info" | "tx" | "rx" | "warn" | "err";
   timestamp?: number;
+  count?: number;
 }
 
 export const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
