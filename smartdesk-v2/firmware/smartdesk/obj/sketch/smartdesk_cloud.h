@@ -1,4 +1,3 @@
-#line 1 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk_cloud.h"
 /**
  * smartdesk_cloud.h — Cloud WebSocket Client for SmartDesk V2
  *
@@ -618,36 +617,6 @@ static void handleCloudMessage(const char* payload, size_t length) {
         buzzerBeepTimerEnd();
         return;
     }
-
-    // 16. Dynamic Device Credential & Mapping Update over WebSocket
-    if (strcmp(cmd, "set_credentials") == 0) {
-        char newUser[36] = {0};
-        char newPass[36] = {0};
-        char newDevId[36] = {0};
-        char newDevName[28] = {0};
-        bool hasUser = getJsonStr(payload, "userId", newUser, sizeof(newUser));
-        bool hasPass = getJsonStr(payload, "password", newPass, sizeof(newPass));
-        bool hasDevId = getJsonStr(payload, "deviceId", newDevId, sizeof(newDevId));
-        bool hasDevName = getJsonStr(payload, "deviceName", newDevName, sizeof(newDevName));
-
-        if (hasDevName && strlen(newDevName) > 0) {
-            strncpy(s_deviceName, newDevName, sizeof(s_deviceName) - 1);
-            s_deviceName[sizeof(s_deviceName) - 1] = '\0';
-            Preferences prefs;
-            prefs.begin("desk_cfg", false);
-            prefs.putString("dev_name", s_deviceName);
-            prefs.end();
-            initBleServer(s_deviceName);
-        }
-
-        if (hasUser || hasPass || hasDevId) {
-            saveCloudConfigToNVS(NULL, 0, NULL, hasDevId ? newDevId : NULL, hasUser ? newUser : NULL, hasPass ? newPass : NULL);
-            Serial.printf(">>> [CLOUD WS] Updated Device Credentials (DevId: %s, User: %s, Desk: %s)\n",
-                          s_cloudDeviceId, s_cloudUser, s_deviceName);
-            broadcastCloudState();
-        }
-        return;
-    }
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */
@@ -729,6 +698,29 @@ static void stopCloudClient() {
 
 static void updateCloudClient() {
     s_cloudWs.loop();
+}
+
+/* ── Local Cloud Credential Application & Live Re-Authentication ─────────── */
+static inline void applyAndRestartCloudCredentials(const char* newDevId, const char* newUser, const char* newPass, const char* newDevName) {
+    if (newDevName && strlen(newDevName) > 0) {
+        strncpy(s_deviceName, newDevName, sizeof(s_deviceName) - 1);
+        s_deviceName[sizeof(s_deviceName) - 1] = '\0';
+        Preferences prefs;
+        prefs.begin("desk_cfg", false);
+        prefs.putString("dev_name", s_deviceName);
+        prefs.end();
+        initBleServer(s_deviceName);
+    }
+
+    if (newDevId || newUser || newPass) {
+        saveCloudConfigToNVS(NULL, 0, newDevId, NULL, newUser, newPass);
+        Serial.printf(">>> [CLOUD CREDENTIALS] Assigned via local security interface (DevId: %s, User: %s, Desk: %s)\n",
+                      s_cloudDeviceId, s_cloudUser, s_deviceName);
+
+        // Disconnect existing socket and force immediate restart with new credentials
+        stopCloudClient();
+        startCloudClient();
+    }
 }
 
 /* ── Status & Telemetry Accessors ────────────────────────────────────────── */

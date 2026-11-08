@@ -1711,19 +1711,81 @@ void loop() {
                     saveWifiNetworkOverBle(bleSsid, blePass, bleUser, bleCpPass, connectNow);
                     notifyEnvState();
                 }
-            } else if (cmd.data[0] == '{') { // JSON Wi-Fi Provisioning via BLE
+            } else if (cmd.data[0] == 0xFC && cmd.len >= 5) { // 0xFC: Cloud Credentials via BLE [0xFC, dLen, uLen, pLen, nLen, ...d, ...u, ...p, ...n]
+                uint8_t dLen = cmd.data[1];
+                uint8_t uLen = cmd.data[2];
+                uint8_t pLen = cmd.data[3];
+                uint8_t nLen = cmd.data[4];
+
+                size_t exp = 5 + dLen + uLen + pLen + nLen;
+                if (cmd.len >= exp) {
+                    char bDevId[36] = {0};
+                    char bUser[36] = {0};
+                    char bPass[36] = {0};
+                    char bName[28] = {0};
+
+                    size_t cur = 5;
+                    if (dLen > 0 && dLen < sizeof(bDevId)) {
+                        memcpy(bDevId, &cmd.data[cur], dLen);
+                        bDevId[dLen] = '\0';
+                    }
+                    cur += dLen;
+
+                    if (uLen > 0 && uLen < sizeof(bUser)) {
+                        memcpy(bUser, &cmd.data[cur], uLen);
+                        bUser[uLen] = '\0';
+                    }
+                    cur += uLen;
+
+                    if (pLen > 0 && pLen < sizeof(bPass)) {
+                        memcpy(bPass, &cmd.data[cur], pLen);
+                        bPass[pLen] = '\0';
+                    }
+                    cur += pLen;
+
+                    if (nLen > 0 && nLen < sizeof(bName)) {
+                        memcpy(bName, &cmd.data[cur], nLen);
+                        bName[nLen] = '\0';
+                    }
+
+                    applyAndRestartCloudCredentials(
+                        strlen(bDevId) > 0 ? bDevId : NULL,
+                        strlen(bUser) > 0 ? bUser : NULL,
+                        strlen(bPass) > 0 ? bPass : "",
+                        strlen(bName) > 0 ? bName : NULL
+                    );
+                    notifyEnvState();
+                }
+            } else if (cmd.data[0] == '{') { // JSON Provisioning via BLE (Wi-Fi or Cloud Credentials)
                 char jsonBuf[256];
                 size_t cLen = cmd.len < sizeof(jsonBuf) - 1 ? cmd.len : sizeof(jsonBuf) - 1;
                 memcpy(jsonBuf, cmd.data, cLen);
                 jsonBuf[cLen] = '\0';
 
-                char jSsid[65] = {0}, jPass[65] = {0}, jUser[65] = {0}, jCpPass[65] = {0};
-                if (getJsonStr(jsonBuf, "ssid", jSsid, sizeof(jSsid))) {
-                    getJsonStr(jsonBuf, "pass", jPass, sizeof(jPass));
-                    getJsonStr(jsonBuf, "user", jUser, sizeof(jUser));
-                    getJsonStr(jsonBuf, "cpPass", jCpPass, sizeof(jCpPass));
-                    saveWifiNetworkOverBle(jSsid, jPass, jUser, jCpPass, true);
+                char jDevId[36] = {0}, jUser[36] = {0}, jPass[36] = {0}, jDevName[28] = {0};
+                if (getJsonStr(jsonBuf, "cloud_cfg", jDevId, sizeof(jDevId)) ||
+                    getJsonStr(jsonBuf, "deviceId", jDevId, sizeof(jDevId)) ||
+                    getJsonStr(jsonBuf, "userId", jUser, sizeof(jUser))) {
+                    getJsonStr(jsonBuf, "deviceId", jDevId, sizeof(jDevId));
+                    getJsonStr(jsonBuf, "userId", jUser, sizeof(jUser));
+                    getJsonStr(jsonBuf, "password", jPass, sizeof(jPass));
+                    getJsonStr(jsonBuf, "deviceName", jDevName, sizeof(jDevName));
+                    applyAndRestartCloudCredentials(
+                        strlen(jDevId) > 0 ? jDevId : NULL,
+                        strlen(jUser) > 0 ? jUser : NULL,
+                        strlen(jPass) > 0 ? jPass : "",
+                        strlen(jDevName) > 0 ? jDevName : NULL
+                    );
                     notifyEnvState();
+                } else {
+                    char jSsid[65] = {0}, jPass[65] = {0}, jUser[65] = {0}, jCpPass[65] = {0};
+                    if (getJsonStr(jsonBuf, "ssid", jSsid, sizeof(jSsid))) {
+                        getJsonStr(jsonBuf, "pass", jPass, sizeof(jPass));
+                        getJsonStr(jsonBuf, "user", jUser, sizeof(jUser));
+                        getJsonStr(jsonBuf, "cpPass", jCpPass, sizeof(jCpPass));
+                        saveWifiNetworkOverBle(jSsid, jPass, jUser, jCpPass, true);
+                        notifyEnvState();
+                    }
                 }
             } else if (cmd.data[0] == 0xE2 && cmd.len >= 2) { // 0xE2: Connect to Wi-Fi Slot [0xE2, slotIdx]
                 uint8_t slot = cmd.data[1];

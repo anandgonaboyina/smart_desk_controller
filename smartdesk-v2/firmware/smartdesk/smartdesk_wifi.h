@@ -1434,6 +1434,43 @@ static void handleApiWifiLogs() {
     s_webServer.send(200, "application/json", json);
 }
 
+static void handleApiCloudCredentials() {
+    setCorsHeaders();
+    if (!s_webServer.hasArg("plain")) {
+        s_webServer.send(400, "application/json", "{\"error\":\"Missing body\"}");
+        return;
+    }
+    String body = s_webServer.arg("plain");
+
+    auto getJsonVal = [&](const char* key) -> String {
+        int k = body.indexOf(key);
+        if (k < 0) return "";
+        int start = body.indexOf('"', k + strlen(key));
+        if (start < 0) return "";
+        int end = body.indexOf('"', start + 1);
+        if (end < 0) return "";
+        return body.substring(start + 1, end);
+    };
+
+    String devId = getJsonVal("\"deviceId\"");
+    String user = getJsonVal("\"userId\"");
+    String pass = getJsonVal("\"password\"");
+    String devName = getJsonVal("\"deviceName\"");
+
+    applyAndRestartCloudCredentials(
+        devId.length() > 0 ? devId.c_str() : NULL,
+        user.length() > 0 ? user.c_str() : NULL,
+        pass.length() > 0 ? pass.c_str() : "",
+        devName.length() > 0 ? devName.c_str() : NULL
+    );
+    notifyEnvState();
+
+    char res[160];
+    snprintf(res, sizeof(res), "{\"ok\":true,\"deviceId\":\"%s\",\"userId\":\"%s\",\"deviceName\":\"%s\"}",
+             getCloudDeviceId(), getCloudUser(), s_deviceName);
+    s_webServer.send(200, "application/json", res);
+}
+
 static void handleCaptiveRedirect() {
     s_webServer.sendHeader("Location", "http://192.168.4.1/", true);
     s_webServer.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -1657,6 +1694,8 @@ static void initWifiSubsystem() {
     s_webServer.on("/api/wifi/ap", HTTP_OPTIONS, handleOptions);
     s_webServer.on("/api/wifi/logs", HTTP_GET, handleApiWifiLogs);
     s_webServer.on("/api/wifi/logs", HTTP_OPTIONS, handleOptions);
+    s_webServer.on("/api/cloud/credentials", HTTP_POST, handleApiCloudCredentials);
+    s_webServer.on("/api/cloud/credentials", HTTP_OPTIONS, handleOptions);
 
     // Captive Portal Detection Endpoints (Android, iOS, Windows)
     s_webServer.on("/generate_204", handleCaptiveRedirect);

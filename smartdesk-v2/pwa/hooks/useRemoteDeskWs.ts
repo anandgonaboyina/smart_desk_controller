@@ -678,25 +678,6 @@ export function useRemoteDeskWs({
     );
   }, [currentDeviceId]);
 
-  // Send Cloud Credentials & Device Name Mapping Command
-  const sendCloudCredentialsCommand = useCallback(
-    (userId: string, password?: string, newDeviceId?: string, deviceName?: string) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-      wsRef.current.send(
-        JSON.stringify({
-          type: "set_credentials",
-          deviceId: currentDeviceId,
-          userId,
-          password: password || "",
-          newDeviceId: newDeviceId || currentDeviceId,
-          deviceName: deviceName || "",
-          timestamp: Date.now(),
-        })
-      );
-    },
-    [currentDeviceId]
-  );
-
   return {
     wsUrl: effectiveWsUrl,
     userId: currentUserId,
@@ -723,7 +704,6 @@ export function useRemoteDeskWs({
     sendRgbTimerCommand,
     sendBuzzerCommand,
     sendBuzzerBeepCommand,
-    sendCloudCredentialsCommand,
     sendAllOff,
   };
 }

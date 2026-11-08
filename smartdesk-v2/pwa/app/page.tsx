@@ -586,7 +586,10 @@ export default function SmartDeskApp() {
                 onConfigureOverBle={ble.configureWifiOverBle}
                 cloudUser={remote.userId}
                 cloudPassword={remote.password}
-                onUpdateCloudCredentials={remote.updateCredentials}
+                onUpdateCloudCredentials={(user, pass) => {
+                  remote.updateCredentials(user, pass);
+                  ble.saveCloudCredentialsOverBle(user, pass);
+                }}
                 onSetTempOffset={handleSetTempOffset}
               />
             )}
@@ -661,7 +664,7 @@ export default function SmartDeskApp() {
         onSendCloudRelayCommand={remote.sendRelayCommand}
         onUpdateCloudCredentials={(user, pass, newDevId, newDevName) => {
           remote.updateCredentials(user, pass, newDevId);
-          remote.sendCloudCredentialsCommand(user, pass, newDevId, newDevName);
+          ble.saveCloudCredentialsOverBle(user, pass, newDevId, newDevName);
           if (newDevName && newDevName !== currentDeskName) {
             handleRename(newDevName);
           }

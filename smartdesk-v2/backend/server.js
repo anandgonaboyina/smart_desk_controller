@@ -371,8 +371,7 @@ wss.on("connection", (ws, req) => {
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||
-        msg.type === "ping" ||
-        msg.type === "set_credentials"
+        msg.type === "ping"
       ) {
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
           return ws.send(

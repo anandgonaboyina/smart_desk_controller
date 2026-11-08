@@ -563,6 +563,57 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     [enqueueWrite, addLog]
   );
 
+  /* 0xFC: Configure Cloud Credentials & Mapping directly over BLE or local Web API */
+  const saveCloudCredentialsOverBle = useCallback(
+    async (userId?: string, password?: string, deviceId?: string, deviceName?: string) => {
+      const d = (deviceId || "").trim();
+      const u = (userId || "").trim();
+      const p = password || "";
+      const n = (deviceName || "").trim();
+
+      const enc = new TextEncoder();
+      const dBytes = enc.encode(d);
+      const uBytes = enc.encode(u);
+      const pBytes = enc.encode(p);
+      const nBytes = enc.encode(n);
+
+      if (dBytes.length > 35 || uBytes.length > 35 || pBytes.length > 35 || nBytes.length > 27) {
+        throw new Error("Credential fields exceed maximum length");
+      }
+
+      if (configCharRef.current) {
+        const payload = new Uint8Array(5 + dBytes.length + uBytes.length + pBytes.length + nBytes.length);
+        payload[0] = 0xFC;
+        payload[1] = dBytes.length;
+        payload[2] = uBytes.length;
+        payload[3] = pBytes.length;
+        payload[4] = nBytes.length;
+
+        let off = 5;
+        payload.set(dBytes, off); off += dBytes.length;
+        payload.set(uBytes, off); off += uBytes.length;
+        payload.set(pBytes, off); off += pBytes.length;
+        payload.set(nBytes, off);
+
+        enqueueWrite("Set Cloud Credentials via BLE", async () => {
+          addLog(`[TX CONFIG] Cloud Credentials -> DevId: ${d}, User: ${u}, Name: ${n}`, "tx");
+          await configCharRef.current?.writeValueWithResponse(payload);
+        });
+        onToastRef.current?.("Cloud credentials saved & reloaded on ESP32 over BLE!", "success");
+      } else {
+        // Fallback: Local HTTP Server (Hotspot / STA mode)
+        await sendWifiCommand("/api/cloud/credentials", {
+          deviceId: d,
+          userId: u,
+          password: p,
+          deviceName: n,
+        });
+        onToastRef.current?.("Cloud credentials sent to ESP32 local server!", "success");
+      }
+    },
+    [enqueueWrite, addLog, sendWifiCommand]
+  );
+
   /* UI Transient Animation on Relay Switch */
   const triggerUiAnimation = useCallback((idx: number, isTurnOn: boolean) => {
     const cfg = configsRef.current[idx];
@@ -2140,6 +2191,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     updateWifiHost,
     toggleWifiOnAwayOnly,
     configureWifiOverBle,
+    saveCloudCredentialsOverBle,
     sendWifiCommand,
     handleConnect: triggerUserConnect,
     handleDisconnected,
