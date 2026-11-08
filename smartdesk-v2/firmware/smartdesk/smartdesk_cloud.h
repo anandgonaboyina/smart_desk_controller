@@ -25,6 +25,7 @@
 static WebSocketsClient s_cloudWs;
 static bool             s_cloudConnected     = false;
 static bool             s_cloudAuthenticated = false;
+static bool             s_cloudWsStarted     = false;
 static uint32_t         s_lastCloudPingMs    = 0;
 static char             s_cloudHost[64]      = DEFAULT_CLOUD_HOST;
 static uint16_t         s_cloudPort          = DEFAULT_CLOUD_PORT;
@@ -662,8 +663,6 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 
 /* ── Cloud Client Lifecycle ──────────────────────────────────────────────── */
-static bool s_cloudWsStarted = false;
-
 static void startCloudClient() {
     if (s_cloudWsStarted && s_cloudConnected) return;
 
