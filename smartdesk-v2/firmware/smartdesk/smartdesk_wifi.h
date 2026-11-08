@@ -12,6 +12,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <HTTPClient.h>
@@ -35,7 +36,7 @@ static void saveWifiNetworkToNVS(int idx);
 #define MAX_WIFI_NETWORKS        6
 #define DEFAULT_AP_SSID          "AnandSmartDesk"
 #define DEFAULT_AP_PASS          "Anandsmartdesk"
-#define DEFAULT_FORTINET_GATEWAY "http://192.168.80.1:1000/"
+#define DEFAULT_FORTINET_GATEWAY "https://192.168.80.1:1000/"
 #define DNS_PORT                 53
 
 struct SavedNetwork {
@@ -345,42 +346,112 @@ static bool checkInternetAccess() {
  * Fortinet Captive Portal Auto-Bypass
  */
 static bool performCaptivePortalLogin(const SavedNetwork& net) {
-    // 1. Probe if internet is already accessible
     if (checkInternetAccess()) {
         Serial.println(">>> [WIFI] Internet is already active. Skipping portal sign-in.");
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Online (No Portal Needed)");
         return true;
     }
 
-    // Determine target URL, username, and password
-    String targetUrl = strlen(net.cpUrl) > 0 ? String(net.cpUrl) : String(DEFAULT_FORTINET_GATEWAY);
     String user = String(net.cpUser);
     String pass = String(net.cpPass);
 
     if (user.length() == 0 || pass.length() == 0) {
-        Serial.println(">>> [FORTINET] No student username or password configured for this network. Skipping captive portal login.");
+        Serial.println(">>> [FORTINET] No student credentials. Skipping portal login.");
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "No Credentials");
         return false;
     }
 
     Serial.println("\n=======================================================");
     Serial.println(">>> [FORTINET] Starting Captive Portal Bypass Sequence");
-    Serial.printf(">>> [FORTINET] Gateway Target: %s\n", targetUrl.c_str());
-    Serial.printf(">>> [FORTINET] Student ID    : %s\n", user.c_str());
+    
+    // 1. Force the firewall to intercept us instead of guessing its IP/Port!
+    String targetUrl = "http://captive.apple.com/hotspot-detect.html";
+    Serial.printf(">>> [FORTINET] Triggering firewall intercept via: %s\n", targetUrl.c_str());
 
-    // Step 2: Fetch Login Page HTML to scrape dynamic 'magic' and '4Tredir' tokens
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure(); 
+    secureClient.setTimeout(10); 
+    
     HTTPClient http;
-    http.begin(targetUrl);
-    http.setTimeout(7000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.begin(plainClient, targetUrl);
+    
+    // 2. CRITICAL: Spoof a Windows Chrome Browser to prevent "connection lost" TCP drops
+    http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36");
+    http.setTimeout(10000);
+
     int getCode = http.GET();
+    String html = "";
+    String actualUrl = http.getLocation();
+
+    if (getCode > 0) {
+        html = http.getString();
+        Serial.printf(">>> [FORTINET] Intercepted HTML (%d bytes)\n", html.length());
+
+        // --- NEW: HANDLE 133-BYTE META/JS REDIRECTS MANUALLY ---
+        // If the HTML is tiny, Fortinet gave us a Meta Refresh or JS redirect instead of the real page.
+        if (html.length() < 300) {
+            Serial.println(">>> [FORTINET] Tiny HTML payload detected. Searching for hidden redirect URL...");
+            String nextUrl = "";
+            
+            // Check for Meta Refresh (e.g. <meta http-equiv="refresh" content="0;url=https://...">)
+            int urlIdx = html.indexOf("url=");
+            if (urlIdx != -1) {
+                int endQuote = html.indexOf('"', urlIdx);
+                int endApos = html.indexOf('\'', urlIdx);
+                int endIdx = (endQuote != -1 && endApos != -1) ? min(endQuote, endApos) : max(endQuote, endApos);
+                if (endIdx == -1) endIdx = html.indexOf('>', urlIdx);
+                if (endIdx != -1) {
+                    nextUrl = html.substring(urlIdx + 4, endIdx);
+                }
+            }
+
+            // Check for JS Window.Location (e.g. window.location="https://...")
+            if (nextUrl.length() == 0) {
+                int locIdx = html.indexOf("window.location");
+                if (locIdx != -1) {
+                    int httpIdx = html.indexOf("http", locIdx);
+                    if (httpIdx != -1) {
+                        int endQuote = html.indexOf('"', httpIdx);
+                        int endApos = html.indexOf('\'', httpIdx);
+                        int endIdx = (endQuote != -1 && endApos != -1) ? min(endQuote, endApos) : max(endQuote, endApos);
+                        if (endIdx != -1) nextUrl = html.substring(httpIdx, endIdx);
+                    }
+                }
+            }
+
+            if (nextUrl.length() > 0) {
+                Serial.printf(">>> [FORTINET] Found hidden redirect! Following to: %s\n", nextUrl.c_str());
+                http.end(); // Close the old connection
+                
+                // Open new connection to the real login page
+                if (nextUrl.startsWith("https")) {
+                    http.begin(secureClient, nextUrl);
+                } else {
+                    http.begin(plainClient, nextUrl);
+                }
+                http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36");
+                http.setTimeout(10000);
+                getCode = http.GET();
+                if (getCode > 0) {
+                    html = http.getString();
+                    actualUrl = nextUrl;
+                    Serial.printf(">>> [FORTINET] Downloaded REAL Login Page HTML (%d bytes)\n", html.length());
+                }
+            }
+        }
+        // --------------------------------------------------------
+    }
+    
+    if (actualUrl.length() == 0) actualUrl = targetUrl;
+    http.end();
 
     if (getCode <= 0) {
         s_fortinetRetryCount++;
-        Serial.printf(">>> [FORTINET ERROR] Could not reach portal gateway: %s (Failure %d/3)\n", http.errorToString(getCode).c_str(), s_fortinetRetryCount);
+        Serial.printf(">>> [FORTINET ERROR] Intercept GET failed: %s (Failure %d/3)\n", http.errorToString(getCode).c_str(), s_fortinetRetryCount);
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "GET Failed (%d/3)", s_fortinetRetryCount);
-        http.end();
         if (s_fortinetRetryCount >= 3) {
-            Serial.println(">>> [FORTINET] Max retry limit (3) reached! Stopping firewall pings and triggering SoftAP fallback.");
             appendDebugLog("Fortinet max retries (3) reached -> Starting SoftAP");
             snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (Locked)");
             startSoftApFallback();
@@ -388,128 +459,91 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
         return false;
     }
 
-    String html = http.getString();
-    http.end();
-
-    Serial.printf(">>> [FORTINET] Received HTML response (%d bytes)\n", html.length());
-
-    // Step 3: Extract tokens
+    // 3. Extract tokens
     String magicToken = extractToken(html, "magic");
     String redirUrl   = extractToken(html, "4Tredir");
-
-    // If magic token is not in HTML input, check if it was provided in the URL query string (e.g. fgtauth?0703a6166ea0c10d)
-    if (magicToken.length() == 0 && targetUrl.indexOf("?") != -1) {
-        magicToken = targetUrl.substring(targetUrl.indexOf("?") + 1);
-        if (magicToken.indexOf("&") != -1) magicToken = magicToken.substring(0, magicToken.indexOf("&"));
-        char mLog[128];
-        snprintf(mLog, sizeof(mLog), "Extracted magic from URL query: \"%s\"", magicToken.c_str());
-        appendDebugLog(mLog);
+    
+    // 4. Dynamically find the Form Action POST URL so we don't guess Port 1000 vs 1003
+    String postUrl = "http://192.168.80.1:1000/fgtauth";
+    int actionIdx = html.indexOf("action=\"");
+    if (actionIdx != -1) {
+        int start = actionIdx + 8;
+        int end = html.indexOf('"', start);
+        if (end != -1) {
+            String parsedAction = html.substring(start, end);
+            if (parsedAction.startsWith("http")) {
+                postUrl = parsedAction;
+            } else if (parsedAction.startsWith("/")) {
+                int hostEnd = actualUrl.indexOf("/", 8);
+                if (hostEnd == -1) hostEnd = actualUrl.length();
+                postUrl = actualUrl.substring(0, hostEnd) + parsedAction;
+            }
+        }
     }
-
-    // CRITICAL: Clear large HTML string immediately to free heap memory
-    html = "";
+    
+    html = ""; // Free memory
 
     if (magicToken.length() == 0) {
         s_fortinetRetryCount++;
-        Serial.printf(">>> [FORTINET WARN] 'magic' token not found in HTML or URL query (Failure %d/3).\n", s_fortinetRetryCount);
+        Serial.printf(">>> [FORTINET WARN] 'magic' token not found (Failure %d/3).\n", s_fortinetRetryCount);
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "No Magic (%d/3)", s_fortinetRetryCount);
-        appendDebugLog("Fortinet login failed: 'magic' token not found");
         if (s_fortinetRetryCount >= 3) {
-            Serial.println(">>> [FORTINET] Max retry limit (3) reached! Stopping firewall pings and triggering SoftAP fallback.");
-            appendDebugLog("Fortinet max retries (3) reached -> Starting SoftAP");
-            snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (Locked)");
             startSoftApFallback();
         }
         return false;
     }
 
-    char dbgBuf[128];
-    snprintf(dbgBuf, sizeof(dbgBuf), "Scraped Magic=\"%s\", Redir=\"%s\"", magicToken.c_str(), redirUrl.c_str());
-    appendDebugLog(dbgBuf);
+    if (redirUrl.length() == 0) redirUrl = "http://captive.apple.com/hotspot-detect.html";
 
-    Serial.println("-------------------------------------------------------");
-    Serial.printf(">>> [FORTINET] Scraped Magic Token : \"%s\"\n", magicToken.c_str());
-    Serial.printf(">>> [FORTINET] Scraped 4Tredir URL : \"%s\"\n", redirUrl.c_str());
-
-    if (redirUrl.length() == 0) {
-        redirUrl = "http://captive.apple.com/hotspot-detect.html";
-        Serial.printf(">>> [FORTINET] Using fallback 4Tredir: \"%s\"\n", redirUrl.c_str());
-    }
-
-    // Step 4: Mandatory URL Encoding of 4Tredir
     String encodedRedirect = urlEncode(redirUrl);
-    Serial.printf(">>> [FORTINET] URL-Encoded 4Tredir  : \"%s\"\n", encodedRedirect.c_str());
+    String payload = "4Tredir=" + encodedRedirect + "&magic=" + magicToken + "&username=" + user + "&password=" + pass;
 
-    // Step 5: Construct exact POST payload
-    String payload = "";
-    if (strlen(net.cpFields) > 0) {
-        payload = String(net.cpFields);
-        payload.replace("{user}", user);
-        payload.replace("{pass}", pass);
-        payload.replace("{magic}", magicToken);
-        payload.replace("{redir}", encodedRedirect);
+    Serial.printf(">>> [FORTINET] Scraped Magic Token : \"%s\"\n", magicToken.c_str());
+    Serial.printf(">>> [FORTINET] POST Target       : %s\n", postUrl.c_str());
+    
+    // 5. Submit the form to exactly where Fortinet requested (handles both HTTP and HTTPS safely)
+    bool isHttps = postUrl.startsWith("https");
+    if (isHttps) {
+        http.begin(secureClient, postUrl);
     } else {
-        payload = "4Tredir=" + encodedRedirect + 
-                  "&magic=" + magicToken + 
-                  "&username=" + user + 
-                  "&password=" + pass;
+        http.begin(plainClient, postUrl);
     }
-
-    Serial.println("-------------------------------------------------------");
-    Serial.println(">>> [FORTINET] Assembled POST Payload:");
-    Serial.println(payload);
-    Serial.println("-------------------------------------------------------");
-
-    // Step 6: Send HTTP POST with strict headers
-    Serial.printf(">>> [FORTINET] Submitting credentials to: %s\n", targetUrl.c_str());
-    http.begin(targetUrl);
+    
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    http.setTimeout(8000);
+    http.addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36");
+    http.setTimeout(10000);
 
     int postCode = http.POST((uint8_t*)payload.c_str(), payload.length());
     Serial.printf(">>> [FORTINET] POST Response Code: %d\n", postCode);
-
+    
     if (postCode > 0) {
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "OK (HTTP %d)", postCode);
-        String resp = http.getString();
-        char respSnippet[128];
-        snprintf(respSnippet, sizeof(respSnippet), "Portal POST %d, resp: %.60s", postCode, resp.c_str());
-        appendDebugLog(respSnippet);
         Serial.println(">>> [FORTINET] Response snippet:");
-        Serial.println(resp.substring(0, min((unsigned int)resp.length(), 250U)));
-        resp = "";
+        Serial.println(http.getString().substring(0, 250));
     } else {
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Err (%s)", http.errorToString(postCode).c_str());
-        char errSnippet[128];
-        snprintf(errSnippet, sizeof(errSnippet), "Portal POST err: %.70s", http.errorToString(postCode).c_str());
-        appendDebugLog(errSnippet);
         Serial.printf(">>> [FORTINET ERROR] POST failed: %s\n", http.errorToString(postCode).c_str());
     }
     http.end();
 
-    // Step 7: Verify internet connectivity
-    delay(1500);
+    // 6. Verify internet connectivity
+    delay(5000); 
     bool internetOk = checkInternetAccess();
     if (internetOk) {
-        s_fortinetRetryCount = 0; // Reset counter on confirmed success!
+        s_fortinetRetryCount = 0; 
         Serial.println(">>> [FORTINET SUCCESS] Internet access confirmed! Captive portal bypassed.");
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Authenticated");
-        appendDebugLog("Internet access verified (Portal Bypassed OK)");
     } else {
         s_fortinetRetryCount++;
-        Serial.printf(">>> [FORTINET WARN] Internet check failed after login attempt (Failure %d/3).\n", s_fortinetRetryCount);
+        Serial.printf(">>> [FORTINET WARN] Internet check failed after login (Failure %d/3).\n", s_fortinetRetryCount);
         snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (%d/3)", s_fortinetRetryCount);
-        appendDebugLog("Internet verification failed after Portal attempt");
-
         if (s_fortinetRetryCount >= 3) {
-            Serial.println(">>> [FORTINET] Max retry limit (3) reached! Stopping firewall pings and triggering SoftAP fallback.");
-            appendDebugLog("Fortinet max retries (3) reached -> Starting SoftAP");
-            snprintf(s_lastPortalStatus, sizeof(s_lastPortalStatus), "Bypass Failed (Locked)");
             startSoftApFallback();
         }
     }
     return internetOk;
 }
+ 
 
 /* ── String Sanitization Helper ──────────────────────────────────────────── */
 static inline void sanitizeString(char* str) {
@@ -679,9 +713,9 @@ static bool connectToNetwork(const SavedNetwork& net) {
         snprintf(dLog, sizeof(dLog), "Associated with '%s', IP %s", targetSsid, s_ipAddress);
         appendDebugLog(dLog);
 
-        Serial.println(">>> [WIFI] Waiting 15 seconds for college network gateway & DHCP to stabilize...");
+        Serial.println(">>> [WIFI] Waiting 20 seconds for college network gateway & DHCP to stabilize...");
         uint32_t stabStart = millis();
-        while (millis() - stabStart < 15000) {
+        while (millis() - stabStart < 20000) {
             delay(500);
         }
 

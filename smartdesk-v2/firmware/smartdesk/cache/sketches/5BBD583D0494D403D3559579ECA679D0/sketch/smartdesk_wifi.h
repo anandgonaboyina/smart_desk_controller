@@ -13,6 +13,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <HTTPClient.h>
@@ -36,7 +37,7 @@ static void saveWifiNetworkToNVS(int idx);
 #define MAX_WIFI_NETWORKS        6
 #define DEFAULT_AP_SSID          "AnandSmartDesk"
 #define DEFAULT_AP_PASS          "Anandsmartdesk"
-#define DEFAULT_FORTINET_GATEWAY "http://192.168.80.1:1000/"
+#define DEFAULT_FORTINET_GATEWAY "https://192.168.80.1:1000/"
 #define DNS_PORT                 53
 
 struct SavedNetwork {
@@ -355,6 +356,9 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
 
     // Determine target URL, username, and password
     String targetUrl = strlen(net.cpUrl) > 0 ? String(net.cpUrl) : String(DEFAULT_FORTINET_GATEWAY);
+    if (targetUrl.startsWith("http://192.168.80.1")) {
+        targetUrl.replace("http://", "https://");
+    }
     String user = String(net.cpUser);
     String pass = String(net.cpPass);
 
@@ -369,9 +373,20 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     Serial.printf(">>> [FORTINET] Gateway Target: %s\n", targetUrl.c_str());
     Serial.printf(">>> [FORTINET] Student ID    : %s\n", user.c_str());
 
-    // Step 2: Fetch Login Page HTML to scrape dynamic 'magic' and '4Tredir' tokens
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure(); // CRITICAL: Ignore Fortinet self-signed SSL certs
+    WiFiClient plainClient;
     HTTPClient http;
-    http.begin(targetUrl);
+
+    bool isHttps = targetUrl.startsWith("https");
+
+    // Step 2: Fetch Login Page HTML to scrape dynamic 'magic' and '4Tredir' tokens
+    if (isHttps) {
+        http.begin(secureClient, targetUrl);
+    } else {
+        http.begin(plainClient, targetUrl);
+    }
+    
     http.setTimeout(7000);
     int getCode = http.GET();
 
@@ -463,7 +478,13 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
 
     // Step 6: Send HTTP POST with strict headers
     Serial.printf(">>> [FORTINET] Submitting credentials to: %s\n", targetUrl.c_str());
-    http.begin(targetUrl);
+    
+    if (isHttps) {
+        http.begin(secureClient, targetUrl);
+    } else {
+        http.begin(plainClient, targetUrl);
+    }
+    
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     http.setTimeout(8000);
 
@@ -680,9 +701,9 @@ static bool connectToNetwork(const SavedNetwork& net) {
         snprintf(dLog, sizeof(dLog), "Associated with '%s', IP %s", targetSsid, s_ipAddress);
         appendDebugLog(dLog);
 
-        Serial.println(">>> [WIFI] Waiting 15 seconds for college network gateway & DHCP to stabilize...");
+        Serial.println(">>> [WIFI] Waiting 20 seconds for college network gateway & DHCP to stabilize...");
         uint32_t stabStart = millis();
-        while (millis() - stabStart < 15000) {
+        while (millis() - stabStart < 20000) {
             delay(500);
         }
 
@@ -698,6 +719,15 @@ static bool connectToNetwork(const SavedNetwork& net) {
             Serial.println(">>> [WIFI SUCCESS] Internet connection confirmed!");
             appendDebugLog("Internet active & verified");
             syncTimeFromNTP();
+            // --- NEW: WAKE UP RENDER SERVER ---
+            Serial.println(">>> [CLOUD] Pinging Render health endpoint to wake up server...");
+            HTTPClient httpPing;
+            httpPing.begin("https://smart-desk-controller.onrender.com/health");
+            httpPing.setTimeout(4000); 
+            int pingCode = httpPing.GET();
+            Serial.printf(">>> [CLOUD] Render wake-up ping HTTP code: %d\n", pingCode);
+            httpPing.end();
+            // ----------------------------------
             return true;
         } else {
             Serial.println(">>> [WIFI FAILED] No true internet access on this network.");
