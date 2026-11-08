@@ -747,15 +747,18 @@ static bool connectToNetwork(const SavedNetwork& net) {
             Serial.println(">>> [WIFI SUCCESS] Internet connection confirmed!");
             appendDebugLog("Internet active & verified");
             syncTimeFromNTP();
-            // --- NEW: WAKE UP RENDER SERVER ---
+            // --- WAKE UP RENDER SERVER ---
             Serial.println(">>> [CLOUD] Pinging Render health endpoint to wake up server...");
+            WiFiClientSecure securePing;
+            securePing.setInsecure();
+            securePing.setTimeout(8);
             HTTPClient httpPing;
-            httpPing.begin("https://smart-desk-controller.onrender.com/health");
-            httpPing.setTimeout(4000); 
+            httpPing.begin(securePing, "https://smart-desk-controller.onrender.com/health");
+            httpPing.setTimeout(6000); 
             int pingCode = httpPing.GET();
             Serial.printf(">>> [CLOUD] Render wake-up ping HTTP code: %d\n", pingCode);
             httpPing.end();
-            // ----------------------------------
+            // ------------------------------
             return true;
         } else {
             Serial.println(">>> [WIFI FAILED] No true internet access on this network.");
@@ -1520,8 +1523,9 @@ static void wifiWorkerTask(void* pvParameters) {
         // 4. Update cloud WebSocket client if internet is active (throttled auto-reconnect)
         if (s_wifiConnected) {
             updateCloudClient();
-            if (!s_cloudConnected) {
+            if (!s_cloudWsStarted) {
                 static uint32_t s_lastWsAutoReconnectMs = 0;
+                if (s_lastWsAutoReconnectMs == 0) s_lastWsAutoReconnectMs = millis();
                 if (millis() - s_lastWsAutoReconnectMs >= 15000UL) {
                     s_lastWsAutoReconnectMs = millis();
                     // checkInternetAccess uses non-blocking 60-second cooldown cache
@@ -1670,7 +1674,7 @@ static void initWifiSubsystem() {
     xTaskCreatePinnedToCore(
         wifiWorkerTask,
         "wifiWorker",
-        8192,
+        16384, // 16KB stack depth to safely support mbedTLS TLS 1.3 / WebSocket handshakes
         NULL,
         1, // Priority 1 (low)
         &s_wifiTaskHandle,

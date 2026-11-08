@@ -663,7 +663,9 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
             s_cloudConnected     = true;
             s_cloudAuthenticated = false;
             Serial.printf(">>> [CLOUD WS] Connected to %s:%d! Sending auth handshake...\n", s_cloudHost, s_cloudPort);
-            char authMsg[256];
+            
+            // Increased buffer to 512 to prevent JSON truncation
+            char authMsg[512];
             snprintf(authMsg, sizeof(authMsg),
                 "{\"type\":\"auth\",\"role\":\"device\",\"deviceId\":\"%s\",\"deviceKey\":\"%s\",\"userId\":\"%s\",\"password\":\"%s\"}",
                 s_cloudDeviceId, s_cloudDeviceKey, s_cloudUser, s_cloudPassword
@@ -688,26 +690,40 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
     }
 }
 
+
 /* ── Cloud Client Lifecycle ──────────────────────────────────────────────── */
+static bool s_cloudWsStarted = false;
+
 static void startCloudClient() {
+    if (s_cloudWsStarted && s_cloudConnected) return;
+
     bool isSsl = (s_cloudPort == 443 || strstr(s_cloudHost, ".onrender.com") != NULL || strstr(s_cloudHost, ".vercel.app") != NULL);
     Serial.printf(">>> [CLOUD WS] Initializing WebSocket client -> %s://%s:%d%s\n",
                   isSsl ? "wss" : "ws", s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+
+    // REVERTED TO KNOWN-WORKING BASICS: No extra headers, no custom SSL overrides.
+    // The WebSocketsClient library handles the upgrade securely by default.
     if (isSsl) {
         s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
     } else {
         s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
     }
+
     s_cloudWs.onEvent(onCloudWsEvent);
     s_cloudWs.setReconnectInterval(5000);
+    
+    // Basic heartbeat to keep the Render proxy alive
     s_cloudWs.enableHeartbeat(15000, 3000, 2);
+    s_cloudWsStarted = true;
 }
 
 static void stopCloudClient() {
-    if (s_cloudConnected) {
+    if (s_cloudWsStarted) {
         s_cloudWs.disconnect();
         s_cloudConnected     = false;
         s_cloudAuthenticated = false;
+        s_cloudWsStarted     = false;
+        Serial.println(">>> [CLOUD WS] WebSocket client stopped.");
     }
 }
 

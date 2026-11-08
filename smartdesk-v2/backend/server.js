@@ -160,7 +160,15 @@ app.post("/api/device/:deviceId/command", (req, res) => {
 /* ── WEBSOCKET MULTI-TENANT SERVER ───────────────────────────────────────── */
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  handleProtocols: (protocols) => {
+    // Gracefully accept any negotiated subprotocols (e.g. arduino, or none for browser PWA)
+    for (const p of protocols) return p;
+    return false;
+  },
+});
 
 wss.on("connection", (ws, req) => {
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
