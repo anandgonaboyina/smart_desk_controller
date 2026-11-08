@@ -244,13 +244,18 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   const [previewTick, setPreviewTick] = useState<number>(0);
 
   /* Wi-Fi & REST Transport State */
-  const [wifiHost, setWifiHost] = useState<string>("192.168.4.1");
+  const [wifiHost, setWifiHost] = useState<string>("");
   const [wifiConnected, setWifiConnected] = useState<boolean>(false);
   const [wifiState, setWifiState] = useState<number>(0);
   const [wifiIp, setWifiIp] = useState<string>("");
   const [wifiSsid, setWifiSsid] = useState<string>("");
   const [wifiRssi, setWifiRssi] = useState<number>(0);
   const [wifiOnAwayOnly, setWifiOnAwayOnly] = useState<boolean>(false);
+  const [scannedNetworks, setScannedNetworks] = useState<{ ssid: string; rssi: number }[]>([]);
+  const [isScanningWifi, setIsScanningWifi] = useState<boolean>(false);
+  const scanPromiseResolveRef = useRef<((nets: { ssid: string; rssi: number }[]) => void) | null>(null);
+  const tempScannedNetsRef = useRef<{ ssid: string; rssi: number }[]>([]);
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wifiHostRef = useRef<string>(wifiHost);
   wifiHostRef.current = wifiHost;
 
@@ -392,15 +397,17 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     );
   }, [sendWifiCommand]);
 
-  /* Periodic Wi-Fi Status Polling */
+  /* Periodic Wi-Fi Status Polling (Only runs as fallback when BLE is disconnected) */
   useEffect(() => {
-    if (!wifiHost) return;
+    // If BLE is connected, we already get live real-time telemetry every 3s via BLE; don't spam HTTP!
+    // Never poll 192.168.4.1 unless explicitly connected to ESP32 SoftAP Wi-Fi
+    if (!wifiHost || connected || wifiHost === "192.168.4.1") return;
     let isCancelled = false;
 
     const pollStatus = async () => {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
         const res = await fetch(`http://${wifiHost}/api/status`, {
           signal: controller.signal,
         });
@@ -708,6 +715,76 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     [addLog]
   );
 
+  /* Parse Config Notifications (Scan Results, Status) */
+  const parseConfigNotify = useCallback(
+    (dataView: DataView) => {
+      if (dataView.byteLength >= 100) {
+        parseConfigData(dataView);
+        return;
+      }
+      if (dataView.byteLength < 2) return;
+      const opcode = dataView.getUint8(0);
+      if (opcode === 0xEE) {
+        const idx = dataView.getUint8(1);
+        if (idx === 0xFF) {
+          if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+          setIsScanningWifi(false);
+          const results = [...tempScannedNetsRef.current];
+          setScannedNetworks(results);
+          scanPromiseResolveRef.current?.(results);
+          scanPromiseResolveRef.current = null;
+          addLog(`[BLE RX] Airwave Scan Complete: ${results.length} networks found`, "rx");
+          onToastRef.current?.(`Found ${results.length} Wi-Fi networks!`, "success");
+        } else if (dataView.byteLength >= 5) {
+          const rAbs = dataView.getUint8(3);
+          const rssi = -rAbs;
+          const sLen = Math.min(dataView.getUint8(4), dataView.byteLength - 5);
+          if (sLen > 0) {
+            const rawBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + 5, sLen);
+            const ssid = new TextDecoder().decode(rawBytes).replace(/\0/g, "").trim();
+            if (ssid && !tempScannedNetsRef.current.some((n) => n.ssid === ssid)) {
+              tempScannedNetsRef.current.push({ ssid, rssi });
+              setScannedNetworks([...tempScannedNetsRef.current]);
+            }
+          }
+        }
+      }
+    },
+    [addLog, parseConfigData]
+  );
+
+  /* Scan Wi-Fi Networks over BLE */
+  const scanWifiOverBle = useCallback(async (): Promise<{ ssid: string; rssi: number }[]> => {
+    if (!configCharRef.current) throw new Error("SmartDesk Bluetooth is not connected");
+    tempScannedNetsRef.current = [];
+    setScannedNetworks([]);
+    setIsScanningWifi(true);
+    addLog("[BLE TX] 0xEE (Scanning Wi-Fi Airwaves via ESP32 Radio)...", "tx");
+
+    return new Promise<{ ssid: string; rssi: number }[]>((resolve, reject) => {
+      scanPromiseResolveRef.current = resolve;
+      if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = setTimeout(() => {
+        setIsScanningWifi(false);
+        const results = [...tempScannedNetsRef.current];
+        scanPromiseResolveRef.current?.(results);
+        scanPromiseResolveRef.current = null;
+      }, 7000);
+
+      const payload = new Uint8Array([0xEE]);
+      enqueueWrite("Scan Wi-Fi Networks", async () => {
+        try {
+          await configCharRef.current?.writeValueWithResponse(payload);
+        } catch (e) {
+          setIsScanningWifi(false);
+          if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+          scanPromiseResolveRef.current = null;
+          reject(e);
+        }
+      });
+    });
+  }, [enqueueWrite, addLog]);
+
   /* Parse Environment & Clock */
   const parseEnvData = useCallback(
     (dataView: DataView) => {
@@ -794,11 +871,25 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         setWifiState(wState);
         setWifiConnected(wState === 1);
         setWifiRssi(wRssi);
-        if (ipStr !== "0.0.0.0") setWifiIp(ipStr);
+        if (ipStr !== "0.0.0.0") {
+          setWifiIp(ipStr);
+          // Only set wifiHost when connected to local LAN (STA mode). Never set to SoftAP 192.168.4.1
+          if (wState === 1 && ipStr !== "192.168.4.1") {
+            setWifiHost(ipStr);
+          }
+        }
         if (ssidName) setWifiSsid(ssidName);
+
+        const stateLabels: Record<number, string> = {
+          0: "Off",
+          1: "Connected (STA)",
+          2: "Connecting...",
+          3: "Hotspot Active (SoftAP)",
+        };
+        addLog(`[RX ENV] Wi-Fi: ${stateLabels[wState] || `State ${wState}`} | SSID: ${ssidName || "(none)"} | IP: ${ipStr}`, "rx");
       }
     },
-    []
+    [addLog]
   );
 
   /* Sync Real-Time Clock to ESP32 (0xFB) */
@@ -919,12 +1010,34 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
                   { namePrefix: "SmartDesk" },
                   { namePrefix: "smartDesk" },
                   { namePrefix: "Smart Desk" },
+                  { namePrefix: "Smart" },
+                  { namePrefix: "smart" },
                   { namePrefix: "Desk" },
+                  { namePrefix: "desk" },
                   { namePrefix: "SD-" },
+                  { namePrefix: "SD " },
+                  { namePrefix: "sd " },
+                  { namePrefix: "SD" },
+                  { namePrefix: "sd" },
+                  { namePrefix: "Controller" },
+                  { namePrefix: "controller" },
                 ],
                 optionalServices: [SERVICE_UUID, "00001812-0000-1000-8000-00805f9b34fb"],
               };
-          dev = await nav.bluetooth.requestDevice(reqOptions);
+          try {
+            dev = await nav.bluetooth.requestDevice(reqOptions);
+          } catch (reqErr: any) {
+            // If strict filtering failed to find the device or user cancelled, allow acceptAllDevices fallback if requested
+            if (reqErr.name === "NotFoundError" && !showAllDevicesRef.current) {
+              addLog("Filtered scan found no devices. Retrying with acceptAllDevices...", "warn");
+              dev = await nav.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [SERVICE_UUID, "00001812-0000-1000-8000-00805f9b34fb"],
+              });
+            } else {
+              throw reqErr;
+            }
+          }
         }
 
         deviceRef.current = dev;
@@ -1006,6 +1119,16 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
             await eChar.startNotifications();
             eChar.addEventListener("characteristicvaluechanged", (e: any) => {
               if (e.target?.value) parseEnvData(e.target.value);
+            });
+            await sleep(150);
+          } catch (e) {}
+        }
+
+        if (cChar) {
+          try {
+            await cChar.startNotifications();
+            cChar.addEventListener("characteristicvaluechanged", (e: any) => {
+              if (e.target?.value) parseConfigNotify(e.target.value);
             });
             await sleep(150);
           } catch (e) {}
@@ -1956,6 +2079,9 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     wifiSsid,
     wifiRssi,
     wifiOnAwayOnly,
+    scannedNetworks,
+    isScanningWifi,
+    scanWifiOverBle,
     updateWifiHost,
     toggleWifiOnAwayOnly,
     configureWifiOverBle,

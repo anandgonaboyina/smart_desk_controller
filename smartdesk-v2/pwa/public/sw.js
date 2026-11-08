@@ -46,8 +46,8 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Ignore non-GET requests or chrome-extension URLs
-  if (req.method !== "GET" || !url.protocol.startsWith("http")) return;
+  // Ignore non-GET requests, non-http, or cross-origin requests (e.g. ESP32 AP, cloud backend)
+  if (req.method !== "GET" || !url.protocol.startsWith("http") || url.origin !== self.location.origin) return;
 
   // Navigation requests (HTML pages): Network-first with immediate cache fallback for offline
   if (req.mode === "navigate") {

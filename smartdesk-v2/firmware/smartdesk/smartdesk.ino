@@ -564,8 +564,14 @@ void buildEnvPayload(uint8_t* outPayload) {
     outPayload[23] = s_matrixConfig.mode;
 
     // Bytes 24..31: Wi-Fi Telemetry over BLE
-    // Byte 24: Wi-Fi State: 0=Disconnected, 1=Connected, 2=Connecting, 3=SoftAP Active
-    outPayload[24] = s_wifiConnected ? 1 : (WiFi.softAPgetStationNum() > 0 ? 3 : 0);
+    // Byte 24: Wi-Fi State: 0=Off, 1=Connected (STA), 2=Connecting, 3=SoftAP Active
+    if (s_wifiConnected) {
+        outPayload[24] = 1;
+    } else if (s_reqConnectSlot >= 0) {
+        outPayload[24] = 2;
+    } else {
+        outPayload[24] = 3;
+    }
     outPayload[25] = (uint8_t)abs(s_wifiRssi);
     IPAddress curIp = s_wifiConnected ? WiFi.localIP() : WiFi.softAPIP();
     outPayload[26] = curIp[0];
@@ -573,13 +579,16 @@ void buildEnvPayload(uint8_t* outPayload) {
     outPayload[28] = curIp[2];
     outPayload[29] = curIp[3];
     outPayload[30] = s_ntpSynced ? 1 : 0;
-    uint8_t slen = (uint8_t)strlen(s_currentSsid);
+
+    const char* displaySsid = s_wifiConnected ? s_currentSsid :
+                              (s_reqConnectSlot >= 0 && s_reqConnectSlot < MAX_WIFI_NETWORKS ? s_savedNetworks[s_reqConnectSlot].ssid : s_apConfig.ssid);
+    uint8_t slen = (uint8_t)strlen(displaySsid);
     if (slen > 15) slen = 15;
     outPayload[31] = slen;
 
     // Bytes 32..47: Null-padded SSID string (up to 15 characters)
     if (slen > 0) {
-        memcpy(&outPayload[32], s_currentSsid, slen);
+        memcpy(&outPayload[32], displaySsid, slen);
     }
 }
 
@@ -1565,6 +1574,11 @@ void loop() {
                 s_wifiConnected = false;
                 appendDebugLog("Wi-Fi disconnected via BLE command");
                 notifyEnvState();
+            } else if (cmd.data[0] == 0xEE) { // 0xEE: Scan Wi-Fi Networks over BLE
+                s_reqBleWifiScan = true;
+                appendDebugLog("BLE client requested Wi-Fi airwave scan");
+            } else if (cmd.data[0] == 0xEF) { // 0xEF: Request immediate Environment & Wi-Fi state
+                notifyEnvState();
             }
         }
     }
@@ -1593,14 +1607,16 @@ void loop() {
 
     updateActiveBuzzer(now);
 
-    // Read DHT11 Sensor every 4 seconds
-    if (now - s_lastDhtReadMs >= 4000) {
+    // Read DHT11 Sensor every 3 seconds & notify Environment/Wi-Fi telemetry periodically
+    if (now - s_lastDhtReadMs >= 3000) {
         s_lastDhtReadMs = now;
         float t, h;
         if (readDHT11(&t, &h)) {
             s_tempC = t;
             s_humidity = h;
             s_sensorValid = true;
+        }
+        if (s_connected) {
             notifyEnvState();
         }
     }

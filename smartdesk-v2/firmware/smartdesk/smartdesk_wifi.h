@@ -21,6 +21,7 @@
 #include "smartdesk_cloud.h"
 
 static volatile int8_t s_reqConnectSlot = -1;
+static volatile bool   s_reqBleWifiScan = false;
 
 /* ── Wi-Fi Multi-Network Configurations ───────────────────────────────────── */
 #define MAX_WIFI_NETWORKS   6
@@ -1106,7 +1107,46 @@ static void wifiWorkerTask(void* pvParameters) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(25)); // 25ms tick for fast background response
 
-        // 1. Handle direct connection requests triggered via BLE (0xE1 / 0xE2) or Web API
+        // 1. Handle BLE Wi-Fi Airwave Scan Request (0xEE)
+        if (s_reqBleWifiScan) {
+            s_reqBleWifiScan = false;
+            appendDebugLog("Scanning Wi-Fi airwaves for BLE client...");
+            int n = WiFi.scanNetworks(false, true);
+            if (n < 0) n = 0;
+            int maxToSend = (n > 12) ? 12 : n;
+            for (int i = 0; i < maxToSend; i++) {
+                String curSsid = WiFi.SSID(i);
+                int32_t r = WiFi.RSSI(i);
+                uint8_t rAbs = (uint8_t)abs(r);
+                uint8_t sLen = curSsid.length() > 32 ? 32 : (uint8_t)curSsid.length();
+
+                uint8_t scanPacket[40];
+                scanPacket[0] = 0xEE;
+                scanPacket[1] = (uint8_t)i;
+                scanPacket[2] = (uint8_t)maxToSend;
+                scanPacket[3] = rAbs;
+                scanPacket[4] = sLen;
+                if (sLen > 0) {
+                    memcpy(&scanPacket[5], curSsid.c_str(), sLen);
+                }
+                if (s_pConfigChar && s_connected) {
+                    s_pConfigChar->setValue(scanPacket, 5 + sLen);
+                    s_pConfigChar->notify();
+                    vTaskDelay(pdMS_TO_TICKS(25));
+                }
+            }
+            uint8_t endPacket[5] = { 0xEE, 0xFF, (uint8_t)maxToSend, 0, 0 };
+            if (s_pConfigChar && s_connected) {
+                s_pConfigChar->setValue(endPacket, sizeof(endPacket));
+                s_pConfigChar->notify();
+            }
+            WiFi.scanDelete();
+            char sDoneMsg[64];
+            snprintf(sDoneMsg, sizeof(sDoneMsg), "Airwave scan completed (%d networks found)", n);
+            appendDebugLog(sDoneMsg);
+        }
+
+        // 2. Handle direct connection requests triggered via BLE (0xE1 / 0xE2) or Web API
         if (s_reqConnectSlot >= 0) {
             int slot = s_reqConnectSlot;
             s_reqConnectSlot = -1;
@@ -1114,11 +1154,13 @@ static void wifiWorkerTask(void* pvParameters) {
                 if (connectToNetwork(s_savedNetworks[slot])) {
                     startCloudClient();
                     notifyEnvState();
+                } else {
+                    notifyEnvState();
                 }
             }
         }
 
-        // 2. Keep cloud WebSocket client alive and pump packets
+        // 3. Keep cloud WebSocket client alive and pump packets
         if (s_wifiConnected) {
             updateCloudClient();
         }

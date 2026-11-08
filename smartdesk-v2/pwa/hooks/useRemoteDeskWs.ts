@@ -31,13 +31,26 @@ export interface UseRemoteDeskWsOptions {
   onToast?: (message: string, type?: "info" | "success" | "error" | "warn") => void;
 }
 
+const resolveDefaultWsUrl = () => {
+  if (process.env.NEXT_PUBLIC_REMOTE_WS_URL) return process.env.NEXT_PUBLIC_REMOTE_WS_URL;
+  if (typeof window !== "undefined" && window.location) {
+    const host = window.location.hostname;
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${proto}//${host}:3001/ws`;
+    }
+  }
+  return "ws://localhost:3001/ws";
+};
+
 export function useRemoteDeskWs({
-  wsUrl = process.env.NEXT_PUBLIC_REMOTE_WS_URL || "ws://localhost:3001/ws",
+  wsUrl,
   userId = "user_anand_primary",
   deviceId = "desk_anand_s3",
   onStateUpdate,
   onToast,
 }: UseRemoteDeskWsOptions = {}) {
+  const effectiveWsUrl = wsUrl || resolveDefaultWsUrl();
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [remoteModeEnabled, setRemoteModeEnabled] = useState<boolean>(false);
@@ -60,12 +73,12 @@ export function useRemoteDeskWs({
     }
 
     try {
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(effectiveWsUrl);
       wsRef.current = socket;
 
       socket.onopen = () => {
         setIsWsConnected(true);
-        console.log(`[CLOUD WS] Connected to relay server at ${wsUrl}`);
+        console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl}`);
 
         // Send Multi-User Authentication Handshake
         const authPayload = {
@@ -137,7 +150,7 @@ export function useRemoteDeskWs({
       console.error("[CLOUD WS] Connection attempt error", err);
       reconnectTimeoutRef.current = setTimeout(connect, 5000);
     }
-  }, [wsUrl, userId, deviceId, onStateUpdate, onToast]);
+  }, [effectiveWsUrl, userId, deviceId, onStateUpdate, onToast]);
 
   useEffect(() => {
     connect();
@@ -218,6 +231,7 @@ export function useRemoteDeskWs({
   }, [deviceId]);
 
   return {
+    wsUrl: effectiveWsUrl,
     isWsConnected,
     isDeviceOnline,
     remoteModeEnabled,

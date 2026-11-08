@@ -16,6 +16,7 @@ import PresencePanel from "../components/PresencePanel";
 import SettingsPanel from "../components/SettingsPanel";
 import RelayConfigModal from "../components/RelayConfigModal";
 import WifiManagerModal from "../components/WifiManagerModal";
+import CloudHandshakeModal from "../components/CloudHandshakeModal";
 import CustomAlertModal, { ModalAlertProps } from "../components/CustomAlertModal";
 import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
@@ -24,6 +25,7 @@ export default function SmartDeskApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("aod");
   const [relayConfigModalIdx, setRelayConfigModalIdx] = useState<number | null>(null);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
+  const [showHandshakeModal, setShowHandshakeModal] = useState<boolean>(false);
 
   const [alertState, setAlertState] = useState<Omit<ModalAlertProps, "onConfirm">>({
     isOpen: false, title: "", message: "", confirmLabel: "OK", isConfirm: false,
@@ -111,9 +113,13 @@ export default function SmartDeskApp() {
           connecting={ble.connecting}
           deviceName={currentDeskName}
           wifiConnected={ble.wifiConnected}
+          wifiState={ble.wifiState}
           wifiSsid={ble.wifiSsid}
           wifiIp={ble.wifiIp}
+          isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
+          isWsConnected={remote.isWsConnected}
           onOpenWifiModal={() => setShowWifiModal(true)}
+          onOpenHandshakeModal={() => setShowHandshakeModal(true)}
           relays={effectiveRelays}
           relayConfigs={ble.configs}
           envData={ble.envData}
@@ -145,28 +151,23 @@ export default function SmartDeskApp() {
             
             <div className="flex items-center gap-2">
               <div
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
+                onClick={() => setShowHandshakeModal(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                   remote.isWsConnected && remote.isDeviceOnline
                     ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
                     : remote.isWsConnected
                     ? "border-amber-500/60 bg-amber-950/40 text-amber-300"
-                    : "border-zinc-800 bg-zinc-900/60 text-zinc-500"
+                    : "border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:border-zinc-700"
                 }`}
-                title={
-                  remote.isWsConnected && remote.isDeviceOnline
-                    ? "Cloud Relay Active: Controlling hardware from anywhere in the world"
-                    : remote.isWsConnected
-                    ? "Cloud Server Connected (Waiting for ESP32 connection)"
-                    : "Cloud Server Offline (Run: node server.js)"
-                }
+                title="Click to open Cloud Handshake & Worldwide Diagnostics"
               >
                 <span>☁️</span>
-                <span className="hidden sm:inline">
+                <span className="text-[11px] font-bold">
                   {remote.isWsConnected && remote.isDeviceOnline
-                    ? "Cloud Online"
+                    ? "Cloud: Online"
                     : remote.isWsConnected
-                    ? "Cloud Standby"
-                    : "Cloud Offline"}
+                    ? "Cloud: Standby"
+                    : "Cloud: Offline"}
                 </span>
                 <span
                   className={`w-2 h-2 rounded-full ${
@@ -180,15 +181,83 @@ export default function SmartDeskApp() {
               </div>
 
               <button
+                onClick={() => setShowHandshakeModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
+                title="Step-by-step Worldwide Handshake Verification"
+              >
+                <span>🤝</span>
+                <span className="hidden sm:inline">HANDSHAKE</span>
+              </button>
+
+              <button
                 onClick={() => setShowWifiModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-xs font-bold text-zinc-300 transition-all cursor-pointer active:scale-95"
-                title={ble.wifiConnected ? `Wi-Fi: ${ble.wifiSsid || "Connected"} (${ble.wifiIp})` : "Configure Wi-Fi & College Portal"}
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                  ble.wifiConnected
+                    ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
+                    : ble.wifiState === 2
+                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300"
+                    : ble.wifiState === 3
+                    ? "border-cyan-500/60 bg-cyan-950/40 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
+                    : "border-zinc-700 bg-zinc-900 text-zinc-300"
+                }`}
+                title={
+                  ble.wifiConnected
+                    ? `Wi-Fi: ${ble.wifiSsid || "Connected"} (${ble.wifiIp})`
+                    : ble.wifiState === 2
+                    ? "Connecting to Wi-Fi..."
+                    : ble.wifiState === 3
+                    ? "Hotspot Mode: AnandSmartDesk (192.168.4.1)"
+                    : "Configure Wi-Fi & College Portal"
+                }
               >
                 <span>📶</span>
-                <span className="hidden sm:inline">
-                  {ble.wifiConnected ? (ble.wifiSsid || "Wi-Fi Connected") : "Wi-Fi Config"}
+                <span className="text-[11px] font-bold truncate max-w-[95px] sm:max-w-[150px]">
+                  {ble.wifiConnected
+                    ? ble.wifiSsid ? `Wi-Fi: ${ble.wifiSsid}` : "Wi-Fi: OK"
+                    : ble.wifiState === 2
+                    ? "Wi-Fi: Connecting..."
+                    : ble.wifiState === 3
+                    ? "Hotspot: Active"
+                    : "Wi-Fi: Offline"}
                 </span>
-                <span className={`w-2 h-2 rounded-full ${ble.wifiConnected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-zinc-500"}`} />
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    ble.wifiConnected
+                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                      : ble.wifiState === 2
+                      ? "bg-amber-400 animate-ping"
+                      : ble.wifiState === 3
+                      ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
+                      : "bg-zinc-500"
+                  }`}
+                />
+              </button>
+
+              <button
+                onClick={ble.connected ? undefined : ble.handleConnect}
+                disabled={ble.connected}
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
+                  ble.connected
+                    ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300"
+                    : ble.connecting
+                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300 animate-pulse cursor-pointer"
+                    : "border-rose-500/50 bg-rose-950/40 text-rose-300 cursor-pointer active:scale-95 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
+                }`}
+                title={ble.connected ? `BLE: ${ble.deviceName}` : "Connect SmartDesk via BLE"}
+              >
+                <span>⚡</span>
+                <span className="text-[11px] font-bold">
+                  {ble.connected ? "BLE: OK" : ble.connecting ? "BLE: Linking..." : "BLE: Disconnected"}
+                </span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    ble.connected
+                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                      : ble.connecting
+                      ? "bg-amber-400"
+                      : "bg-rose-500 shadow-[0_0_6px_#f43f5e]"
+                  }`}
+                />
               </button>
 
               <button
@@ -306,11 +375,37 @@ export default function SmartDeskApp() {
         currentSsid={ble.wifiSsid}
         currentIp={ble.wifiIp}
         wifiConnected={ble.wifiConnected}
+        wifiState={ble.wifiState}
         isBleConnected={ble.connected}
+        onScanOverBle={ble.scanWifiOverBle}
+        scannedNetworks={ble.scannedNetworks}
         onConfigureOverBle={ble.configureWifiOverBle}
         wifiOnAwayOnly={ble.wifiOnAwayOnly}
         onToggleWifiOnAwayOnly={ble.toggleWifiOnAwayOnly}
         onToast={showToast}
+        recentLogs={ble.logs}
+      />
+      <CloudHandshakeModal
+        isOpen={showHandshakeModal}
+        onClose={() => setShowHandshakeModal(false)}
+        bleConnected={ble.connected}
+        bleConnecting={ble.connecting}
+        deviceName={ble.deviceName}
+        onConnectBle={ble.handleConnect}
+        wifiState={ble.wifiState}
+        wifiConnected={ble.wifiConnected}
+        wifiSsid={ble.wifiSsid}
+        wifiIp={ble.wifiIp}
+        wifiRssi={ble.wifiRssi}
+        onScanWifiOverBle={ble.scanWifiOverBle}
+        scannedNetworks={ble.scannedNetworks}
+        onConfigureWifiOverBle={ble.configureWifiOverBle}
+        wsUrl={remote.wsUrl}
+        isWsConnected={remote.isWsConnected}
+        isDeviceOnline={remote.isDeviceOnline}
+        onSendCloudRelayCommand={remote.sendRelayCommand}
+        onToast={showToast}
+        recentLogs={ble.logs}
       />
     </main>
   );

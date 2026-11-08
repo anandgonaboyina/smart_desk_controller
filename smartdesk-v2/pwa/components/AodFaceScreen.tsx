@@ -24,9 +24,13 @@ export interface AodFaceScreenProps {
   presenceData: PresenceData;
   rgbTimerRemainingMin?: number;
   wifiConnected?: boolean;
+  wifiState?: number;
   wifiSsid?: string;
   wifiIp?: string;
+  isCloudOnline?: boolean;
+  isWsConnected?: boolean;
   onOpenWifiModal?: () => void;
+  onOpenHandshakeModal?: () => void;
   onConnect: () => void;
   onOpenRemote: () => void;
   onToggleRelay?: (idx: number, val?: boolean) => void;
@@ -47,9 +51,13 @@ export default function AodFaceScreen({
   presenceData,
   rgbTimerRemainingMin = 0,
   wifiConnected = false,
+  wifiState = 0,
   wifiSsid,
   wifiIp,
+  isCloudOnline = false,
+  isWsConnected = false,
   onOpenWifiModal,
+  onOpenHandshakeModal,
   onConnect,
   onOpenRemote,
   onToggleRelay,
@@ -153,21 +161,84 @@ export default function AodFaceScreen({
         {/* Top-Right: Web Flasher, Wi-Fi & Link Status */}
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex items-center gap-2">
+            {/* Cloud Remote Status Pill */}
+            <div
+              onClick={onOpenHandshakeModal || onOpenRemote}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                isCloudOnline
+                  ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
+                  : isWsConnected
+                  ? "bg-amber-950/80 border-amber-500/60 text-amber-300"
+                  : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700"
+              }`}
+              title="Click to open Cloud Handshake & Worldwide Diagnostics"
+            >
+              <span>☁️</span>
+              <span>{isCloudOnline ? "Cloud: Online" : isWsConnected ? "Cloud: Standby" : "Cloud: Offline"}</span>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isCloudOnline
+                    ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                    : isWsConnected
+                    ? "bg-amber-400"
+                    : "bg-zinc-600"
+                }`}
+              />
+            </div>
+
+            {/* Cloud Handshake & Diagnostics Button */}
+            <button
+              onClick={onOpenHandshakeModal}
+              className="px-2.5 sm:px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black flex items-center gap-1.5 shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
+              title="Step-by-step Worldwide Handshake Verification"
+            >
+              <span>🤝</span>
+              <span className="hidden sm:inline">HANDSHAKE</span>
+            </button>
+
             {/* Wi-Fi Status Pill */}
             <button
               onClick={onOpenWifiModal}
-              className={`px-3 py-1.5 rounded-full border text-xs font-black tracking-wide flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-[11px] font-bold tracking-wide flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
                 wifiConnected
                   ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.3)]"
+                  : wifiState === 2
+                  ? "bg-amber-950/80 border-amber-500/60 text-amber-300"
+                  : wifiState === 3
+                  ? "bg-cyan-950/80 border-cyan-500/60 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
                   : "bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-zinc-300"
               }`}
-              title={wifiConnected ? `Wi-Fi: ${wifiSsid || "Connected"} (${wifiIp || ""})` : "Configure Wi-Fi & College Portal"}
+              title={
+                wifiConnected
+                  ? `Wi-Fi: ${wifiSsid || "Connected"} (${wifiIp || ""})`
+                  : wifiState === 2
+                  ? "Connecting to Wi-Fi..."
+                  : wifiState === 3
+                  ? "Hotspot Active: AnandSmartDesk (192.168.4.1)"
+                  : "Configure Wi-Fi & College Portal"
+              }
             >
               <span>📶</span>
-              <span className="hidden sm:inline">
-                {wifiConnected ? (wifiSsid || "Wi-Fi OK") : "Wi-Fi Config"}
+              <span className="truncate max-w-[100px] sm:max-w-[160px]">
+                {wifiConnected
+                  ? wifiSsid ? `Wi-Fi: ${wifiSsid}` : "Wi-Fi: Connected"
+                  : wifiState === 2
+                  ? "Wi-Fi: Connecting..."
+                  : wifiState === 3
+                  ? "Hotspot: Active"
+                  : "Wi-Fi: Offline"}
               </span>
-              <span className={`w-2 h-2 rounded-full ${wifiConnected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-zinc-500"}`} />
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  wifiConnected
+                    ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                    : wifiState === 2
+                    ? "bg-amber-400 animate-ping"
+                    : wifiState === 3
+                    ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
+                    : "bg-zinc-500"
+                }`}
+              />
             </button>
 
             <button
@@ -187,12 +258,12 @@ export default function AodFaceScreen({
                   ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-300 cursor-default select-none pointer-events-none"
                   : connecting
                   ? "bg-amber-950/80 border-amber-500/50 text-amber-300 animate-pulse cursor-pointer active:scale-95"
-                  : "bg-cyan-950/80 hover:bg-cyan-900 border-cyan-500/60 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.3)] cursor-pointer active:scale-95"
+                  : "bg-rose-950/40 hover:bg-rose-900/60 border-rose-500/50 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.2)] cursor-pointer active:scale-95"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : connecting ? "bg-amber-400" : "bg-cyan-400 animate-ping"}`} />
-              <span className="truncate max-w-[120px] sm:max-w-[180px]">
-                {connected ? deviceName : connecting ? "Connecting..." : "Tap to Link Desk"}
+              <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : connecting ? "bg-amber-400" : "bg-rose-500 shadow-[0_0_6px_#f43f5e]"}`} />
+              <span className="truncate max-w-[140px] sm:max-w-[200px]">
+                {connected ? `BLE: ${deviceName}` : connecting ? "BLE: Connecting..." : "BLE: Disconnected (Link)"}
               </span>
             </button>
           </div>

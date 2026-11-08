@@ -27,20 +27,16 @@ export interface WifiManagerModalProps {
   currentIp?: string;
   portalStatus?: string;
   wifiConnected?: boolean;
+  wifiState?: number;
   isBleConnected?: boolean;
+  onScanOverBle?: () => Promise<{ ssid: string; rssi: number }[]>;
+  scannedNetworks?: { ssid: string; rssi: number }[];
   onConfigureOverBle?: (ssid: string, pass?: string, user?: string, cpPass?: string) => Promise<void>;
   wifiOnAwayOnly?: boolean;
   onToggleWifiOnAwayOnly?: (val: boolean) => void;
   onToast?: (msg: string, type?: "info" | "warn" | "error" | "success") => void;
+  recentLogs?: { text: string; type?: string }[];
 }
-
-const QUICK_WIFI_CHIPS = [
-  "Campus_WiFi",
-  "Hostel_WiFi",
-  "Library_Net",
-  "Home_Fiber",
-  "Mobile_Hotspot",
-];
 
 export default function WifiManagerModal({
   isOpen,
@@ -50,11 +46,15 @@ export default function WifiManagerModal({
   currentIp,
   portalStatus,
   wifiConnected = false,
+  wifiState = 0,
   isBleConnected = false,
+  onScanOverBle,
+  scannedNetworks = [],
   onConfigureOverBle,
   wifiOnAwayOnly = false,
   onToggleWifiOnAwayOnly,
   onToast,
+  recentLogs = [],
 }: WifiManagerModalProps) {
   const [apSsid, setApSsid] = useState<string>("AnandSmartDesk");
   const [apPass, setApPass] = useState<string>("Anandsmartdesk");
@@ -71,7 +71,7 @@ export default function WifiManagerModal({
 
   // Saved networks & scanning
   const [savedNets, setSavedNets] = useState<SavedNetItem[]>([]);
-  const [scannedNets, setScannedNets] = useState<{ ssid: string; rssi: number }[]>([]);
+  const [scannedNets, setScannedNets] = useState<{ ssid: string; rssi: number }[]>(scannedNetworks);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(false);
 
@@ -79,11 +79,21 @@ export default function WifiManagerModal({
   const [debugLogs, setDebugLogs] = useState<string>("");
   const [fetchingLogs, setFetchingLogs] = useState<boolean>(false);
 
+  // Keep scannedNets updated with any incoming BLE airwave scan
+  useEffect(() => {
+    if (scannedNetworks && scannedNetworks.length > 0) {
+      setScannedNets(scannedNetworks);
+    }
+  }, [scannedNetworks]);
+
   const fetchStatus = async () => {
     if (!deskHost) return;
     setLoadingStatus(true);
     try {
-      const res = await fetch(`http://${deskHost}/api/status`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`http://${deskHost}/api/status`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         if (data.ap?.ssid) setApSsid(data.ap.ssid);
@@ -101,23 +111,45 @@ export default function WifiManagerModal({
   const handleFetchLogs = async () => {
     setFetchingLogs(true);
     try {
-      const res = await fetch(`http://${deskHost}/api/wifi/logs`);
-      if (res.ok) {
-        const data = await res.json();
-        setDebugLogs(data.logs || "No logs stored yet.");
-        onToast?.("Fetched latest diagnostic logs from ESP32", "info");
+      if (deskHost) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`http://${deskHost}/api/wifi/logs`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          setDebugLogs(data.logs || "No logs stored yet.");
+          onToast?.("Fetched latest diagnostic logs from ESP32", "info");
+          return;
+        }
+      }
+      if (recentLogs && recentLogs.length > 0) {
+        const text = recentLogs.slice(-25).map((l) => l.text).join("\n");
+        setDebugLogs(`[BLE Live Activity Logs]\n${text}`);
+        onToast?.("Showing real-time BLE logs", "info");
       } else {
-        onToast?.("Could not reach /api/wifi/logs on ESP32", "warn");
+        onToast?.("Connect to ESP32 via BLE or Hotspot to view diagnostics", "warn");
       }
     } catch (e: any) {
-      onToast?.("Log fetch failed: " + (e?.message || "Unreachable"), "warn");
+      if (recentLogs && recentLogs.length > 0) {
+        const text = recentLogs.slice(-25).map((l) => l.text).join("\n");
+        setDebugLogs(`[BLE Live Activity Logs (HTTP Unreachable)]\n${text}`);
+      } else {
+        onToast?.("Log fetch timed out. Make sure ESP32 is reachable.", "warn");
+      }
     } finally {
       setFetchingLogs(false);
     }
   };
 
   const handleCopyLogs = () => {
-    const textToCopy = debugLogs || `SSID: ${currentSsid || "None"}\nIP: ${currentIp || "None"}\nPortal: ${portalStatus || "None"}\nWi-Fi Connected: ${wifiConnected}`;
+    let textToCopy = debugLogs;
+    if (!textToCopy && recentLogs && recentLogs.length > 0) {
+      textToCopy = recentLogs.slice(-30).map((l) => l.text).join("\n");
+    }
+    if (!textToCopy) {
+      textToCopy = `SSID: ${currentSsid || "None"}\nIP: ${currentIp || "None"}\nWi-Fi State: ${wifiState}\nWi-Fi Connected: ${wifiConnected}\nBLE Connected: ${isBleConnected}`;
+    }
     navigator.clipboard?.writeText(textToCopy);
     onToast?.("Diagnostics copied to clipboard! Paste it into chat.", "success");
   };
@@ -134,20 +166,43 @@ export default function WifiManagerModal({
   const handleScan = async () => {
     setIsScanning(true);
     try {
-      const res = await fetch(`http://${deskHost}/api/wifi/scan`, { method: "POST" });
+      if (isBleConnected && onScanOverBle) {
+        const nets = await onScanOverBle();
+        if (nets && nets.length > 0) {
+          setScannedNets(nets);
+          onToast?.(`Found ${nets.length} Wi-Fi airwaves via BLE!`, "success");
+        } else {
+          onToast?.("Airwave scan finished. 0 networks detected.", "warn");
+        }
+        return;
+      }
+
+      if (!deskHost) {
+        onToast?.("Please connect to Desk via BLE or Hotspot to scan airwaves.", "warn");
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`http://${deskHost}/api/wifi/scan`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.networks) && data.networks.length > 0) {
           setScannedNets(data.networks);
           onToast?.(`Found ${data.networks.length} Wi-Fi networks!`, "success");
         } else {
-          onToast?.("Scan completed: 0 networks found. Use manual input or quick chips below.", "warn");
+          onToast?.("Scan completed: 0 networks found.", "warn");
         }
       } else {
         onToast?.("Scan request failed. Use manual entry or quick presets.", "warn");
       }
     } catch (e: any) {
-      onToast?.("Airwave scan timed out. Use manual entry or quick chips below.", "warn");
+      onToast?.("Airwave scan timed out. Use quick chips or manual entry below.", "warn");
     } finally {
       setIsScanning(false);
     }
@@ -287,23 +342,54 @@ export default function WifiManagerModal({
         {/* Live Status Bar */}
         <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div>
-            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Wi-Fi Status:</span>
-            <span className={`font-extrabold flex items-center gap-1.5 ${wifiConnected ? "text-emerald-400" : "text-amber-400"}`}>
-              <span className={`w-2 h-2 rounded-full ${wifiConnected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-amber-400"}`} />
-              {wifiConnected ? (currentSsid || "Connected") : "SoftAP Standby"}
+            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Wi-Fi Radio:</span>
+            <span className={`font-extrabold flex items-center gap-1.5 ${
+              wifiConnected
+                ? "text-emerald-400"
+                : wifiState === 2
+                ? "text-amber-400"
+                : wifiState === 3
+                ? "text-cyan-400"
+                : "text-zinc-400"
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                wifiConnected
+                  ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                  : wifiState === 2
+                  ? "bg-amber-400 animate-ping"
+                  : wifiState === 3
+                  ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
+                  : "bg-zinc-500"
+              }`} />
+              {wifiConnected
+                ? `Connected: ${currentSsid || "STA"}`
+                : wifiState === 2
+                ? `Connecting to ${currentSsid || "Wi-Fi"}...`
+                : wifiState === 3
+                ? `Hotspot Active: ${currentSsid || "AnandSmartDesk"}`
+                : "Standby"}
             </span>
           </div>
           <div>
-            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Assigned IP:</span>
+            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Active IP:</span>
             <span className="font-mono text-cyan-300 font-bold">{currentIp || (wifiConnected ? "--" : "192.168.4.1")}</span>
           </div>
           <div>
-            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Fortinet Portal:</span>
-            <span className={`font-bold ${portalStatus?.includes("OK") || portalStatus?.includes("Auth") ? "text-emerald-400" : "text-amber-300"}`}>
-              {portalStatus || "Standby"}
+            <span className="text-zinc-500 font-bold uppercase block text-[10px]">Link Transport:</span>
+            <span className={`font-bold flex items-center gap-1 ${isBleConnected ? "text-emerald-400" : deskHost ? "text-cyan-400" : "text-rose-400"}`}>
+              <span>{isBleConnected ? "⚡ BLE Connected" : deskHost ? `🌐 Hotspot/LAN (${deskHost})` : "🔴 Disconnected"}</span>
             </span>
           </div>
         </div>
+
+        {!isBleConnected && !deskHost && (
+          <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-600/40 text-[11px] text-amber-200 flex items-start gap-2">
+            <span className="text-sm">⚠️</span>
+            <span>
+              <strong>Desk not yet connected:</strong> Connect via <strong>BLE</strong> (tap <em>"BLE: Disconnected"</em> in the header) OR connect your device to the ESP32 Wi-Fi Hotspot: <strong>AnandSmartDesk</strong> (password: <code>Anandsmartdesk</code>).
+            </span>
+          </div>
+        )}
 
         {/* ── SECTION 1: ADD WI-FI / CAMPUS NETWORK ── */}
         <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 space-y-3">
@@ -314,45 +400,35 @@ export default function WifiManagerModal({
               disabled={isScanning}
               className="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 font-bold text-[11px] border border-zinc-700 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              {isScanning ? "Scanning airwaves..." : "🔍 Scan Airwaves"}
+              {isScanning ? "Scanning airwaves..." : isBleConnected ? "🔍 Scan Airwaves via BLE" : "🔍 Scan Airwaves"}
             </button>
           </div>
 
-          {/* Quick-Fill Auto-Fill Suggestion Chips */}
-          <div>
-            <span className="text-[10px] text-zinc-400 font-bold block mb-1.5">⚡ QUICK AUTO-FILL PRESETS:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {QUICK_WIFI_CHIPS.map((chip) => (
-                <button
-                  key={chip}
-                  type="button"
-                  onClick={() => setNewSsid(chip)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
-                    newSsid === chip
-                      ? "bg-cyan-500 text-black border-cyan-400 shadow-sm shadow-cyan-500/40"
-                      : "bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border-zinc-700"
-                  }`}
-                >
-                  +{chip}
-                </button>
-              ))}
-            </div>
-          </div>
 
+          {/* Detected Nearby Networks Chips */}
           {scannedNets.length > 0 && (
-            <select
-              onChange={(e) => {
-                if (e.target.value) setNewSsid(e.target.value);
-              }}
-              className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white text-xs font-bold focus:border-cyan-500 outline-none"
-            >
-              <option value="">Choose from {scannedNets.length} scanned networks...</option>
-              {scannedNets.map((n, i) => (
-                <option key={i} value={n.ssid}>
-                  {n.ssid} ({n.rssi} dBm)
-                </option>
-              ))}
-            </select>
+            <div>
+              <span className="text-[10px] text-emerald-400 font-bold block mb-1.5">
+                📡 DETECTED NEARBY AIRWAVES ({scannedNets.length}):
+              </span>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-black/60 rounded-lg border border-zinc-800">
+                {scannedNets.map((n, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setNewSsid(n.ssid)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      newSsid === n.ssid
+                        ? "bg-emerald-500 text-black border-emerald-400 font-extrabold"
+                        : "bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-700"
+                    }`}
+                  >
+                    <span>📶 {n.ssid}</span>
+                    <span className="text-[9px] opacity-75 font-mono">({n.rssi} dBm)</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

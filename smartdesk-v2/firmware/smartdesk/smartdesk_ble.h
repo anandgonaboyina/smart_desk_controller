@@ -251,10 +251,10 @@ static inline void initBleServer(const char* deviceName) {
     uint8_t initLed[6] = { s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd };
     s_pLedChar->setValue(initLed, 6);
 
-    // 3. CONFIG: READ, WRITE
+    // 3. CONFIG: READ, WRITE, NOTIFY
     s_pConfigChar = pService->createCharacteristic(
         CHAR_CONFIG_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
     );
     static ConfigCallbacks configCb;
     s_pConfigChar->setCallbacks(&configCb);
