@@ -298,6 +298,8 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   const ledDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const connectRef = useRef<(targetDevice?: BluetoothDevice, isAuto?: boolean) => Promise<void>>(null as any);
   const connectTimeoutTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const cloudCredsPromiseResolveRef = useRef<((res: { success: boolean; devId: string; user: string }) => void) | null>(null);
+  const [hardwareCloudConfig, setHardwareCloudConfig] = useState<{ devId: string; user: string; name: string } | null>(null);
 
   /* Animation Tick for WS2812B 8-Dot Simulation */
   useEffect(() => {
@@ -563,9 +565,9 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     [enqueueWrite, addLog]
   );
 
-  /* 0xFC: Configure Cloud Credentials & Mapping directly over BLE or local Web API */
+  /* 0xEA: Configure Cloud Credentials & Mapping directly over BLE (with hardware ACK) or local Web API */
   const saveCloudCredentialsOverBle = useCallback(
-    async (userId?: string, password?: string, deviceId?: string, deviceName?: string) => {
+    async (userId?: string, password?: string, deviceId?: string, deviceName?: string): Promise<{ success: boolean; devId: string; user: string }> => {
       const d = (deviceId || "").trim();
       const u = (userId || "").trim();
       const p = password || "";
@@ -583,7 +585,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
       if (configCharRef.current) {
         const payload = new Uint8Array(5 + dBytes.length + uBytes.length + pBytes.length + nBytes.length);
-        payload[0] = 0xFC;
+        payload[0] = 0xEA; // 0xEA: Dedicated opcode for Cloud Credentials (avoids 0xFC collision)
         payload[1] = dBytes.length;
         payload[2] = uBytes.length;
         payload[3] = pBytes.length;
@@ -595,11 +597,28 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         payload.set(pBytes, off); off += pBytes.length;
         payload.set(nBytes, off);
 
-        enqueueWrite("Set Cloud Credentials via BLE", async () => {
-          addLog(`[TX CONFIG] Cloud Credentials -> DevId: ${d}, User: ${u}, Name: ${n}`, "tx");
-          await configCharRef.current?.writeValueWithResponse(payload);
+        return new Promise<{ success: boolean; devId: string; user: string }>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            cloudCredsPromiseResolveRef.current = null;
+            reject(new Error("ESP32 hardware did not acknowledge credential update within 4 seconds. Reverting to previous credentials."));
+          }, 4000);
+
+          cloudCredsPromiseResolveRef.current = (res) => {
+            clearTimeout(timeout);
+            resolve(res);
+          };
+
+          enqueueWrite("Set Cloud Credentials via BLE (0xEA)", async () => {
+            addLog(`[TX CONFIG] 0xEA Cloud Credentials -> DevId: "${d}", User: "${u}", Name: "${n}"`, "tx");
+            try {
+              await configCharRef.current?.writeValueWithResponse(payload);
+            } catch (err) {
+              clearTimeout(timeout);
+              cloudCredsPromiseResolveRef.current = null;
+              reject(err);
+            }
+          });
         });
-        onToastRef.current?.("Cloud credentials saved & reloaded on ESP32 over BLE!", "success");
       } else {
         // Fallback: Local HTTP Server (Hotspot / STA mode)
         await sendWifiCommand("/api/cloud/credentials", {
@@ -609,10 +628,20 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           deviceName: n,
         });
         onToastRef.current?.("Cloud credentials sent to ESP32 local server!", "success");
+        return { success: true, devId: d, user: u };
       }
     },
     [enqueueWrite, addLog, sendWifiCommand]
   );
+
+  /* Query Cloud Credentials currently stored in ESP32 Hardware */
+  const queryCloudCredentialsFromHardware = useCallback(async () => {
+    if (!configCharRef.current) return;
+    const payload = new Uint8Array([0xEA, 0xFF]);
+    enqueueWrite("Query Hardware Cloud Credentials (0xEA)", async () => {
+      await configCharRef.current?.writeValueWithResponse(payload);
+    });
+  }, [enqueueWrite]);
 
   /* UI Transient Animation on Relay Switch */
   const triggerUiAnimation = useCallback((idx: number, isTurnOn: boolean) => {
@@ -828,6 +857,49 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
               setScannedNetworks([...tempScannedNetsRef.current]);
             }
           }
+        }
+      } else if (opcode === 0xEA) {
+        const subType = dataView.getUint8(1);
+        if (subType === 0x01) {
+          // Flash ACK: [0xEA, 0x01, devIdLen, userLen, ...devId, ...user]
+          const dLen = dataView.byteLength >= 3 ? dataView.getUint8(2) : 0;
+          const uLen = dataView.byteLength >= 4 ? dataView.getUint8(3) : 0;
+          let ackDevId = "";
+          let ackUser = "";
+          let cur = 4;
+          if (dLen > 0 && cur + dLen <= dataView.byteLength) {
+            ackDevId = new TextDecoder().decode(new Uint8Array(dataView.buffer, dataView.byteOffset + cur, dLen)).replace(/\0/g, "").trim();
+            cur += dLen;
+          }
+          if (uLen > 0 && cur + uLen <= dataView.byteLength) {
+            ackUser = new TextDecoder().decode(new Uint8Array(dataView.buffer, dataView.byteOffset + cur, uLen)).replace(/\0/g, "").trim();
+          }
+          addLog(`[BLE RX] Hardware confirmed Cloud Credentials! DevId="${ackDevId}", User="${ackUser}"`, "rx");
+          onToastRef.current?.(`Hardware verified & saved Cloud IDs: ${ackDevId}`, "success");
+          cloudCredsPromiseResolveRef.current?.({ success: true, devId: ackDevId, user: ackUser });
+          cloudCredsPromiseResolveRef.current = null;
+        } else if (subType === 0x02) {
+          // Query Response: [0xEA, 0x02, dLen, uLen, nLen, ...devId, ...user, ...name]
+          const dLen = dataView.byteLength >= 3 ? dataView.getUint8(2) : 0;
+          const uLen = dataView.byteLength >= 4 ? dataView.getUint8(3) : 0;
+          const nLen = dataView.byteLength >= 5 ? dataView.getUint8(4) : 0;
+          let cur = 5;
+          let qDevId = "";
+          let qUser = "";
+          let qName = "";
+          if (dLen > 0 && cur + dLen <= dataView.byteLength) {
+            qDevId = new TextDecoder().decode(new Uint8Array(dataView.buffer, dataView.byteOffset + cur, dLen)).replace(/\0/g, "").trim();
+            cur += dLen;
+          }
+          if (uLen > 0 && cur + uLen <= dataView.byteLength) {
+            qUser = new TextDecoder().decode(new Uint8Array(dataView.buffer, dataView.byteOffset + cur, uLen)).replace(/\0/g, "").trim();
+            cur += uLen;
+          }
+          if (nLen > 0 && cur + nLen <= dataView.byteLength) {
+            qName = new TextDecoder().decode(new Uint8Array(dataView.buffer, dataView.byteOffset + cur, nLen)).replace(/\0/g, "").trim();
+          }
+          setHardwareCloudConfig({ devId: qDevId, user: qUser, name: qName });
+          addLog(`[BLE RX] Hardware Identity Loaded: DevId="${qDevId}", User="${qUser}"`, "rx");
         }
       }
     },
@@ -1255,6 +1327,10 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         setLastDeviceDetected(null);
         addLog(">>> CONNECTION ESTABLISHED & OPERATIONAL! <<<", "info");
         onToastRef.current?.("Connected to SmartDesk!", "success");
+
+        try {
+          queryCloudCredentialsFromHardware();
+        } catch (_) {}
 
         setTimeout(() => {
           syncRealTime();
@@ -2192,6 +2268,8 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     toggleWifiOnAwayOnly,
     configureWifiOverBle,
     saveCloudCredentialsOverBle,
+    queryCloudCredentialsFromHardware,
+    hardwareCloudConfig,
     sendWifiCommand,
     handleConnect: triggerUserConnect,
     handleDisconnected,

@@ -37,7 +37,9 @@ export interface CloudHandshakeModalProps {
   isDeviceOnline: boolean;
   deviceId?: string;
   onSendCloudRelayCommand?: (relayIdx: number, load: boolean) => void;
-  onUpdateCloudCredentials?: (user: string, pass: string, deviceId?: string, deviceName?: string) => Promise<void> | void;
+  onUpdateCloudCredentials?: (user: string, pass: string, deviceId?: string, deviceName?: string) => Promise<any> | void;
+  onUpdateClientCredentialsOnly?: (user: string, pass: string, deviceId: string, deviceName?: string) => void;
+  hardwareCloudConfig?: { devId: string; user: string; name: string } | null;
   onToast?: (msg: string, type?: "info" | "warn" | "error" | "success") => void;
   recentLogs?: { text: string; type?: string }[];
 }
@@ -63,6 +65,8 @@ export default function CloudHandshakeModal({
   deviceId = "desk_anand_s3",
   onSendCloudRelayCommand,
   onUpdateCloudCredentials,
+  onUpdateClientCredentialsOnly,
+  hardwareCloudConfig,
   onToast,
   recentLogs = [],
 }: CloudHandshakeModalProps) {
@@ -115,7 +119,54 @@ export default function CloudHandshakeModal({
     details?: string;
   } | null>(null);
 
-  const handleSaveCloudCredentials = async () => {
+  // Auto-fill from actual physical hardware if read over BLE
+  useEffect(() => {
+    if (hardwareCloudConfig) {
+      if (hardwareCloudConfig.devId) setCloudDeviceId(hardwareCloudConfig.devId);
+      if (hardwareCloudConfig.user) setCloudUser(hardwareCloudConfig.user);
+      if (hardwareCloudConfig.name) setCloudDeskName(hardwareCloudConfig.name);
+    }
+  }, [hardwareCloudConfig]);
+
+  // Action 1: Connect this PWA to an existing desk on Cloud Relay (No BLE required)
+  const handleConnectClientToDesk = () => {
+    const d = cloudDeviceId.trim();
+    const u = cloudUser.trim();
+    const p = cloudPass;
+    const n = cloudDeskName.trim();
+
+    if (!d || !u) {
+      setSaveConfirmStatus({
+        show: true,
+        success: false,
+        title: "Validation Incomplete",
+        message: "Target Cloud Device ID and User Account ID are required.",
+        details: "Please specify both fields to connect your browser to this desk.",
+      });
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_cloud_user", u);
+      localStorage.setItem("smartdesk_cloud_pass", p);
+      localStorage.setItem("smartdesk_cloud_device_id", d);
+      localStorage.setItem("smartdesk_last_device_name", n);
+    }
+
+    onUpdateClientCredentialsOnly?.(u, p, d, n);
+
+    setSaveConfirmStatus({
+      show: true,
+      success: true,
+      title: "PWA Connected to Target Desk!",
+      message: `Browser WebSocket reconnected to monitor Device ID '${d}' under Owner '${u}'.`,
+      details: `Target Device ID: ${d} • User Account: ${u} • Password: ${p ? "Configured" : "None"}`,
+    });
+    onToast?.(`PWA monitoring device '${d}'`, "success");
+  };
+
+  // Action 2: Flash new IDs into physical ESP32 Hardware (via BLE with hardware ACK)
+  const handleFlashCredentialsToHardware = async () => {
     const d = cloudDeviceId.trim();
     const u = cloudUser.trim();
     const p = cloudPass;
@@ -136,7 +187,7 @@ export default function CloudHandshakeModal({
       setSaveConfirmStatus({
         show: true,
         success: false,
-        title: "BLE Connection Required",
+        title: "BLE Link Required to Flash Hardware",
         message: "Physical hardware must be connected over BLE (Step 1) to securely flash credentials.",
         details: "Direct Bluetooth proximity is required to protect your desk against remote hijacking.",
       });
@@ -147,6 +198,10 @@ export default function CloudHandshakeModal({
     setSaveConfirmStatus(null);
 
     try {
+      // Dispatch over BLE (0xEA opcode) and await hardware ACK notification
+      await onUpdateCloudCredentials?.(u, p, d, n);
+
+      // ONLY commit to browser storage AFTER the hardware confirmed receipt!
       if (typeof window !== "undefined") {
         localStorage.setItem("smartdesk_cloud_user", u);
         localStorage.setItem("smartdesk_cloud_pass", p);
@@ -154,28 +209,53 @@ export default function CloudHandshakeModal({
         localStorage.setItem("smartdesk_last_device_name", n);
       }
 
-      await onUpdateCloudCredentials?.(u, p, d, n);
-
       setSaveConfirmStatus({
         show: true,
         success: true,
-        title: "Credentials Synced Successfully!",
-        message: `ESP32 credentials successfully saved to NVS. The hardware is restarting its WebSocket client with Device ID: "${d}".`,
-        details: `Device ID: ${d} • Owner: ${u} • Display Name: ${n || "SmartDesk"} • Security: ${p ? "Password Protected" : "Open Access"}`,
+        title: "Hardware Confirmed & Synced!",
+        message: `ESP32 verified and saved new credentials to NVS. The physical hardware is restarting its cloud connection with Device ID: "${d}".`,
+        details: `Hardware Device ID: ${d} • Owner: ${u} • Display Name: ${n || "SmartDesk"} • Password: ${p ? "Enabled" : "None"}`,
       });
-      onToast?.("Cloud credentials successfully dispatched to ESP32!", "success");
+      onToast?.("ESP32 hardware acknowledged and updated cloud credentials!", "success");
     } catch (err: any) {
+      // Revert / do NOT commit if hardware failed or timed out!
       setSaveConfirmStatus({
         show: true,
         success: false,
-        title: "Failed to Sync Credentials",
-        message: "Could not write credentials to ESP32: " + (err?.message || "Communication failed"),
-        details: "Please check your Bluetooth connection and ensure the desk is within range.",
+        title: "Hardware Sync Failed",
+        message: err?.message || "ESP32 did not acknowledge update within 4 seconds. Previous settings were kept.",
+        details: "Please verify Bluetooth connection and ensure the desk is powered on and in range.",
       });
-      onToast?.("Failed to sync credentials to ESP32", "error");
+      onToast?.("Failed to flash credentials to ESP32", "error");
     } finally {
       setIsSavingCredentials(false);
     }
+  };
+
+  // Action 3: Revert to Factory Defaults (desk_anand_s3 / user_anand_primary)
+  const handleResetToDefaults = () => {
+    setCloudDeviceId("desk_anand_s3");
+    setCloudUser("user_anand_primary");
+    setCloudPass("");
+    setCloudDeskName("SmartDesk S3");
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_cloud_user", "user_anand_primary");
+      localStorage.setItem("smartdesk_cloud_pass", "");
+      localStorage.setItem("smartdesk_cloud_device_id", "desk_anand_s3");
+      localStorage.setItem("smartdesk_last_device_name", "SmartDesk S3");
+    }
+
+    onUpdateClientCredentialsOnly?.("user_anand_primary", "", "desk_anand_s3", "SmartDesk S3");
+
+    setSaveConfirmStatus({
+      show: true,
+      success: true,
+      title: "PWA Reset to Factory Defaults",
+      message: "Target Device ID restored to 'desk_anand_s3' (user_anand_primary).",
+      details: "Device ID: desk_anand_s3 • User: user_anand_primary • Password: (open)",
+    });
+    onToast?.("Reset target to factory default (desk_anand_s3)", "info");
   };
 
   // Step 3 Health check state
@@ -635,147 +715,182 @@ export default function CloudHandshakeModal({
           </div>
 
           {/* Device Username & Password Handshake Config */}
-          {!bleConnected ? (
-            <div className="mt-3 p-4 rounded-xl bg-gradient-to-r from-amber-950/40 via-zinc-900 to-amber-950/20 border border-amber-500/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xl shrink-0">
-                  🔒
-                </div>
-                <div>
-                  <h5 className="text-xs font-black text-amber-300 uppercase tracking-wide">
-                    Connect via BLE to Configure Device &amp; Credentials
-                  </h5>
-                  <p className="text-[11px] text-zinc-400 mt-1 max-w-md leading-relaxed">
-                    Hardware Security Policy: Device ID, Cloud User ID, and credentials must be provisioned directly over physical Bluetooth proximity (Step 1).
-                  </p>
-                </div>
+          <div className="mt-3 p-3.5 rounded-xl bg-black/60 border border-zinc-700/80 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-cyan-400 text-xs">●</span>
+                <span className="text-xs text-zinc-200 font-extrabold uppercase tracking-wider">
+                  Device Cloud Credentials &amp; Mapping:
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={onConnectBle}
-                disabled={bleConnecting}
-                className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs shadow-[0_0_15px_rgba(6,182,212,0.4)] active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50 flex items-center gap-2"
-              >
-                <span>{bleConnecting ? "⚡ Connecting BLE..." : "⚡ Connect via BLE (Step 1)"}</span>
-              </button>
-            </div>
-          ) : (
-            <div className="mt-3 p-3.5 rounded-xl bg-black/60 border border-zinc-700/80 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-emerald-400 text-xs">●</span>
-                  <span className="text-xs text-zinc-200 font-extrabold uppercase tracking-wider">
-                    Device Cloud Credentials &amp; Mapping:
-                  </span>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetToDefaults}
+                  className="text-[10px] text-zinc-400 hover:text-cyan-300 underline font-mono cursor-pointer"
+                  title="Reset PWA target to factory default desk_anand_s3"
+                >
+                  ↺ Reset Defaults (desk_anand_s3)
+                </button>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${cloudPass ? "bg-amber-950 text-amber-300 border-amber-800" : "bg-emerald-950 text-emerald-300 border-emerald-800"}`}>
                   {cloudPass ? "Password Protected" : "No Password (Open Setup)"}
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-zinc-400 block font-bold mb-1">Target Cloud Device ID (Unique Hardware):</label>
+            </div>
+
+            {hardwareCloudConfig && (
+              <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-700/40 text-[11px] text-cyan-300 flex items-center justify-between">
+                <span>⚡ Physical ESP32 Flash Identity: <strong className="font-mono text-white">{hardwareCloudConfig.devId || "desk_anand_s3"}</strong> (User: <strong className="font-mono text-white">{hardwareCloudConfig.user || "user_anand_primary"}</strong>)</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hardwareCloudConfig.devId) setCloudDeviceId(hardwareCloudConfig.devId);
+                    if (hardwareCloudConfig.user) setCloudUser(hardwareCloudConfig.user);
+                    if (hardwareCloudConfig.name) setCloudDeskName(hardwareCloudConfig.name);
+                  }}
+                  className="text-[10px] text-cyan-400 hover:text-white underline ml-2"
+                >
+                  Auto-Fill from ESP32
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">Target Cloud Device ID (Unique Hardware):</label>
+                <input
+                  type="text"
+                  value={cloudDeviceId}
+                  onChange={(e) => setCloudDeviceId(e.target.value)}
+                  placeholder="desk_anand_s3"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">Desk Display Name (BLE/Cloud):</label>
+                <input
+                  type="text"
+                  value={cloudDeskName}
+                  onChange={(e) => setCloudDeskName(e.target.value)}
+                  placeholder="SmartDesk S3"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold focus:border-cyan-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">User Account ID:</label>
+                <input
+                  type="text"
+                  value={cloudUser}
+                  onChange={(e) => setCloudUser(e.target.value)}
+                  placeholder="user_anand_primary"
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block font-bold mb-1">Device Password (Optional):</label>
+                <div className="relative">
                   <input
-                    type="text"
-                    value={cloudDeviceId}
-                    onChange={(e) => setCloudDeviceId(e.target.value)}
-                    placeholder="desk_anand_s3"
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                    type={showCloudPass ? "text" : "password"}
+                    value={cloudPass}
+                    onChange={(e) => setCloudPass(e.target.value)}
+                    placeholder="Leave empty for open setup"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 pr-8 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                   />
-                </div>
-                <div>
-                  <label className="text-[10px] text-zinc-400 block font-bold mb-1">Desk Display Name (BLE/Cloud):</label>
-                  <input
-                    type="text"
-                    value={cloudDeskName}
-                    onChange={(e) => setCloudDeskName(e.target.value)}
-                    placeholder="SmartDesk S3"
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold focus:border-cyan-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-zinc-400 block font-bold mb-1">User Account ID:</label>
-                  <input
-                    type="text"
-                    value={cloudUser}
-                    onChange={(e) => setCloudUser(e.target.value)}
-                    placeholder="user_anand_primary"
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-zinc-400 block font-bold mb-1">Device Password (Optional):</label>
-                  <div className="relative">
-                    <input
-                      type={showCloudPass ? "text" : "password"}
-                      value={cloudPass}
-                      onChange={(e) => setCloudPass(e.target.value)}
-                      placeholder="Leave empty for open setup"
-                      className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 pr-8 text-white font-mono text-xs focus:border-cyan-500 outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCloudPass(!showCloudPass)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
-                      title={showCloudPass ? "Hide password" : "Show password"}
-                    >
-                      {showCloudPass ? "👁️" : "🙈"}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCloudPass(!showCloudPass)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
+                    title={showCloudPass ? "Hide password" : "Show password"}
+                  >
+                    {showCloudPass ? "👁️" : "🙈"}
+                  </button>
                 </div>
               </div>
+            </div>
 
-              {/* Confirmation Status Box */}
-              {saveConfirmStatus?.show && (
-                <div
-                  className={`p-3 rounded-xl border transition-all animate-in fade-in ${
-                    saveConfirmStatus.success
-                      ? "bg-emerald-950/40 border-emerald-500/70 text-emerald-200"
-                      : "bg-rose-950/40 border-rose-500/70 text-rose-200"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2.5">
-                      <span className="text-lg shrink-0 mt-0.5">
-                        {saveConfirmStatus.success ? "✅" : "⚠️"}
-                      </span>
-                      <div>
-                        <h5 className="text-xs font-black uppercase tracking-wider">
-                          {saveConfirmStatus.title}
-                        </h5>
-                        <p className="text-[11px] mt-0.5 text-zinc-300 leading-relaxed">
-                          {saveConfirmStatus.message}
+            {/* Confirmation Status Box */}
+            {saveConfirmStatus?.show && (
+              <div
+                className={`p-3 rounded-xl border transition-all animate-in fade-in ${
+                  saveConfirmStatus.success
+                    ? "bg-emerald-950/40 border-emerald-500/70 text-emerald-200"
+                    : "bg-rose-950/40 border-rose-500/70 text-rose-200"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-lg shrink-0 mt-0.5">
+                      {saveConfirmStatus.success ? "✅" : "⚠️"}
+                    </span>
+                    <div>
+                      <h5 className="text-xs font-black uppercase tracking-wider">
+                        {saveConfirmStatus.title}
+                      </h5>
+                      <p className="text-[11px] mt-0.5 text-zinc-300 leading-relaxed">
+                        {saveConfirmStatus.message}
+                      </p>
+                      {saveConfirmStatus.details && (
+                        <p className="text-[10px] font-mono mt-1.5 p-1.5 rounded bg-black/50 border border-white/10 text-cyan-300 break-all">
+                          {saveConfirmStatus.details}
                         </p>
-                        {saveConfirmStatus.details && (
-                          <p className="text-[10px] font-mono mt-1.5 p-1.5 rounded bg-black/50 border border-white/10 text-cyan-300 break-all">
-                            {saveConfirmStatus.details}
-                          </p>
-                        )}
-                      </div>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSaveConfirmStatus(null)}
-                      className="text-zinc-400 hover:text-white text-xs p-1 rounded hover:bg-white/10 cursor-pointer shrink-0"
-                      title="Dismiss confirmation"
-                    >
-                      ✕
-                    </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setSaveConfirmStatus(null)}
+                    className="text-zinc-400 hover:text-white text-xs p-1 rounded hover:bg-white/10 cursor-pointer shrink-0"
+                    title="Dismiss confirmation"
+                  >
+                    ✕
+                  </button>
                 </div>
-              )}
+              </div>
+            )}
 
+            {/* Action Buttons: 1. Connect Client (Remote/Anywhere) vs 2. Flash Hardware (Proximity BLE) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={handleSaveCloudCredentials}
-                disabled={isSavingCredentials}
-                className="w-full py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 shadow-md disabled:opacity-50"
+                onClick={handleConnectClientToDesk}
+                className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-cyan-300 hover:text-white border border-cyan-600/40 font-extrabold text-xs transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 active:scale-98 shadow-md"
               >
-                <span>{isSavingCredentials ? "⏳" : "💾"}</span>
-                <span>{isSavingCredentials ? "Syncing Credentials to Hardware..." : "Save & Sync Credentials to ESP32 (BLE)"}</span>
+                <span className="flex items-center gap-1.5 font-black">
+                  <span>🌐</span> Connect PWA to this Desk
+                </span>
+                <span className="text-[9px] text-zinc-400 font-normal">Connects browser to target Device ID (No BLE needed)</span>
               </button>
+
+              {bleConnected ? (
+                <button
+                  type="button"
+                  onClick={handleFlashCredentialsToHardware}
+                  disabled={isSavingCredentials}
+                  className="py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 active:scale-98 shadow-md disabled:opacity-50"
+                >
+                  <span className="flex items-center gap-1.5 font-black">
+                    <span>{isSavingCredentials ? "⏳" : "⚡"}</span>
+                    {isSavingCredentials ? "Awaiting Hardware Confirmation..." : "Flash IDs into ESP32 Hardware"}
+                  </span>
+                  <span className="text-[9px] text-cyan-100 font-normal">Saves to physical ESP32 flash &amp; restarts cloud client</span>
+                </button>
+              ) : (
+                <div className="p-2 rounded-xl bg-amber-950/30 border border-amber-600/40 flex items-center justify-between gap-2">
+                  <div className="text-[10px] text-amber-300 leading-tight">
+                    <span className="font-bold">🔒 BLE required</span> to reprogram physical ESP32 flash memory.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onConnectBle}
+                    disabled={bleConnecting}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-[10px] whitespace-nowrap active:scale-95 transition-all cursor-pointer"
+                  >
+                    {bleConnecting ? "Connecting..." : "⚡ Connect BLE"}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* ── STEP 4: END-TO-END ESP32 CLOUD HANDSHAKE ── */}

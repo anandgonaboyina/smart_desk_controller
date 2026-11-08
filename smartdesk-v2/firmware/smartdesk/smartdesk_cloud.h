@@ -625,6 +625,7 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
         case WStype_DISCONNECTED:
             s_cloudConnected     = false;
             s_cloudAuthenticated = false;
+            s_cloudWsStarted     = false;
             Serial.println(">>> [CLOUD WS] Disconnected from cloud relay.");
             break;
 
