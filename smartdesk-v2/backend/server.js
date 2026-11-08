@@ -1,11 +1,5 @@
 /**
  * server.js — SmartDesk V2 Multi-User IoT Cloud Relay & WebSocket Server
- *
- * Purpose : Secure, multi-tenant cloud backend for SmartDesk V2.
- *           Routes remote commands between authorized Next.js PWA clients and ESP32-S3 controllers.
- *           Enforces multi-user isolation (zero cross-talk) and supports power-saving Remote Mode toggles.
- * Depends : express, ws, cors, dotenv
- * Host    : Designed for 1-click deployment on Render (or any cloud container)
  */
 
 require("dotenv").config();
@@ -21,23 +15,16 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// In-Memory Multi-User & Multi-Device Routing Tables
-// deviceId -> { ws, deviceKey, isOnline, remoteModeEnabled, lastSeen, state, name }
 const devices = new Map();
-
-// ws -> { role: 'client'|'device', userId, deviceId, authenticated: boolean, ip: string }
 const connections = new Map();
 
-/**
- * Helper: Find or initialize a device record in the registry
- */
 function getOrCreateDevice(deviceId) {
   if (!devices.has(deviceId)) {
     devices.set(deviceId, {
       ws: null,
       deviceKey: DEFAULT_AUTH_KEY,
       isOnline: false,
-      remoteModeEnabled: false, // Default: Remote WebSocket connection idle to save power
+      remoteModeEnabled: false,
       lastSeen: 0,
       name: `SmartDesk-${deviceId.slice(-4)}`,
       state: {
@@ -56,9 +43,6 @@ function getOrCreateDevice(deviceId) {
   return devices.get(deviceId);
 }
 
-/**
- * Broadcast message strictly to all authenticated PWA clients linked to a specific deviceId
- */
 function broadcastToDeviceClients(deviceId, payload) {
   const messageStr = JSON.stringify(payload);
   for (const [ws, meta] of connections.entries()) {
@@ -70,94 +54,9 @@ function broadcastToDeviceClients(deviceId, payload) {
   }
 }
 
-/* ── HTTP REST API ───────────────────────────────────────────────────────── */
-
-// Render Health Check
 app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    uptime: Math.round(process.uptime()),
-    activeDevices: Array.from(devices.values()).filter((d) => d.isOnline).length,
-    activeClients: Array.from(connections.values()).filter((c) => c.role === "client" && c.authenticated).length,
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ status: "ok", activeDevices: Array.from(devices.values()).filter((d) => d.isOnline).length });
 });
-
-// Device status polling endpoint (Used by ESP32 for lightweight power-saving checks)
-app.get("/api/device/:deviceId/status", (req, res) => {
-  const { deviceId } = req.params;
-  const dev = getOrCreateDevice(deviceId);
-
-  res.json({
-    deviceId,
-    isOnline: dev.isOnline,
-    remoteModeEnabled: dev.remoteModeEnabled,
-    lastSeen: dev.lastSeen,
-    hasActiveWs: dev.ws !== null && dev.ws.readyState === WebSocket.OPEN,
-  });
-});
-
-// Toggle Remote Mode ("User Away" Mode) via REST
-app.post("/api/device/:deviceId/remote-mode", (req, res) => {
-  const { deviceId } = req.params;
-  const { enabled, userId } = req.body;
-
-  if (typeof enabled !== "boolean") {
-    return res.status(400).json({ error: "Missing boolean field 'enabled'" });
-  }
-
-  const dev = getOrCreateDevice(deviceId);
-  dev.remoteModeEnabled = enabled;
-
-  console.log(`[REMOTE MODE] Device ${deviceId} -> Remote Mode set to ${enabled} by user ${userId || "unknown"}`);
-
-  // If remote mode was disabled while device is actively connected via WebSocket,
-  // notify the ESP32 to drop persistent WebSocket to conserve power
-  if (!enabled && dev.ws && dev.ws.readyState === WebSocket.OPEN) {
-    dev.ws.send(JSON.stringify({ type: "remote_mode_disabled" }));
-  }
-
-  // Notify all connected PWA clients of the state change
-  broadcastToDeviceClients(deviceId, {
-    type: "remote_mode_changed",
-    deviceId,
-    enabled,
-    timestamp: Date.now(),
-  });
-
-  res.json({
-    ok: true,
-    deviceId,
-    remoteModeEnabled: dev.remoteModeEnabled,
-  });
-});
-
-// HTTP Command Fallback (Allows sending relay/led commands via standard POST)
-app.post("/api/device/:deviceId/command", (req, res) => {
-  const { deviceId } = req.params;
-  const dev = getOrCreateDevice(deviceId);
-
-  if (!dev.isOnline || !dev.ws || dev.ws.readyState !== WebSocket.OPEN) {
-    return res.status(503).json({
-      error: "Device offline or remote WebSocket not active",
-      remoteModeEnabled: dev.remoteModeEnabled,
-    });
-  }
-
-  const { action, ...params } = req.body;
-  const cmdPayload = {
-    type: "command",
-    action,
-    ...params,
-    source: "http_api",
-    timestamp: Date.now(),
-  };
-
-  dev.ws.send(JSON.stringify(cmdPayload));
-  res.json({ ok: true, sent: cmdPayload });
-});
-
-/* ── WEBSOCKET MULTI-TENANT SERVER ───────────────────────────────────────── */
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
@@ -167,11 +66,9 @@ wss.on("connection", (ws, req) => {
   connections.set(ws, { role: "unauthenticated", userId: null, deviceId: null, authenticated: false, ip });
   ws.isAlive = true;
 
-  console.log(`[WS CONNECT] New connection from ${ip}`);
+  console.log(`\n[+] New socket connection from ${ip}`);
 
-  ws.on("pong", () => {
-    ws.isAlive = true;
-  });
+  ws.on("pong", () => { ws.isAlive = true; });
 
   ws.on("message", (raw) => {
     let msg;
@@ -183,164 +80,61 @@ wss.on("connection", (ws, req) => {
 
     const meta = connections.get(ws);
 
-    // ── 1. Authentication Handshake ──
+    // --- X-RAY LOGGING (Ignore spammy state updates) ---
+    if (msg.type !== "state_update") {
+        console.log(`\n[RX] From Role: '${meta.role}' | Type: '${msg.type}'`);
+        console.log(`[PAYLOAD]`, msg);
+    }
+    // ---------------------------------------------------
+
     if (msg.type === "auth") {
       const { role, deviceId, deviceKey, userId } = msg;
 
-      if (!deviceId) {
-        return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Missing deviceId" }));
-      }
+      if (!deviceId) return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Missing deviceId" }));
 
-      // Role A: ESP32 Hardware Device
       if (role === "device") {
         const dev = getOrCreateDevice(deviceId);
         dev.ws = ws;
         dev.isOnline = true;
         dev.lastSeen = Date.now();
-
         meta.role = "device";
         meta.deviceId = deviceId;
         meta.authenticated = true;
 
-        console.log(`[DEVICE AUTH] ESP32 Device registered: "${deviceId}"`);
-
-        ws.send(
-          JSON.stringify({
-            type: "auth_res",
-            ok: true,
-            role: "device",
-            deviceId,
-            remoteModeEnabled: dev.remoteModeEnabled,
-            cachedState: dev.state,
-          })
-        );
-
-        // Notify all watching PWA clients that device is ONLINE
-        broadcastToDeviceClients(deviceId, {
-          type: "device_status",
-          deviceId,
-          isOnline: true,
-          timestamp: Date.now(),
-        });
+        console.log(`[AUTH OK] ESP32 Hardware linked to deviceId: "${deviceId}"`);
+        ws.send(JSON.stringify({ type: "auth_res", ok: true, role: "device", deviceId, cachedState: dev.state }));
         return;
       }
 
-      // Role B: Next.js PWA Client App
       if (role === "client") {
-        if (!userId) {
-          return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Missing userId" }));
-        }
-
         const dev = getOrCreateDevice(deviceId);
         meta.role = "client";
         meta.userId = userId;
         meta.deviceId = deviceId;
         meta.authenticated = true;
 
-        console.log(`[CLIENT AUTH] PWA user "${userId}" connected to device "${deviceId}"`);
-
-        ws.send(
-          JSON.stringify({
-            type: "auth_res",
-            ok: true,
-            role: "client",
-            deviceId,
-            userId,
-            deviceOnline: dev.isOnline && dev.ws !== null,
-            remoteModeEnabled: dev.remoteModeEnabled,
-            currentState: dev.state,
-          })
-        );
+        console.log(`[AUTH OK] PWA App (User: ${userId}) linked to deviceId: "${deviceId}"`);
+        ws.send(JSON.stringify({ type: "auth_res", ok: true, role: "client", deviceId, deviceOnline: (dev.isOnline && dev.ws !== null) }));
         return;
       }
-
-      return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Invalid role specified" }));
     }
 
-    // Ensure connection is authenticated before processing commands
-    if (!meta || !meta.authenticated) {
-      return ws.send(JSON.stringify({ type: "error", code: "UNAUTHORIZED", message: "Please authenticate first" }));
-    }
+    if (!meta || !meta.authenticated) return;
 
-    // ── 2. Handle Messages from ESP32 Device ──
-    if (meta.role === "device") {
-      const dev = getOrCreateDevice(meta.deviceId);
-      dev.lastSeen = Date.now();
-
-      // Device State Telemetry Update
-      if (msg.type === "state_update") {
-        if (msg.relays) dev.state.relays = msg.relays;
-        if (msg.led) dev.state.led = msg.led;
-        if (msg.env) dev.state.env = msg.env;
-        if (msg.presence) dev.state.presence = msg.presence;
-
-        // Broadcast directly to authorized clients watching this device
-        broadcastToDeviceClients(meta.deviceId, {
-          type: "state_update",
-          deviceId: meta.deviceId,
-          ...msg,
-          timestamp: Date.now(),
-        });
-      }
-
-      // Device Command Acknowledgement
-      if (msg.type === "ack") {
-        broadcastToDeviceClients(meta.deviceId, {
-          type: "cmd_ack",
-          deviceId: meta.deviceId,
-          action: msg.action,
-          success: msg.success,
-        });
-      }
-      return;
-    }
-
-    // ── 3. Handle Messages from PWA Client (Forward to that User's ESP32) ──
     if (meta.role === "client") {
       const targetDev = getOrCreateDevice(meta.deviceId);
 
-      // Toggle Remote Mode ("Away Mode")
-      if (msg.type === "set_remote_mode") {
-        const enabled = Boolean(msg.enabled);
-        targetDev.remoteModeEnabled = enabled;
-
-        console.log(`[REMOTE TOGGLE] Client ${meta.userId} set Remote Mode = ${enabled} for ${meta.deviceId}`);
-
-        if (!enabled && targetDev.ws && targetDev.ws.readyState === WebSocket.OPEN) {
-          targetDev.ws.send(JSON.stringify({ type: "remote_mode_disabled" }));
-        }
-
-        broadcastToDeviceClients(meta.deviceId, {
-          type: "remote_mode_changed",
-          deviceId: meta.deviceId,
-          enabled,
-          timestamp: Date.now(),
-        });
-        return;
-      }
-
-      // Device Control Commands (Relay, LED, All-Off)
       if (msg.type === "relay_set" || msg.type === "led_set" || msg.type === "all_off" || msg.type === "timer_set") {
+        console.log(`>>> [ROUTING] Attempting to send '${msg.type}' to ESP32 '${meta.deviceId}'...`);
+        
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
-          return ws.send(
-            JSON.stringify({
-              type: "error",
-              code: "DEVICE_OFFLINE",
-              message: "Your SmartDesk is currently offline or Remote Mode is disabled",
-              remoteModeEnabled: targetDev.remoteModeEnabled,
-            })
-          );
+          console.log(`>>> [ROUTING FAILED] ESP32 '${meta.deviceId}' is offline! Dropping command.`);
+          return ws.send(JSON.stringify({ type: "error", code: "DEVICE_OFFLINE", message: "ESP32 Offline" }));
         }
 
-        // Forward strictly to that user's hardware device
-        const forwardPayload = {
-          type: "command",
-          action: msg.type,
-          ...msg,
-          sourceUser: meta.userId,
-          timestamp: Date.now(),
-        };
-
+        const forwardPayload = { type: "command", action: msg.type, ...msg, sourceUser: meta.userId, timestamp: Date.now() };
+        
+        console.log(`>>> [ROUTING SUCCESS] Forwarded to ESP32:`, forwardPayload);
         targetDev.ws.send(JSON.stringify(forwardPayload));
       }
     }
@@ -348,54 +142,26 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     const meta = connections.get(ws);
-    if (meta) {
-      if (meta.role === "device") {
-        const dev = devices.get(meta.deviceId);
-        if (dev && dev.ws === ws) {
-          dev.ws = null;
-          dev.isOnline = false;
-          console.log(`[DEVICE OFFLINE] ESP32 "${meta.deviceId}" disconnected`);
-          broadcastToDeviceClients(meta.deviceId, {
-            type: "device_status",
-            deviceId: meta.deviceId,
-            isOnline: false,
-            timestamp: Date.now(),
-          });
-        }
-      } else if (meta.role === "client") {
-        console.log(`[CLIENT DISCONNECT] PWA user "${meta.userId}" disconnected`);
+    if (meta && meta.role === "device") {
+      const dev = devices.get(meta.deviceId);
+      if (dev && dev.ws === ws) {
+        dev.ws = null;
+        dev.isOnline = false;
+        console.log(`[DISCONNECT] ESP32 Hardware "${meta.deviceId}" went offline.`);
       }
-      connections.delete(ws);
     }
-  });
-
-  ws.on("error", (err) => {
-    console.error(`[WS ERROR] ${ip}: ${err.message}`);
+    connections.delete(ws);
   });
 });
 
-// Periodic Heartbeat to clean up dead connections (every 30 seconds)
 const heartbeatInterval = setInterval(() => {
   for (const [ws, meta] of connections.entries()) {
-    if (ws.isAlive === false) {
-      console.log(`[TERMINATING DEAD SOCKET] ${meta.role} (${meta.deviceId || "anon"})`);
-      ws.terminate();
-      connections.delete(ws);
-      continue;
-    }
+    if (ws.isAlive === false) { ws.terminate(); connections.delete(ws); continue; }
     ws.isAlive = false;
     ws.ping();
   }
 }, 30000);
 
-wss.on("close", () => {
-  clearInterval(heartbeatInterval);
-});
-
 server.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`>>> SmartDesk V2 Cloud Relay Server listening on :${PORT}`);
-  console.log(`>>> WebSocket Endpoint: ws://localhost:${PORT}/ws`);
-  console.log(`>>> Health Check:       http://localhost:${PORT}/health`);
-  console.log(`======================================================\n`);
+  console.log(`\n>>> SmartDesk V2 Router Online on Port ${PORT} <<<`);
 });
