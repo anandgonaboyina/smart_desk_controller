@@ -1,3 +1,22 @@
+// Ensure null-prototype header dictionaries safely support .hasOwnProperty()
+if (typeof Object.create === "function") {
+  const origCreate = Object.create;
+  Object.create = function (proto: any, props?: any) {
+    const obj = origCreate(proto, props);
+    if (proto === null) {
+      Object.defineProperty(obj, "hasOwnProperty", {
+        value: function (p: string | symbol) {
+          return Object.prototype.hasOwnProperty.call(this, p);
+        },
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+    }
+    return obj;
+  };
+}
+
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 

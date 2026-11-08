@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "npx @tailwindcss/cli -i app/input.css -o app/globals.css",
     "dev": "next dev",
+    "prebuild": "npx @tailwindcss/cli -i app/input.css -o app/globals.css --minify",
     "build": "next build",
+    "postinstall": "node scripts/patch-next.js",
     "start": "next start",
     "lint": "eslint"
   },
@@ -14,6 +17,8 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.5",
+    "@tailwindcss/postcss": "^4.3.5",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

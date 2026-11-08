@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from "react";
 import { EnvData, LogEntry, MatrixConfig, MATRIX_SAFE_GPIO_PINS } from "../types/smartdesk";
 import RenameModal from "./RenameModal";
+import WifiManagerModal from "./WifiManagerModal";
 
 export interface SettingsPanelProps {
   envData: EnvData;
@@ -29,6 +30,13 @@ export interface SettingsPanelProps {
   onConnect: () => void;
   onDisconnect: () => void;
   onClearLogs: () => void;
+  wifiHost?: string;
+  wifiConnected?: boolean;
+  wifiIp?: string;
+  wifiSsid?: string;
+  wifiOnAwayOnly?: boolean;
+  onUpdateWifiHost?: (host: string) => void;
+  onToggleWifiOnAwayOnly?: (enabled: boolean) => void;
 }
 
 export default function SettingsPanel({
@@ -50,9 +58,43 @@ export default function SettingsPanel({
   onRename,
   onDisconnect,
   onClearLogs,
+  wifiHost = "192.168.4.1",
+  wifiConnected = false,
+  wifiIp = "",
+  wifiSsid = "",
+  wifiOnAwayOnly = false,
+  onUpdateWifiHost,
+  onToggleWifiOnAwayOnly,
 }: SettingsPanelProps) {
   const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
+  const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
   const [copiedLogs, setCopiedLogs] = useState<boolean>(false);
+  const [hostInput, setHostInput] = useState<string>(wifiHost);
+  const [testStatus, setTestStatus] = useState<string | null>(null);
+  const [testingWifi, setTestingWifi] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (wifiHost) setHostInput(wifiHost);
+  }, [wifiHost]);
+
+  const handleTestWifi = async () => {
+    setTestingWifi(true);
+    setTestStatus("Connecting to " + hostInput + "...");
+    try {
+      const res = await fetch(`http://${hostInput}/api/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setTestStatus(`Connected! IP: ${data.ip || "AP Mode"} (RSSI: ${data.rssi || 0}dBm)`);
+        onUpdateWifiHost?.(hostInput);
+      } else {
+        setTestStatus(`Error: HTTP ${res.status}`);
+      }
+    } catch (e: any) {
+      setTestStatus(`Failed to connect to http://${hostInput}: ${e?.message || "Timeout/Unreachable"}`);
+    } finally {
+      setTestingWifi(false);
+    }
+  };
 
   // Local state for hardware configurations
   const [stripLenInput, setStripLenInput] = useState<number | string>(stripLength);
@@ -173,6 +215,93 @@ export default function SettingsPanel({
               🔔 Alert Chime
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* ── WI-FI & REMOTE DESK ACCESS ── */}
+      <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 space-y-4 shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📶</span>
+            <span className="text-xs text-white font-extrabold uppercase">Wi-Fi &amp; Remote Access (Dual-Mode)</span>
+          </div>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${wifiConnected ? "bg-emerald-950 text-emerald-300 border-emerald-600" : "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>
+            {wifiConnected ? `Online (${wifiSsid || "Connected"})` : "Offline / Standby"}
+          </span>
+        </div>
+
+        {/* IP / Host input */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] text-zinc-400 font-bold uppercase">Desk Wi-Fi IP / Hostname:</span>
+            <span className="text-[10px] text-cyan-400 font-mono">{wifiIp ? `Assigned IP: ${wifiIp}` : "SoftAP: 192.168.4.1"}</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={hostInput}
+              onChange={(e) => setHostInput(e.target.value)}
+              placeholder="e.g. 192.168.4.1 or 192.168.1.150"
+              className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-bold text-xs focus:border-cyan-500 outline-none font-mono"
+            />
+            <button
+              type="button"
+              onClick={handleTestWifi}
+              disabled={testingWifi}
+              className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs active:scale-95 cursor-pointer disabled:opacity-50"
+            >
+              {testingWifi ? "Testing..." : "Test Link"}
+            </button>
+            <a
+              href={`http://${hostInput}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-cyan-300 font-extrabold text-xs flex items-center gap-1 active:scale-95"
+            >
+              Portal ↗
+            </a>
+          </div>
+          {testStatus && (
+            <div className={`text-[11px] font-mono p-1.5 rounded ${testStatus.startsWith("Connected") ? "text-emerald-300 bg-emerald-950/40 border border-emerald-800" : "text-rose-300 bg-rose-950/40 border border-rose-800"}`}>
+              {testStatus}
+            </div>
+          )}
+
+          {/* Dedicated Campus Wi-Fi & Hotspot Manager Modal Button */}
+          <button
+            type="button"
+            onClick={() => setShowWifiModal(true)}
+            className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-cyan-500/20 cursor-pointer flex items-center justify-center gap-2 mt-2"
+          >
+            <span>📶</span>
+            <span>Configure Campus Wi-Fi, Fortinet Credentials &amp; Hotspot</span>
+          </button>
+        </div>
+
+        {/* Wi-Fi on Away Only Toggle */}
+        <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
+          <div>
+            <span className="text-xs text-zinc-200 font-extrabold block">Wi-Fi on Away Only (Power Saver):</span>
+            <span className="text-[10px] text-zinc-400">Keeps Wi-Fi off at desk, connects automatically when you walk away</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onToggleWifiOnAwayOnly?.(!wifiOnAwayOnly)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-extrabold border-2 transition-all active:scale-95 cursor-pointer ${
+              wifiOnAwayOnly ? "bg-amber-600 text-white border-amber-500" : "bg-zinc-800 text-zinc-400 border-zinc-700"
+            }`}
+          >
+            {wifiOnAwayOnly ? "AWAY ONLY (ON)" : "ALWAYS ON"}
+          </button>
+        </div>
+
+        {/* Portal Information / Features Notice */}
+        <div className="bg-black/60 p-3 rounded-lg border border-zinc-800 text-[11px] text-zinc-400 space-y-1">
+          <div className="font-bold text-zinc-300">💡 Multi-Network &amp; College Wi-Fi Features:</div>
+          <div>• Connect to default hotspot <span className="text-cyan-300 font-mono">AnandSmartDesk</span> (password: <span className="text-cyan-300 font-mono">Anandsmartdesk</span>).</div>
+          <div>• Save multiple Wi-Fi networks with automatic priority scan &amp; seamless failover.</div>
+          <div>• Supports College Wi-Fi / Restricted Captive Portals with auto-login credentials.</div>
+          <div>• Real-time NTP clock sync keeps schedules accurate without phone connection.</div>
         </div>
       </div>
 
@@ -389,6 +518,16 @@ export default function SettingsPanel({
         currentName={deviceName}
         onSave={onRename}
         onClose={() => setShowRenameModal(false)}
+      />
+
+      <WifiManagerModal
+        isOpen={showWifiModal}
+        onClose={() => setShowWifiModal(false)}
+        deskHost={hostInput}
+        currentSsid={wifiSsid}
+        currentIp={wifiIp}
+        wifiOnAwayOnly={wifiOnAwayOnly}
+        onToggleWifiOnAwayOnly={onToggleWifiOnAwayOnly}
       />
     </div>
   );

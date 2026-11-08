@@ -1,10 +1,13 @@
-compile command :
+# SmartDesk V2 (ESP32-S3 R8N16) Compile and Upload Commands
 
-& "C:\Users\Anand Kumar\AppData\Local\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile -v --fqbn esp32:esp32:esp32s3 --build-property "FlashSize=16M" --build-property "PartitionScheme=default_16MB" --build-property "PSRAM=opi" --output-dir "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk\build" "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk"
+## Compile Command:
+& "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile -v --fqbn esp32:esp32:esp32s3 --build-property "FlashSize=16M" --build-property "PartitionScheme=default_16MB" --build-property "PSRAM=opi" --output-dir "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk\build" "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk"
 
+## Flash Upload Command (Target COM3):
+& "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" upload -v -p COM3 --fqbn esp32:esp32:esp32s3 --input-dir "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk\build" "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk"
 
-
-flash upload command :
-
-
-& "C:\Users\Anand Kumar\AppData\Local\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" upload -v -p COM10 --fqbn esp32:esp32:esp32s3 --input-dir "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk\build" "D:\Organized files\webDev files\deployed Websites\smart_desk_controller\smartdesk-v2\firmware\smartdesk"
+## Web Portal Default Credentials:
+- SoftAP Name (SSID): AnandSmartDesk
+- SoftAP Password   : Anandsmartdesk
+- Default Portal IP : http://192.168.4.1
+- REST API Base     : http://192.168.4.1/api/

@@ -52,5 +52,5 @@ static inline bool isSafeMatrixPin(uint8_t pin) {
 #define CHAR_INFO_UUID      "f1f28a13-9725-4636-a073-0666057bd91b"
 #define CHAR_ENV_UUID       "4a1b0005-c0ee-47c9-a1e4-0aafa8ee316b"
 
-#define BUILD_MARKER        "BUILD " __DATE__ " " __TIME__ " TAG=V2-MODULAR-MATRIX"
+#define BUILD_MARKER        "BUILD " __DATE__ " " __TIME__ " TAG=V2-WIFI-NVS-PORTAL"
 

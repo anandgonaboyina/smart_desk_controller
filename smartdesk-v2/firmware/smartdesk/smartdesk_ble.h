@@ -20,7 +20,7 @@ enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
 struct WriteCmd {
     WriteType type;
     uint8_t   len;
-    uint8_t   data[72];
+    uint8_t   data[144];
 };
 
 #define CMD_QUEUE_SIZE 32
@@ -32,7 +32,7 @@ static inline bool enqueueCmd(WriteType type, const uint8_t* data, size_t len) {
     uint8_t next = (s_cmdHead + 1) % CMD_QUEUE_SIZE;
     if (next == s_cmdTail) return false; // Queue full
     s_cmdQueue[s_cmdHead].type = type;
-    s_cmdQueue[s_cmdHead].len  = (len > 72) ? 72 : (uint8_t)len;
+    s_cmdQueue[s_cmdHead].len  = (len > 144) ? 144 : (uint8_t)len;
     if (data && s_cmdQueue[s_cmdHead].len > 0) {
         memcpy(s_cmdQueue[s_cmdHead].data, data, s_cmdQueue[s_cmdHead].len);
     }
@@ -86,7 +86,7 @@ static inline void notifyLedState() {
 
 static inline void notifyEnvState() {
     if (!s_pEnvChar || !s_connected) return;
-    uint8_t payload[24];
+    uint8_t payload[48];
     buildEnvPayload(payload);
     s_pEnvChar->setValue(payload, sizeof(payload));
     s_pEnvChar->notify();
@@ -101,6 +101,9 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         NimBLEAddress addr = connInfo.getAddress();
         strncpy(s_connectedClientAddr, addr.toString().c_str(), sizeof(s_connectedClientAddr) - 1);
         s_connectedClientAddr[sizeof(s_connectedClientAddr) - 1] = '\0';
+
+        // Request aggressive BLE connection interval (15ms - 30ms) for sub-20ms responsiveness
+        pServer->updateConnParams(connInfo.getConnHandle(), 12, 24, 0, 400);
 
         // Keep advertising active so secondary devices (e.g. Remote PWA) can discover
         // and connect concurrently even while mobile phone is paired/connected!
@@ -179,7 +182,7 @@ class InfoCallbacks : public NimBLECharacteristicCallbacks {
 class EnvCallbacks : public NimBLECharacteristicCallbacks {
     void onRead(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
-        uint8_t payload[24];
+        uint8_t payload[48];
         buildEnvPayload(payload);
         pChr->setValue(payload, sizeof(payload));
     }
@@ -227,10 +230,10 @@ static inline void initBleServer(const char* deviceName) {
 
     NimBLEService* pService = s_pServer->createService(SERVICE_UUID);
 
-    // 1. RELAY: READ, WRITE, NOTIFY
+    // 1. RELAY: READ, WRITE, WRITE_NR (No Response for 0ms latency), NOTIFY
     s_pRelayChar = pService->createCharacteristic(
         CHAR_RELAY_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY
     );
     static RelayCallbacks relayCb;
     s_pRelayChar->setCallbacks(&relayCb);
@@ -238,10 +241,10 @@ static inline void initBleServer(const char* deviceName) {
     buildRelayPayload(initRelay);
     s_pRelayChar->setValue(initRelay, 12);
 
-    // 2. LED: READ, WRITE, NOTIFY
+    // 2. LED: READ, WRITE, WRITE_NR (No Response for 0ms latency), NOTIFY
     s_pLedChar = pService->createCharacteristic(
         CHAR_LED_UUID,
-        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR | NIMBLE_PROPERTY::NOTIFY
     );
     static LedCallbacks ledCb;
     s_pLedChar->setCallbacks(&ledCb);
@@ -271,7 +274,7 @@ static inline void initBleServer(const char* deviceName) {
     );
     static EnvCallbacks envCb;
     s_pEnvChar->setCallbacks(&envCb);
-    uint8_t initEnv[24];
+    uint8_t initEnv[48];
     buildEnvPayload(initEnv);
     s_pEnvChar->setValue(initEnv, sizeof(initEnv));
 

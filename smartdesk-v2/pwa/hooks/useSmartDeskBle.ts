@@ -57,11 +57,23 @@ interface BluetoothRemoteGATTCharacteristic extends EventTarget {
   value?: DataView;
   readValue(): Promise<DataView>;
   writeValueWithResponse(value: BufferSource): Promise<void>;
+  writeValueWithoutResponse?(value: BufferSource): Promise<void>;
   startNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
   stopNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
   addEventListener(type: string, listener: (this: this, ev: any) => void, options?: boolean | AddEventListenerOptions): void;
   removeEventListener(type: string, listener: (this: this, ev: any) => void, options?: boolean | EventListenerOptions): void;
 }
+
+const writeCharFast = async (char?: BluetoothRemoteGATTCharacteristic | null, payload?: BufferSource) => {
+  if (!char || !payload) return;
+  if (typeof char.writeValueWithoutResponse === "function") {
+    try {
+      await char.writeValueWithoutResponse(payload);
+      return;
+    } catch (_) {}
+  }
+  await char.writeValueWithResponse(payload);
+};
 
 interface NavigatorWithBluetooth extends Navigator {
   bluetooth?: {
@@ -231,6 +243,17 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [previewTick, setPreviewTick] = useState<number>(0);
 
+  /* Wi-Fi & REST Transport State */
+  const [wifiHost, setWifiHost] = useState<string>("192.168.4.1");
+  const [wifiConnected, setWifiConnected] = useState<boolean>(false);
+  const [wifiState, setWifiState] = useState<number>(0);
+  const [wifiIp, setWifiIp] = useState<string>("");
+  const [wifiSsid, setWifiSsid] = useState<string>("");
+  const [wifiRssi, setWifiRssi] = useState<number>(0);
+  const [wifiOnAwayOnly, setWifiOnAwayOnly] = useState<boolean>(false);
+  const wifiHostRef = useRef<string>(wifiHost);
+  wifiHostRef.current = wifiHost;
+
   /* Audio Refs */
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -320,6 +343,113 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     return () => clearInterval(purgeInterval);
   }, []);
 
+  /* Wi-Fi Settings Persistence */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedHost = localStorage.getItem("smartdesk_wifi_host");
+      if (savedHost) setWifiHost(savedHost);
+      const savedAwayWifi = localStorage.getItem("smartdesk_wifi_away_only");
+      if (savedAwayWifi) setWifiOnAwayOnly(savedAwayWifi === "true");
+    }
+  }, []);
+
+  const updateWifiHost = useCallback((host: string) => {
+    const clean = host.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    const target = clean || "192.168.4.1";
+    setWifiHost(target);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_wifi_host", target);
+    }
+  }, []);
+
+  const sendWifiCommand = useCallback(async (endpoint: string, data: any) => {
+    const host = wifiHostRef.current;
+    if (!host) return false;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`http://${host}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }, []);
+
+  const toggleWifiOnAwayOnly = useCallback(async (enable: boolean) => {
+    setWifiOnAwayOnly(enable);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_wifi_away_only", enable ? "true" : "false");
+    }
+    await sendWifiCommand("/api/wifi/config", { wifi_on_away_only: enable });
+    onToastRef.current?.(
+      enable ? "Wi-Fi will activate only when Away (Power Saving)" : "Wi-Fi is now active continuously"
+    );
+  }, [sendWifiCommand]);
+
+  /* Periodic Wi-Fi Status Polling */
+  useEffect(() => {
+    if (!wifiHost) return;
+    let isCancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(`http://${wifiHost}/api/status`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (res.ok && !isCancelled) {
+          const json = await res.json();
+          setWifiConnected(true);
+          if (json.ip) setWifiIp(json.ip);
+          if (json.ssid) setWifiSsid(json.ssid);
+          if (typeof json.rssi === "number") setWifiRssi(json.rssi);
+          if (typeof json.wifi_on_away_only === "boolean") setWifiOnAwayOnly(json.wifi_on_away_only);
+
+          // Update relays and led if BLE is disconnected
+          if (!connectedRef.current) {
+            if (Array.isArray(json.relays)) {
+              setRelays((prev) =>
+                prev.map((r, i) => ({
+                  ...r,
+                  load: Boolean(json.relays[i]),
+                }))
+              );
+            }
+            if (json.led && typeof json.led.mode === "number") {
+              setLed({
+                mode: json.led.mode,
+                r: json.led.r ?? 0,
+                g: json.led.g ?? 240,
+                b: json.led.b ?? 255,
+                bri: json.led.bri ?? 80,
+                spd: json.led.spd ?? 50,
+              });
+            }
+          }
+        } else if (!isCancelled) {
+          setWifiConnected(false);
+        }
+      } catch (_) {
+        if (!isCancelled) setWifiConnected(false);
+      }
+    };
+
+    pollStatus();
+    const timer = setInterval(pollStatus, 4000);
+    return () => {
+      isCancelled = true;
+      clearInterval(timer);
+    };
+  }, [wifiHost]);
+
   /* Logging Helper (Strictly in-memory, capped at last 150 items, max 24hr retention) */
   const addLog = useCallback(
     (text: string, type: "info" | "tx" | "rx" | "warn" | "err" = "info") => {
@@ -363,6 +493,51 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       return writeQueueRef.current;
     },
     [addLog]
+  );
+
+  /* 0xE1: Configure Wi-Fi Credentials directly over BLE */
+  const configureWifiOverBle = useCallback(
+    async (ssid: string, pass?: string, user?: string, cpPass?: string, connectNow = true) => {
+      if (!configCharRef.current) throw new Error("Desk Bluetooth not connected");
+      const enc = new TextEncoder();
+      const ssidBytes = enc.encode(ssid.trim());
+      const passBytes = pass ? enc.encode(pass) : new Uint8Array(0);
+      const userBytes = user ? enc.encode(user.trim()) : new Uint8Array(0);
+      const cpPassBytes = cpPass ? enc.encode(cpPass) : new Uint8Array(0);
+
+      if (ssidBytes.length === 0) throw new Error("SSID cannot be empty");
+      if (ssidBytes.length > 32) throw new Error("SSID too long (max 32 chars)");
+
+      const flags = connectNow ? 0x01 : 0x00;
+      const totalLen = 6 + ssidBytes.length + passBytes.length + userBytes.length + cpPassBytes.length;
+      const payload = new Uint8Array(totalLen);
+      payload[0] = 0xE1;
+      payload[1] = flags;
+      payload[2] = ssidBytes.length;
+      payload[3] = passBytes.length;
+      payload[4] = userBytes.length;
+      payload[5] = cpPassBytes.length;
+
+      let off = 6;
+      payload.set(ssidBytes, off); off += ssidBytes.length;
+      payload.set(passBytes, off); off += passBytes.length;
+      payload.set(userBytes, off); off += userBytes.length;
+      payload.set(cpPassBytes, off); off += cpPassBytes.length;
+
+      return new Promise<void>((resolve, reject) => {
+        enqueueWrite(`Configure Wi-Fi '${ssid}' via BLE`, async () => {
+          try {
+            await configCharRef.current?.writeValueWithResponse(payload);
+            addLog(`[BLE TX] Wi-Fi network '${ssid}' sent to ESP32`, "tx");
+            onToastRef.current?.(`Sent Wi-Fi '${ssid}' to ESP32 via BLE!`);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+    [enqueueWrite, addLog]
   );
 
   /* UI Transient Animation on Relay Switch */
@@ -592,6 +767,35 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           enabled: mEn,
           mode: mMode,
         }));
+      }
+
+      /* Bytes 24..47: Live Wi-Fi Telemetry over BLE */
+      if (dataView.byteLength >= 30) {
+        const wState = dataView.getUint8(24);
+        const rawRssi = dataView.getUint8(25);
+        const wRssi = rawRssi > 0 ? -rawRssi : 0;
+        const ipOctets = [
+          dataView.getUint8(26),
+          dataView.getUint8(27),
+          dataView.getUint8(28),
+          dataView.getUint8(29),
+        ];
+        const ipStr = ipOctets.join(".");
+
+        let ssidName = "";
+        if (dataView.byteLength >= 32) {
+          const sLen = Math.min(dataView.getUint8(31), 16);
+          if (sLen > 0 && dataView.byteLength >= 32 + sLen) {
+            const rawBytes = new Uint8Array(dataView.buffer, dataView.byteOffset + 32, sLen);
+            ssidName = new TextDecoder().decode(rawBytes).replace(/\0/g, "").trim();
+          }
+        }
+
+        setWifiState(wState);
+        setWifiConnected(wState === 1);
+        setWifiRssi(wRssi);
+        if (ipStr !== "0.0.0.0") setWifiIp(ipStr);
+        if (ssidName) setWifiSsid(ssidName);
       }
     },
     []
@@ -1001,11 +1205,12 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
       enqueueWrite(`Set Relay ${idx + 1} -> ${nextLoad ? "ON" : "OFF"}`, async () => {
         addLog(`[TX RELAY] ${bytesToHex(payload)} (Set ${rName} Load -> ${nextLoad ? "ON" : "OFF"}, Contact=${wiringMode})`, "tx");
-        await relayCharRef.current?.writeValueWithResponse(payload);
+        await writeCharFast(relayCharRef.current, payload);
       });
+      sendWifiCommand("/api/relay", { relay: idx, state: nextLoad });
       onToastRef.current?.(`${rName} turned ${nextLoad ? "ON" : "OFF"}`);
     },
-    [triggerUiAnimation, enqueueWrite, addLog, relays]
+    [triggerUiAnimation, enqueueWrite, addLog, relays, sendWifiCommand]
   );
 
   const setRelayTimer = useCallback(
@@ -1013,7 +1218,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       const payload = new Uint8Array([2, idx, minutes & 0xff, (minutes >> 8) & 0xff]);
       enqueueWrite(`Set Relay ${idx + 1} Timer -> ${minutes}m`, async () => {
         addLog(`[TX RELAY] ${bytesToHex(payload)} (Set Relay ${idx + 1} Timer to ${minutes} min)`, "tx");
-        await relayCharRef.current?.writeValueWithResponse(payload);
+        await writeCharFast(relayCharRef.current, payload);
       });
       onToastRef.current?.(
         minutes > 0 ? `Timer set: ${configsRef.current[idx]?.name || `CH\${idx + 1}`} for ${minutes}m` : `Timer cancelled`
@@ -1027,10 +1232,11 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     setRelays((prev) => prev.map(() => ({ load: false, remainingMin: 0 })));
     enqueueWrite("All Relays OFF", async () => {
       addLog(`[TX RELAY] ${bytesToHex(payload)} (All Relays Safe OFF)`, "tx");
-      await relayCharRef.current?.writeValueWithResponse(payload);
+      await writeCharFast(relayCharRef.current, payload);
     });
+    sendWifiCommand("/api/relay", { allOff: true });
     onToastRef.current?.("All Relays turned OFF!", "warn");
-  }, [enqueueWrite, addLog]);
+  }, [enqueueWrite, addLog, sendWifiCommand]);
 
   /* LED Commands */
   const sendLedCommand = useCallback(
@@ -1043,11 +1249,12 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         enqueueWrite("Set LED State", async () => {
           const modeName = LED_MODES.find((m) => m.id === mode)?.label || `Mode ${mode}`;
           addLog(`[TX LED] ${bytesToHex(payload)} (${modeName} RGB:(${r},${g},${b}) Bri:${bri}% Spd:${spd})`, "tx");
-          await ledCharRef.current?.writeValueWithResponse(payload);
+          await writeCharFast(ledCharRef.current, payload);
         });
+        sendWifiCommand("/api/led", { mode, r, g, b, bri, spd });
       }, 50);
     },
-    [enqueueWrite, addLog]
+    [enqueueWrite, addLog, sendWifiCommand]
   );
 
   /* RGB Sleep Timer Handlers */
@@ -1742,6 +1949,17 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     logs,
     previewTick,
     liveMusicLevels: liveMusicLevelsRef.current,
+    wifiHost,
+    wifiConnected,
+    wifiState,
+    wifiIp,
+    wifiSsid,
+    wifiRssi,
+    wifiOnAwayOnly,
+    updateWifiHost,
+    toggleWifiOnAwayOnly,
+    configureWifiOverBle,
+    sendWifiCommand,
     handleConnect: triggerUserConnect,
     handleDisconnected,
     toggleRelay,

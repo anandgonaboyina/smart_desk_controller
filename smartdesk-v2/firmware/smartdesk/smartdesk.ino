@@ -37,6 +37,14 @@ uint32_t    s_lastSwitchMs[RELAY_COUNT] = {0, 0, 0, 0};
 uint32_t    s_timerEndMs[RELAY_COUNT]   = {0, 0, 0, 0}; // 0 = no timer
 bool        s_connected                 = false;
 
+/* ── College Wi-Fi / Fortinet Captive Portal Credentials ─────────────────── */
+// Note: Each saved Wi-Fi network stores its own specific student credentials in NVS.
+// You can configure different credentials for any number of campus routers/networks
+// via the PWA App Settings or Web Portal (192.168.4.1).
+String studentUsername    = ""; // Optional default fallback
+String studentPassword    = ""; // Optional default fallback
+String fortinetGatewayUrl = "http://192.168.80.1:1000/fgtauth?"; // Default Fortinet gateway URL
+
 // Strip Dynamic Length & Strip Instance
 static uint16_t          s_stripLen = DEFAULT_STRIP_LEN; // Dynamic up to 800 LEDs
 static Adafruit_NeoPixel s_strip(DEFAULT_STRIP_LEN, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -307,52 +315,9 @@ void buildConfigPayload(uint8_t* payload, size_t maxLen) {
     }
 }
 
-void buildEnvPayload(uint8_t* out24) {
-    if (!out24) return;
-    memset(out24, 0, 24);
-    out24[0] = s_sensorValid ? 1 : 0;
-    int16_t t10 = (int16_t)(s_tempC * 10.0f);
-    out24[1] = (uint8_t)(t10 / 10);
-    out24[2] = (uint8_t)(abs(t10) % 10);
-    int16_t h10 = (int16_t)(s_humidity * 10.0f);
-    out24[3] = (uint8_t)(h10 / 10);
-    out24[4] = (uint8_t)(abs(h10) % 10);
-    out24[5] = s_buzzerMasterEnabled ? 1 : 0;
-    out24[6] = s_timeSync.synced ? 1 : 0;
-    uint8_t curH = 0, curM = 0, curS = 0, curDOW = 0;
-    getLocalTime(&curH, &curM, &curS, &curDOW);
-    out24[7] = curH;
-    out24[8] = curM;
-    out24[9] = curS;
-    out24[10] = curDOW;
-
-    out24[11] = s_presenceConfig.enabled ? 1 : 0;
-    uint8_t presState = 0;
-    uint8_t remMin = 0;
-    if (s_connected) {
-        presState = 1;
-    } else if (s_awayTimerEndMs > 0) {
-        presState = 2;
-        long remMs = (long)(s_awayTimerEndMs - millis());
-        remMin = (remMs > 0) ? (uint8_t)((remMs + 59999UL) / 60000UL) : 0;
-    }
-    out24[12] = presState;
-    out24[13] = remMin;
-
-    // Bytes 14..15: Strip Length (uint16 little-endian)
-    out24[14] = (uint8_t)(s_stripLen & 0xFF);
-    out24[15] = (uint8_t)((s_stripLen >> 8) & 0xFF);
-
-    // Bytes 16..23: 2D Matrix Configuration
-    out24[16] = (uint8_t)(s_matrixConfig.rows & 0xFF);
-    out24[17] = (uint8_t)((s_matrixConfig.rows >> 8) & 0xFF);
-    out24[18] = (uint8_t)(s_matrixConfig.cols & 0xFF);
-    out24[19] = (uint8_t)((s_matrixConfig.cols >> 8) & 0xFF);
-    out24[20] = s_matrixConfig.wiringType;
-    out24[21] = s_matrixConfig.pin;
-    out24[22] = s_matrixConfig.enabled ? 1 : 0;
-    out24[23] = s_matrixConfig.mode;
-}
+/* ── Forward Declaration ─────────────────────────────────────────────────── */
+void buildEnvPayload(uint8_t* outPayload);
+void broadcastCloudState();
 
 /* ── Relay Hardware & Safety Control ─────────────────────────────────────── */
 static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason) {
@@ -387,6 +352,8 @@ static void setRelayLoad(uint8_t idx, uint8_t load, const char* source) {
     notifyRelayState();
 
     if (prevLoad != s_relayLoads[idx]) {
+        saveRelayLoadsToNVS();
+        broadcastCloudState();
         if (s_relayLoads[idx] != 0 && s_buzzerConfigs[idx].beepOn) buzzerBeepRelayOn();
         else if (s_relayLoads[idx] == 0 && s_buzzerConfigs[idx].beepOff) buzzerBeepRelayOff();
 
@@ -499,6 +466,123 @@ static void savePresenceConfigToNVS() {
     s_prefs.end();
 }
 
+/* ── Relay Load States NVS Persistence ───────────────────────────────────── */
+static void loadRelayLoadsFromNVS() {
+    s_prefs.begin("desk_relay", true);
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "ld_%d", i);
+        s_relayLoads[i] = s_prefs.getUChar(key, 0); // 0 = OFF, 1 = ON
+    }
+    s_prefs.end();
+}
+
+void saveRelayLoadsToNVS() {
+    s_prefs.begin("desk_relay", false);
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "ld_%d", i);
+        s_prefs.putUChar(key, s_relayLoads[i]);
+    }
+    s_prefs.end();
+}
+
+/* ── LED Strip State NVS Persistence ─────────────────────────────────────── */
+static void loadLedStateFromNVS() {
+    s_prefs.begin("desk_led", true);
+    s_ledMode = s_prefs.getUChar("mode", 1);
+    s_ledR    = s_prefs.getUChar("r", 0);
+    s_ledG    = s_prefs.getUChar("g", 180);
+    s_ledB    = s_prefs.getUChar("b", 255);
+    s_ledBri  = s_prefs.getUChar("bri", 100);
+    s_ledSpd  = s_prefs.getUChar("spd", 5);
+    s_musicSubMode = s_prefs.getUChar("m_sub", 0);
+    s_musicBri     = s_prefs.getUChar("m_bri", 100);
+    s_prefs.end();
+}
+
+void saveLedStateToNVS() {
+    s_prefs.begin("desk_led", false);
+    s_prefs.putUChar("mode", s_ledMode);
+    s_prefs.putUChar("r", s_ledR);
+    s_prefs.putUChar("g", s_ledG);
+    s_prefs.putUChar("b", s_ledB);
+    s_prefs.putUChar("bri", s_ledBri);
+    s_prefs.putUChar("spd", s_ledSpd);
+    s_prefs.putUChar("m_sub", s_musicSubMode);
+    s_prefs.putUChar("m_bri", s_musicBri);
+    s_prefs.end();
+}
+
+/* ── Include Wi-Fi Subsystem & Web Portal ────────────────────────────────── */
+#include "smartdesk_wifi.h"
+
+void buildEnvPayload(uint8_t* outPayload) {
+    if (!outPayload) return;
+    memset(outPayload, 0, 48);
+    outPayload[0] = s_sensorValid ? 1 : 0;
+    int16_t t10 = (int16_t)(s_tempC * 10.0f);
+    outPayload[1] = (uint8_t)(t10 / 10);
+    outPayload[2] = (uint8_t)(abs(t10) % 10);
+    int16_t h10 = (int16_t)(s_humidity * 10.0f);
+    outPayload[3] = (uint8_t)(h10 / 10);
+    outPayload[4] = (uint8_t)(abs(h10) % 10);
+    outPayload[5] = s_buzzerMasterEnabled ? 1 : 0;
+    outPayload[6] = s_timeSync.synced ? 1 : 0;
+    uint8_t curH = 0, curM = 0, curS = 0, curDOW = 0;
+    getLocalTime(&curH, &curM, &curS, &curDOW);
+    outPayload[7] = curH;
+    outPayload[8] = curM;
+    outPayload[9] = curS;
+    outPayload[10] = curDOW;
+
+    outPayload[11] = s_presenceConfig.enabled ? 1 : 0;
+    uint8_t presState = 0;
+    uint8_t remMin = 0;
+    if (s_connected) {
+        presState = 1;
+    } else if (s_awayTimerEndMs > 0) {
+        presState = 2;
+        long remMs = (long)(s_awayTimerEndMs - millis());
+        remMin = (remMs > 0) ? (uint8_t)((remMs + 59999UL) / 60000UL) : 0;
+    }
+    outPayload[12] = presState;
+    outPayload[13] = remMin;
+
+    // Bytes 14..15: Strip Length (uint16 little-endian)
+    outPayload[14] = (uint8_t)(s_stripLen & 0xFF);
+    outPayload[15] = (uint8_t)((s_stripLen >> 8) & 0xFF);
+
+    // Bytes 16..23: 2D Matrix Configuration
+    outPayload[16] = (uint8_t)(s_matrixConfig.rows & 0xFF);
+    outPayload[17] = (uint8_t)((s_matrixConfig.rows >> 8) & 0xFF);
+    outPayload[18] = (uint8_t)(s_matrixConfig.cols & 0xFF);
+    outPayload[19] = (uint8_t)((s_matrixConfig.cols >> 8) & 0xFF);
+    outPayload[20] = s_matrixConfig.wiringType;
+    outPayload[21] = s_matrixConfig.pin;
+    outPayload[22] = s_matrixConfig.enabled ? 1 : 0;
+    outPayload[23] = s_matrixConfig.mode;
+
+    // Bytes 24..31: Wi-Fi Telemetry over BLE
+    // Byte 24: Wi-Fi State: 0=Disconnected, 1=Connected, 2=Connecting, 3=SoftAP Active
+    outPayload[24] = s_wifiConnected ? 1 : (WiFi.softAPgetStationNum() > 0 ? 3 : 0);
+    outPayload[25] = (uint8_t)abs(s_wifiRssi);
+    IPAddress curIp = s_wifiConnected ? WiFi.localIP() : WiFi.softAPIP();
+    outPayload[26] = curIp[0];
+    outPayload[27] = curIp[1];
+    outPayload[28] = curIp[2];
+    outPayload[29] = curIp[3];
+    outPayload[30] = s_ntpSynced ? 1 : 0;
+    uint8_t slen = (uint8_t)strlen(s_currentSsid);
+    if (slen > 15) slen = 15;
+    outPayload[31] = slen;
+
+    // Bytes 32..47: Null-padded SSID string (up to 15 characters)
+    if (slen > 0) {
+        memcpy(&outPayload[32], s_currentSsid, slen);
+    }
+}
+
 static void loadSchedulesFromNVS() {
     s_prefs.begin("desk_sched", true);
     for (int i = 0; i < MAX_SCHEDULES; i++) {
@@ -560,6 +644,7 @@ static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
         } else {
             s_ledMode = 0; // Off
         }
+        saveLedStateToNVS();
         notifyLedState();
     }
 }
@@ -677,6 +762,7 @@ static void handleClientConnected(const char* macAddr) {
         if (s_presenceConfig.arrivalRgbOn) {
             s_ledMode = (s_presenceConfig.arrivalRgbMode > 0) ? s_presenceConfig.arrivalRgbMode : 1;
             s_ledBri  = 100;
+            saveLedStateToNVS();
             notifyLedState();
         }
     }
@@ -1111,13 +1197,15 @@ void setup() {
     pinMode(DHT_PIN, INPUT_PULLUP);
 
     loadConfigsFromNVS();
+    loadRelayLoadsFromNVS();
+    loadLedStateFromNVS();
     loadSchedulesFromNVS();
     loadPresenceFromNVS();
     loadTimeBaseFromNVS();
     loadMatrixConfigFromNVS();
 
-    // Re-apply physical relay state
-    for (int i = 0; i < RELAY_COUNT; i++) applyRelayPin(i, 0, "Boot Init");
+    // Re-apply physical relay state from saved NVS loads
+    for (int i = 0; i < RELAY_COUNT; i++) applyRelayPin(i, s_relayLoads[i], "Boot Init Restore");
 
     // Initialize NeoPixel Strip
     s_strip.updateLength(s_stripLen);
@@ -1128,6 +1216,9 @@ void setup() {
     // Initialize BLE Server with HID Auto-Connect
     initBleServer(s_deviceName);
 
+    // Initialize Wi-Fi Subsystem, Multi-Network Auto-Connect & Web Dashboard
+    initWifiSubsystem();
+
     Serial.println("\n>>> SMARTDESK V2 FIRMWARE READY <<<");
     Serial.printf("Strip Length: %d LEDs on GPIO %d\n", s_stripLen, LED_PIN);
     Serial.printf("Matrix Display: %dx%d on GPIO %d [Wiring: %d, Mode: %d]\n",
@@ -1136,6 +1227,9 @@ void setup() {
 
 /* ── Main Loop ───────────────────────────────────────────────────────────── */
 void loop() {
+    // 0. Update Wi-Fi DNS Captive Portal and Web API Server
+    updateWifiSubsystem();
+
     // 1. Process deferred Connect/Disconnect events
     if (s_flagConnected) {
         s_flagConnected = false;
@@ -1184,6 +1278,7 @@ void loop() {
                 s_ledB    = cmd.data[3];
                 s_ledBri  = cmd.data[4];
                 s_ledSpd  = cmd.data[5];
+                saveLedStateToNVS();
                 notifyLedState();
             }
         } else if (cmd.type == WT_CONFIG && cmd.len >= 1) {
@@ -1418,6 +1513,58 @@ void loop() {
                 }
                 saveMatrixConfigToNVS();
                 notifyEnvState();
+            } else if (cmd.data[0] == 0xE1 && cmd.len >= 6) { // 0xE1: Wi-Fi Config via BLE [0xE1, flags, ssidLen, passLen, userLen, cpPassLen, ...data]
+                uint8_t flags     = cmd.data[1];
+                uint8_t ssidLen   = cmd.data[2];
+                uint8_t passLen   = cmd.data[3];
+                uint8_t userLen   = cmd.data[4];
+                uint8_t cpPassLen = cmd.data[5];
+
+                size_t expectedLen = 6 + ssidLen + passLen + userLen + cpPassLen;
+                if (cmd.len >= expectedLen && ssidLen > 0 && ssidLen <= 32) {
+                    char bleSsid[33]   = {0};
+                    char blePass[65]   = {0};
+                    char bleUser[65]   = {0};
+                    char bleCpPass[65] = {0};
+
+                    size_t off = 6;
+                    memcpy(bleSsid, &cmd.data[off], ssidLen);
+                    bleSsid[ssidLen] = '\0';
+                    off += ssidLen;
+
+                    if (passLen > 0 && passLen <= 64) {
+                        memcpy(blePass, &cmd.data[off], passLen);
+                        blePass[passLen] = '\0';
+                        off += passLen;
+                    }
+
+                    if (userLen > 0 && userLen <= 64) {
+                        memcpy(bleUser, &cmd.data[off], userLen);
+                        bleUser[userLen] = '\0';
+                        off += userLen;
+                    }
+
+                    if (cpPassLen > 0 && cpPassLen <= 64) {
+                        memcpy(bleCpPass, &cmd.data[off], cpPassLen);
+                        bleCpPass[cpPassLen] = '\0';
+                        off += cpPassLen;
+                    }
+
+                    bool connectNow = (flags & 0x01) != 0;
+                    saveWifiNetworkOverBle(bleSsid, blePass, bleUser, bleCpPass, connectNow);
+                    notifyEnvState();
+                }
+            } else if (cmd.data[0] == 0xE2 && cmd.len >= 2) { // 0xE2: Connect to Wi-Fi Slot [0xE2, slotIdx]
+                uint8_t slot = cmd.data[1];
+                if (slot < MAX_WIFI_NETWORKS && s_savedNetworks[slot].valid) {
+                    s_reqConnectSlot = slot;
+                    notifyEnvState();
+                }
+            } else if (cmd.data[0] == 0xE0) { // 0xE0: Disconnect Wi-Fi
+                WiFi.disconnect();
+                s_wifiConnected = false;
+                appendDebugLog("Wi-Fi disconnected via BLE command");
+                notifyEnvState();
             }
         }
     }
@@ -1435,7 +1582,11 @@ void loop() {
         }
         if (s_presenceConfig.awayRgbOff) {
             s_ledMode = 0;
+            saveLedStateToNVS();
             notifyLedState();
+        }
+        if (s_wifiOnAwayOnly && !s_wifiConnected) {
+            tryAutoConnectToSaved();
         }
         notifyEnvState();
     }

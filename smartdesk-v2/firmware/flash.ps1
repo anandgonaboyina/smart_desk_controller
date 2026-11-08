@@ -1,8 +1,8 @@
 # ==============================================================================
-# flash.ps1 - Compile, Flash, and Verify SmartDesk V2 Firmware on COM6
+# flash.ps1 - Compile, Flash, and Verify SmartDesk V2 Firmware on COM3
 # ==============================================================================
 param (
-    [string]$Port = "COM6"
+    [string]$Port = "COM3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,45 +13,49 @@ Write-Host "   SmartDesk V2 - Automated Flash and Verify Suite      " -Foregroun
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# 1. Refuse any port except COM6
-if ($Port -ne "COM6") {
-    Write-Host "[SECURITY ERROR] Refusing target port '$Port'!" -ForegroundColor Red
-    Write-Host "Flashing is strictly authorized to COM6 ONLY.`n" -ForegroundColor Yellow
-    exit 1
-}
-
-# 2. Check COM6 exists and is not locked
+# 1. Verify COM port availability
 $availablePorts = [System.IO.Ports.SerialPort]::GetPortNames()
-if ($availablePorts -notcontains "COM6") {
-    Write-Host "[ERROR] COM6 is not connected to this PC." -ForegroundColor Red
+if ($availablePorts -notcontains $Port) {
+    Write-Host "[ERROR] Target port '$Port' is not connected to this PC." -ForegroundColor Red
     Write-Host "Available ports: $($availablePorts -join ', ')`n" -ForegroundColor Yellow
     exit 1
 }
 
-Write-Host "[OK] COM6 detected." -ForegroundColor Green
+Write-Host "[OK] $Port detected." -ForegroundColor Green
 
 # Test opening port to ensure it is not locked
 try {
-    $testPort = [System.IO.Ports.SerialPort]::new("COM6", 115200)
+    $testPort = [System.IO.Ports.SerialPort]::new($Port, 115200)
     $testPort.Open()
     $testPort.Close()
     $testPort.Dispose()
-    Write-Host "[OK] COM6 is free and accessible." -ForegroundColor Green
+    Write-Host "[OK] $Port is free and accessible." -ForegroundColor Green
 } catch {
-    Write-Host "[ERROR] COM6 is currently locked by another application!" -ForegroundColor Red
+    Write-Host "[ERROR] $Port is currently locked by another application!" -ForegroundColor Red
     Write-Host "Details: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "Please close any open Serial Monitor or IDE connections on COM6 and try again.`n" -ForegroundColor Yellow
+    Write-Host "Please close any open Serial Monitor or IDE connections on $Port and try again.`n" -ForegroundColor Yellow
     exit 1
 }
 
-# 3. Locate Compiler
-$arduinoCli = "C:\Users\Anand Kumar\AppData\Local\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
-if (-not (Test-Path $arduinoCli)) {
+# 2. Locate Compiler
+$cliPaths = @(
+    "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
+    "C:\Users\G. Anand Kumar\AppData\Local\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
+    "C:\Users\Anand Kumar\AppData\Local\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
+)
+$arduinoCli = $null
+foreach ($p in $cliPaths) {
+    if (Test-Path $p) {
+        $arduinoCli = $p
+        break
+    }
+}
+if (-not $arduinoCli) {
     $cliCmd = Get-Command "arduino-cli" -ErrorAction SilentlyContinue
     if ($cliCmd) { $arduinoCli = $cliCmd.Source }
 }
 
-if (-not (Test-Path $arduinoCli)) {
+if (-not $arduinoCli) {
     Write-Host "[ERROR] Could not find arduino-cli executable." -ForegroundColor Red
     exit 1
 }
@@ -73,10 +77,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[OK] Compilation successful!" -ForegroundColor Green
 
-# 4. Upload to COM6
+# 4. Upload to $Port
 Write-Host ""
-Write-Host "[STEP 2/3] Uploading binary to ESP32-S3 on COM6..." -ForegroundColor Cyan
-& $arduinoCli upload -p COM6 --fqbn $fqbn $sketchDir
+Write-Host "[STEP 2/3] Uploading binary to ESP32-S3 on $Port..." -ForegroundColor Cyan
+& $arduinoCli upload -p $Port --fqbn $fqbn $sketchDir
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "[FAIL] Upload failed with exit code $LASTEXITCODE" -ForegroundColor Red
@@ -87,7 +91,7 @@ Write-Host "[OK] Firmware uploaded successfully!" -ForegroundColor Green
 
 # 5. Read Serial Output & Verify BUILD Marker
 Write-Host ""
-Write-Host "[STEP 3/3] Opening COM6 at 115200 to capture boot banner (5s)..." -ForegroundColor Cyan
+Write-Host "[STEP 3/3] Opening $Port at 115200 to capture boot banner (5s)..." -ForegroundColor Cyan
 
 $serialPort = $null
 $capturedBanner = [System.Collections.Generic.List[string]]::new()
@@ -95,7 +99,7 @@ $markerFound = $false
 
 try {
     Start-Sleep -Milliseconds 400
-    $serialPort = [System.IO.Ports.SerialPort]::new("COM6", 115200)
+    $serialPort = [System.IO.Ports.SerialPort]::new($Port, 115200)
     $serialPort.ReadTimeout = 1000
     $serialPort.Open()
 
@@ -132,7 +136,7 @@ try {
         $serialPort.Dispose()
     }
     Write-Host ""
-    Write-Host "[OK] COM6 closed and released." -ForegroundColor Green
+    Write-Host "[OK] $Port closed and released." -ForegroundColor Green
 }
 
 # 6. Verification Verdict
