@@ -39,6 +39,7 @@ export interface CloudHandshakeModalProps {
   onSendCloudRelayCommand?: (relayIdx: number, load: boolean) => void;
   onUpdateCloudCredentials?: (user: string, pass: string, deviceId?: string, deviceName?: string) => Promise<any> | void;
   onUpdateClientCredentialsOnly?: (user: string, pass: string, deviceId: string, deviceName?: string) => void;
+  onReconnectCloud?: () => void;
   hardwareCloudConfig?: { devId: string; user: string; name: string } | null;
   onToast?: (msg: string, type?: "info" | "warn" | "error" | "success") => void;
   recentLogs?: { text: string; type?: string }[];
@@ -66,6 +67,7 @@ export default function CloudHandshakeModal({
   onSendCloudRelayCommand,
   onUpdateCloudCredentials,
   onUpdateClientCredentialsOnly,
+  onReconnectCloud,
   hardwareCloudConfig,
   onToast,
   recentLogs = [],
@@ -296,6 +298,9 @@ export default function CloudHandshakeModal({
           const data = await res.json();
           setHealthStatus("online");
           setHealthData(data);
+          if (!isWsConnected) {
+            onReconnectCloud?.();
+          }
         } else if (isMounted) {
           setHealthStatus("offline");
         }
@@ -363,8 +368,18 @@ export default function CloudHandshakeModal({
 
   const handleRunHandshake = async () => {
     if (!isWsConnected) {
-      onToast?.("Cloud WebSocket is not connected to Backend", "error");
-      return;
+      if (onReconnectCloud) {
+        onToast?.("Connecting WebSocket...", "info");
+        onReconnectCloud();
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          if (isWsConnected) break;
+        }
+      }
+      if (!isWsConnected) {
+        onToast?.("Cloud WebSocket is connecting. Please wait a moment...", "warn");
+        return;
+      }
     }
     if (!isDeviceOnline) {
       onToast?.("ESP32 is not yet online on the Cloud server", "warn");
@@ -684,19 +699,34 @@ export default function CloudHandshakeModal({
                 Step 3: Backend Cloud Server
               </h4>
             </div>
-            <span className={`text-[11px] font-extrabold ${
-              healthStatus === "online" && isWsConnected
-                ? "text-emerald-400"
-                : healthStatus === "online"
-                ? "text-amber-400"
-                : "text-rose-400"
-            }`}>
-              {healthStatus === "online" && isWsConnected
-                ? "Server & WebSocket Online"
-                : healthStatus === "online"
-                ? "Server UP (WebSocket connecting...)"
-                : "Server Offline"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-extrabold ${
+                healthStatus === "online" && isWsConnected
+                  ? "text-emerald-400"
+                  : healthStatus === "online"
+                  ? "text-amber-400"
+                  : "text-rose-400"
+              }`}>
+                {healthStatus === "online" && isWsConnected
+                  ? "Server & WebSocket Online"
+                  : healthStatus === "online"
+                  ? "Server UP (WebSocket connecting...)"
+                  : "Server Offline"}
+              </span>
+              {!isWsConnected && onReconnectCloud && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToast?.("Connecting WebSocket...", "info");
+                    onReconnectCloud();
+                  }}
+                  className="px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-extrabold transition-all active:scale-95 cursor-pointer"
+                  title="Reconnect to Cloud WebSocket"
+                >
+                  🔄 Reconnect
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="mt-2 text-[11px] text-zinc-400 space-y-1">

@@ -122,27 +122,57 @@ export function useRemoteDeskWs({
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const updateCredentials = useCallback((newUser: string, newPass?: string, newDevId?: string) => {
-    if (typeof window !== "undefined") {
-      if (newUser !== undefined) {
-        localStorage.setItem("smartdesk_cloud_user", newUser);
-        setCurrentUserId(newUser);
-      }
-      if (newPass !== undefined) {
-        localStorage.setItem("smartdesk_cloud_pass", newPass);
-        setCurrentPassword(newPass);
-      }
-      if (newDevId !== undefined) {
-        localStorage.setItem("smartdesk_cloud_device_id", newDevId);
-        setCurrentDeviceId(newDevId);
-      }
+  // Synchronous ref to prevent stale credentials closure across async socket reconnects:
+  const credsRef = useRef<{ user: string; pass: string; devId: string }>({
+    user: currentUserId,
+    pass: currentPassword,
+    devId: currentDeviceId,
+  });
+
+  const forceReconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
-    // Force reconnect with new credentials
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
     if (wsRef.current) {
-      wsRef.current.close();
+      try {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+      } catch (_) {}
+      wsRef.current = null;
     }
+    setIsWsConnected(false);
+    setIsDeviceOnline(false);
+    setTimeout(() => {
+      connect();
+    }, 50);
   }, []);
+
+  const updateCredentials = useCallback((newUser?: string, newPass?: string, newDevId?: string) => {
+    const nextUser = newUser !== undefined ? newUser : credsRef.current.user;
+    const nextPass = newPass !== undefined ? newPass : credsRef.current.pass;
+    const nextDevId = newDevId !== undefined ? newDevId : credsRef.current.devId;
+
+    if (typeof window !== "undefined") {
+      if (newUser !== undefined) localStorage.setItem("smartdesk_cloud_user", newUser);
+      if (newPass !== undefined) localStorage.setItem("smartdesk_cloud_pass", newPass);
+      if (newDevId !== undefined) localStorage.setItem("smartdesk_cloud_device_id", newDevId);
+    }
+    credsRef.current = { user: nextUser, pass: nextPass, devId: nextDevId };
+    if (newUser !== undefined) setCurrentUserId(nextUser);
+    if (newPass !== undefined) setCurrentPassword(nextPass);
+    if (newDevId !== undefined) setCurrentDeviceId(nextDevId);
+
+    // Force immediate live socket reconnect with new IDs (avoids page refresh):
+    forceReconnect();
+  }, [forceReconnect]);
 
   const connect = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -154,7 +184,28 @@ export function useRemoteDeskWs({
       const socket = new WebSocket(effectiveWsUrl);
       wsRef.current = socket;
 
+      // Watchdog: If stuck in CONNECTING for > 7s (Render wake-up or network stall), auto-reset
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = setTimeout(() => {
+        if (socket.readyState === WebSocket.CONNECTING) {
+          console.warn("[CLOUD WS] Connection attempt timed out in CONNECTING. Forcing instant retry...");
+          try {
+            socket.onclose = null;
+            socket.onerror = null;
+            socket.close();
+          } catch (_) {}
+          wsRef.current = null;
+          setIsWsConnected(false);
+          setIsDeviceOnline(false);
+          forceReconnect();
+        }
+      }, 7000);
+
       socket.onopen = () => {
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
         setIsWsConnected(true);
         console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl}`);
 
@@ -162,9 +213,9 @@ export function useRemoteDeskWs({
         const authPayload = {
           type: "auth",
           role: "client",
-          userId: currentUserId,
-          password: currentPassword,
-          deviceId: currentDeviceId,
+          userId: credsRef.current.user,
+          password: credsRef.current.pass,
+          deviceId: credsRef.current.devId,
           deviceKey,
           timestamp: Date.now(),
         };
@@ -243,11 +294,15 @@ export function useRemoteDeskWs({
       };
 
       socket.onclose = () => {
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
         setIsWsConnected(false);
         setIsDeviceOnline(false);
         wsRef.current = null;
-        console.log("[CLOUD WS] Connection closed. Retrying in 5 seconds...");
-        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        console.log("[CLOUD WS] Connection closed. Retrying in 2 seconds...");
+        reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
 
       socket.onerror = (err) => {
@@ -255,13 +310,14 @@ export function useRemoteDeskWs({
       };
     } catch (err) {
       console.error("[CLOUD WS] Connection attempt error", err);
-      reconnectTimeoutRef.current = setTimeout(connect, 5000);
+      reconnectTimeoutRef.current = setTimeout(connect, 2000);
     }
-  }, [effectiveWsUrl, currentUserId, currentPassword, currentDeviceId, deviceKey, onStateUpdate, onToast]);
+  }, [effectiveWsUrl, deviceKey, onStateUpdate, onToast]);
 
   useEffect(() => {
     connect();
     return () => {
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
@@ -684,6 +740,7 @@ export function useRemoteDeskWs({
     password: currentPassword,
     deviceId: currentDeviceId,
     updateCredentials,
+    reconnect: forceReconnect,
     requestState,
     isWsConnected,
     isDeviceOnline,

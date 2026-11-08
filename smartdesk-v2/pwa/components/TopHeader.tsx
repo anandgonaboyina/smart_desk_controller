@@ -4,7 +4,8 @@
  * Purpose : Centralized top control header for SmartDesk V2. Renders all top buttons
  *           (Cloud, Handshake, Wi-Fi, Firmware Flasher, BLE Link & Disconnect, and AOD/Remote Switcher)
  *           with comfortable sizing, responsive typography, and Bluetooth disconnect controls.
- *           On mobile: Sleek single-line status bar with slide-down arrow revealing the full grid.
+ *           On mobile: Sleek single-line status bar when collapsed, with a centered bottom-border
+ *           arrow handle to expand. When expanded, the small top row is hidden to maximize space.
  *           On desktop: Full diagnostic grid as before.
  * Depends : React
  * Used by : app/page.tsx
@@ -80,7 +81,7 @@ export default function TopHeader({
     : "BLE: Disconnected (Click to Link)";
 
   return (
-    <header className="w-full bg-[#050505]/95 border-b border-white/10 px-2.5 py-2 sm:px-4 sm:py-2.5 shrink-0 backdrop-blur-xl z-50">
+    <header className="w-full bg-[#050505]/95 border-b border-white/10 px-2.5 pt-2 pb-2.5 sm:px-4 sm:py-2.5 shrink-0 backdrop-blur-xl z-50 relative">
       
       {/* ── TOP IDENTITY BAR: Logo + Desk Name + Screen Toggle ── */}
       <div className="flex items-center justify-between pb-1.5 mb-1.5 sm:mb-2 border-b border-white/5">
@@ -121,132 +122,109 @@ export default function TopHeader({
         </button>
       </div>
 
-      {/* ── MOBILE COMPACT SINGLE-LINE STATUS BAR (< md) ── */}
-      <div className="md:hidden flex items-center justify-between gap-1 w-full bg-white/[0.03] border border-white/10 rounded-xl px-1.5 py-1 transition-all">
-        {/* 1. Wi-Fi compact pill */}
-        <button
-          type="button"
-          onClick={onOpenWifiModal}
-          className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
-            wifiConnected
-              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
-              : wifiState === 2
-              ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
-              : wifiState === 3
-              ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-300"
-              : "bg-white/5 border-white/10 text-white/40"
-          }`}
-          title={wifiLabel}
-        >
-          <span className="text-xs">📶</span>
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+      {/* ── MOBILE COMPACT SINGLE-LINE STATUS BAR (Only shown when NOT expanded to save space) ── */}
+      {!isMobileExpanded && (
+        <div className="md:hidden flex items-center justify-between gap-1 w-full bg-white/[0.03] border border-white/10 rounded-xl px-2 py-1 transition-all">
+          {/* 1. Wi-Fi compact pill */}
+          <button
+            type="button"
+            onClick={onOpenWifiModal}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
               wifiConnected
-                ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
                 : wifiState === 2
-                ? "bg-amber-400 animate-pulse"
+                ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
                 : wifiState === 3
-                ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
-                : "bg-white/20"
+                ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-300"
+                : "bg-white/5 border-white/10 text-white/40"
             }`}
-          />
-          <span className="truncate max-w-[50px]">{wifiConnected ? (wifiSsid || "Wi-Fi") : "Wi-Fi"}</span>
-        </button>
-
-        {/* 2. Cloud Online pill */}
-        <button
-          type="button"
-          onClick={onOpenHandshake}
-          className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 min-w-0 flex-1 justify-center ${
-            isCloudOnline
-              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
-              : isWsConnected
-              ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
-              : "bg-white/5 border-white/10 text-white/40"
-          }`}
-          title="Cloud Online Status"
-        >
-          <span className="text-xs shrink-0">☁️</span>
-          <span className="truncate">
-            {isCloudOnline ? "Cloud Online" : isWsConnected ? "Connecting..." : "Cloud Offline"}
-          </span>
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              isCloudOnline
-                ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
-                : isWsConnected
-                ? "bg-amber-400 animate-pulse"
-                : "bg-white/20"
-            }`}
-          />
-        </button>
-
-        {/* 3. Handshake pill */}
-        <button
-          type="button"
-          onClick={onOpenHandshake}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-[11px] font-bold transition-all active:scale-95 shrink-0"
-          title="Handshake & Diagnostics"
-        >
-          <span className="text-xs">🌐</span>
-          <span>Setup</span>
-        </button>
-
-        {/* 4. Small Bluetooth Icon with Green/Red status dot */}
-        <button
-          type="button"
-          onClick={bleConnected ? onDisconnectBle : onConnectBle}
-          className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
-            bleConnected
-              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
-              : bleConnecting
-              ? "bg-amber-500/10 border-amber-500/40 text-amber-300 animate-pulse"
-              : "bg-rose-500/10 border-rose-500/40 text-rose-400"
-          }`}
-          title={bleConnected ? "BLE Connected (Tap to Disconnect)" : "BLE Disconnected (Tap to Link)"}
-        >
-          <span className="text-xs">🔗</span>
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              bleConnected
-                ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
-                : bleConnecting
-                ? "bg-amber-400 animate-pulse"
-                : "bg-rose-500 shadow-[0_0_6px_#f43f5e]"
-            }`}
-          />
-        </button>
-
-        {/* 5. Arrow Type Slide-down Toggle */}
-        <button
-          type="button"
-          onClick={() => setIsMobileExpanded((prev) => !prev)}
-          className={`p-1.5 rounded-lg border transition-all active:scale-90 flex items-center justify-center shrink-0 cursor-pointer ${
-            isMobileExpanded
-              ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
-              : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
-          }`}
-          title={isMobileExpanded ? "Slide Up Diagnostics Grid" : "Slide Down Diagnostics Grid"}
-          aria-expanded={isMobileExpanded}
-        >
-          <svg
-            className={`w-3.5 h-3.5 transition-transform duration-300 ease-in-out ${
-              isMobileExpanded ? "rotate-180 text-cyan-400" : "rotate-0"
-            }`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="3"
+            title={wifiLabel}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      </div>
+            <span className="text-xs">📶</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                wifiConnected
+                  ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                  : wifiState === 2
+                  ? "bg-amber-400 animate-pulse"
+                  : wifiState === 3
+                  ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
+                  : "bg-white/20"
+              }`}
+            />
+            <span className="truncate max-w-[65px]">{wifiConnected ? (wifiSsid || "Wi-Fi") : "Wi-Fi"}</span>
+          </button>
 
-      {/* ── EXPANDABLE GRID (Mobile: Conditionally Shown, Desktop md+: Always Shown) ── */}
+          {/* 2. Cloud Online pill */}
+          <button
+            type="button"
+            onClick={onOpenHandshake}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 min-w-0 flex-1 justify-center ${
+              isCloudOnline
+                ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
+                : isWsConnected
+                ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                : "bg-white/5 border-white/10 text-white/40"
+            }`}
+            title="Cloud Online Status"
+          >
+            <span className="text-xs shrink-0">☁️</span>
+            <span className="truncate">
+              {isCloudOnline ? "Cloud Online" : isWsConnected ? "Connecting..." : "Cloud Offline"}
+            </span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isCloudOnline
+                  ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                  : isWsConnected
+                  ? "bg-amber-400 animate-pulse"
+                  : "bg-white/20"
+              }`}
+            />
+          </button>
+
+          {/* 3. Handshake Setup pill */}
+          <button
+            type="button"
+            onClick={onOpenHandshake}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-[11px] font-bold transition-all active:scale-95 shrink-0"
+            title="Handshake & Diagnostics"
+          >
+            <span className="text-xs">🌐</span>
+            <span>Setup</span>
+          </button>
+
+          {/* 4. Small Bluetooth Icon with Green/Red status dot */}
+          <button
+            type="button"
+            onClick={bleConnected ? onDisconnectBle : onConnectBle}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
+              bleConnected
+                ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
+                : bleConnecting
+                ? "bg-amber-500/10 border-amber-500/40 text-amber-300 animate-pulse"
+                : "bg-rose-500/10 border-rose-500/40 text-rose-400"
+            }`}
+            title={bleConnected ? "BLE Connected (Tap to Disconnect)" : "BLE Disconnected (Tap to Link)"}
+          >
+            <span className="text-xs">🔗</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                bleConnected
+                  ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                  : bleConnecting
+                  ? "bg-amber-400 animate-pulse"
+                  : "bg-rose-500 shadow-[0_0_6px_#f43f5e]"
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
+      {/* ── EXPANDABLE GRID (Mobile: Shown when expanded, Desktop md+: Always Shown) ── */}
       <div
         className={`w-full max-w-screen-xl mx-auto transition-all duration-300 ease-in-out ${
-          isMobileExpanded ? "block mt-2" : "hidden md:block md:mt-0"
+          isMobileExpanded ? "block" : "hidden md:block"
         }`}
       >
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5 sm:gap-2">
@@ -314,11 +292,11 @@ export default function TopHeader({
               className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0 ml-auto ${
                 wifiConnected
                   ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
-                : wifiState === 2
-                ? "bg-amber-400 animate-pulse"
-                : wifiState === 3
-                ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
-                : "bg-white/20"
+                  : wifiState === 2
+                  ? "bg-amber-400 animate-pulse"
+                  : wifiState === 3
+                  ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
+                  : "bg-white/20"
               }`}
             />
           </button>
@@ -375,6 +353,30 @@ export default function TopHeader({
           </div>
         </div>
       </div>
+
+      {/* ── EXPAND/COLLAPSE ARROW HANDLE (Bottom Middle Horizontally at Border) ── */}
+      <div className="md:hidden absolute -bottom-3 inset-x-0 mx-auto w-fit z-20">
+        <button
+          type="button"
+          onClick={() => setIsMobileExpanded((prev) => !prev)}
+          className="flex items-center justify-center px-4 py-0.5 rounded-full bg-[#121212] border border-white/20 text-cyan-400 hover:text-white hover:bg-zinc-800 transition-all active:scale-95 shadow-[0_2px_8px_rgba(0,0,0,0.8)] cursor-pointer"
+          title={isMobileExpanded ? "Slide Up Diagnostics" : "Slide Down Diagnostics"}
+          aria-expanded={isMobileExpanded}
+        >
+          <svg
+            className={`w-3.5 h-3.5 transition-transform duration-300 ease-in-out ${
+              isMobileExpanded ? "rotate-180 text-cyan-300" : "rotate-0 text-white/70"
+            }`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="3"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
     </header>
   );
 }

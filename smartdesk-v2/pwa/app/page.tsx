@@ -683,6 +683,7 @@ export default function SmartDeskApp() {
             handleRename(newDevName);
           }
         }}
+        onReconnectCloud={remote.reconnect}
         hardwareCloudConfig={ble.hardwareCloudConfig}
         onToast={showToast}
         recentLogs={ble.logs}

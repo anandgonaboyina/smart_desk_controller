@@ -86,8 +86,10 @@ export default function AodFaceScreen({
   const [showFlasherModal, setShowFlasherModal] = useState<boolean>(false);
   const [is12Hr, setIs12Hr] = useState<boolean>(false);
   const [timerTargetIdx, setTimerTargetIdx] = useState<number | null>(null);
+  const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
+    setMounted(true);
     if (typeof window !== "undefined") {
       setIs12Hr(localStorage.getItem("smartdesk_12hr_mode") === "true");
     }
@@ -324,7 +326,7 @@ export default function AodFaceScreen({
           </div>
 
           {/* Direct RGB Light Strip Card */}
-          {led && (
+          {mounted && led && (
             <div
               className={`w-full p-2.5 sm:p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 transition-all ${
                 isRgbOn ? "bg-zinc-900 border-cyan-500/80 shadow-[0_0_15px_rgba(6,182,212,0.2)]" : "bg-black/60 border-zinc-800"
@@ -403,7 +405,7 @@ export default function AodFaceScreen({
           )}
 
           {/* Direct 2D Matrix Display Row */}
-          {matrixConfig && (
+          {mounted && matrixConfig && (
             <div
               className={`w-full p-2.5 sm:p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
                 matrixConfig.mode !== 0 ? "bg-zinc-900 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.15)]" : "bg-black/60 border-zinc-800"
