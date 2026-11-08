@@ -117,7 +117,7 @@ inline void broadcastCloudState() {
     if (!s_cloudConnected) return;
 
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
-    char msg[512];
+    char msg[896];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\","
         "\"relays\":["
@@ -151,6 +151,10 @@ inline void broadcastCloudState() {
 
     if (len > 0 && len < (int)sizeof(msg)) {
         s_cloudWs.sendTXT(msg);
+        Serial.printf(">>> [CLOUD WS] State broadcast sent (%d bytes): R1=%d R2=%d R3=%d R4=%d\n",
+                      len, s_relayLoads[0], s_relayLoads[1], s_relayLoads[2], s_relayLoads[3]);
+    } else {
+        Serial.printf(">>> [CLOUD WS ERROR] State payload truncated! (len=%d, cap=%d)\n", len, (int)sizeof(msg));
     }
 }
 

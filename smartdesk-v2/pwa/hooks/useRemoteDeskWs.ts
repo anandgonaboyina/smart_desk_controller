@@ -267,6 +267,17 @@ export function useRemoteDeskWs({
         if (onToast) onToast("Cannot send: Cloud relay disconnected", "error");
         return;
       }
+
+      // Optimistic UI state update so button flips immediately in PWA
+      setDeviceState((prev) => {
+        const nextRelays = prev.relays.map((r, i) =>
+          i === channel ? { ...r, load: state, remainingMin: 0 } : r
+        );
+        const updated: RemoteDeviceState = { ...prev, relays: nextRelays };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+
       wsRef.current.send(
         JSON.stringify({
           type: "relay_set",
@@ -279,7 +290,7 @@ export function useRemoteDeskWs({
         })
       );
     },
-    [currentDeviceId, onToast]
+    [currentDeviceId, onStateUpdate, onToast]
   );
 
   // Send Remote LED Command
@@ -306,6 +317,15 @@ export function useRemoteDeskWs({
   // Emergency All Relays Off Command
   const sendAllOff = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    // Optimistically turn all off in UI
+    setDeviceState((prev) => {
+      const nextRelays = prev.relays.map((r) => ({ ...r, load: false, remainingMin: 0 }));
+      const updated: RemoteDeviceState = { ...prev, relays: nextRelays };
+      if (onStateUpdate) onStateUpdate(updated);
+      return updated;
+    });
+
     wsRef.current.send(
       JSON.stringify({
         type: "all_off",
@@ -313,7 +333,7 @@ export function useRemoteDeskWs({
         timestamp: Date.now(),
       })
     );
-  }, [currentDeviceId]);
+  }, [currentDeviceId, onStateUpdate]);
 
   return {
     wsUrl: effectiveWsUrl,

@@ -21,33 +21,76 @@
 #define DEFAULT_CLOUD_PATH "/ws"
 #define CLOUD_DEVICE_ID    "desk_anand_s3"
 #define CLOUD_AUTH_KEY     "SmartDesk_Cloud_Secret_2026"
+#define CLOUD_DEFAULT_USER "user_anand_primary"
 
 static WebSocketsClient s_cloudWs;
-static bool             s_cloudConnected    = false;
-static uint32_t         s_lastCloudPingMs   = 0;
-static char             s_cloudHost[64]     = DEFAULT_CLOUD_HOST;
-static uint16_t         s_cloudPort         = DEFAULT_CLOUD_PORT;
+static bool             s_cloudConnected     = false;
+static bool             s_cloudAuthenticated = false;
+static uint32_t         s_lastCloudPingMs    = 0;
+static char             s_cloudHost[64]      = DEFAULT_CLOUD_HOST;
+static uint16_t         s_cloudPort          = DEFAULT_CLOUD_PORT;
+static char             s_cloudDeviceId[36]  = CLOUD_DEVICE_ID;
+static char             s_cloudDeviceKey[48] = CLOUD_AUTH_KEY;
+static char             s_cloudUser[36]      = CLOUD_DEFAULT_USER;
+static char             s_cloudPassword[36]  = ""; // Default empty / disabled (no password required initially)
 
+/* ── NVS Persistence for Cloud Configuration ─────────────────────────────── */
 static inline void loadCloudConfigFromNVS() {
     Preferences prefs;
     prefs.begin("desk_cloud", true);
-    String host = prefs.getString("host", DEFAULT_CLOUD_HOST);
-    s_cloudPort = prefs.getUShort("port", DEFAULT_CLOUD_PORT);
+    String host   = prefs.getString("host", DEFAULT_CLOUD_HOST);
+    s_cloudPort   = prefs.getUShort("port", DEFAULT_CLOUD_PORT);
+    String devId  = prefs.getString("dev_id", CLOUD_DEVICE_ID);
+    String devKey = prefs.getString("dev_key", CLOUD_AUTH_KEY);
+    String user   = prefs.getString("user", CLOUD_DEFAULT_USER);
+    String pass   = prefs.getString("pass", "");
     prefs.end();
+
     strncpy(s_cloudHost, host.c_str(), sizeof(s_cloudHost) - 1);
     s_cloudHost[sizeof(s_cloudHost) - 1] = '\0';
+    strncpy(s_cloudDeviceId, devId.c_str(), sizeof(s_cloudDeviceId) - 1);
+    s_cloudDeviceId[sizeof(s_cloudDeviceId) - 1] = '\0';
+    strncpy(s_cloudDeviceKey, devKey.c_str(), sizeof(s_cloudDeviceKey) - 1);
+    s_cloudDeviceKey[sizeof(s_cloudDeviceKey) - 1] = '\0';
+    strncpy(s_cloudUser, user.c_str(), sizeof(s_cloudUser) - 1);
+    s_cloudUser[sizeof(s_cloudUser) - 1] = '\0';
+    strncpy(s_cloudPassword, pass.c_str(), sizeof(s_cloudPassword) - 1);
+    s_cloudPassword[sizeof(s_cloudPassword) - 1] = '\0';
 }
 
-static inline void saveCloudConfigToNVS(const char* host, uint16_t port) {
-    if (!host || strlen(host) == 0) return;
+static inline void saveCloudConfigToNVS(const char* host, uint16_t port, const char* devId, const char* devKey, const char* user, const char* pass) {
     Preferences prefs;
     prefs.begin("desk_cloud", false);
-    prefs.putString("host", host);
-    prefs.putUShort("port", port);
+    if (host && strlen(host) > 0) {
+        prefs.putString("host", host);
+        strncpy(s_cloudHost, host, sizeof(s_cloudHost) - 1);
+        s_cloudHost[sizeof(s_cloudHost) - 1] = '\0';
+    }
+    if (port > 0) {
+        prefs.putUShort("port", port);
+        s_cloudPort = port;
+    }
+    if (devId && strlen(devId) > 0) {
+        prefs.putString("dev_id", devId);
+        strncpy(s_cloudDeviceId, devId, sizeof(s_cloudDeviceId) - 1);
+        s_cloudDeviceId[sizeof(s_cloudDeviceId) - 1] = '\0';
+    }
+    if (devKey && strlen(devKey) > 0) {
+        prefs.putString("dev_key", devKey);
+        strncpy(s_cloudDeviceKey, devKey, sizeof(s_cloudDeviceKey) - 1);
+        s_cloudDeviceKey[sizeof(s_cloudDeviceKey) - 1] = '\0';
+    }
+    if (user && strlen(user) > 0) {
+        prefs.putString("user", user);
+        strncpy(s_cloudUser, user, sizeof(s_cloudUser) - 1);
+        s_cloudUser[sizeof(s_cloudUser) - 1] = '\0';
+    }
+    if (pass) {
+        prefs.putString("pass", pass);
+        strncpy(s_cloudPassword, pass, sizeof(s_cloudPassword) - 1);
+        s_cloudPassword[sizeof(s_cloudPassword) - 1] = '\0';
+    }
     prefs.end();
-    strncpy(s_cloudHost, host, sizeof(s_cloudHost) - 1);
-    s_cloudHost[sizeof(s_cloudHost) - 1] = '\0';
-    s_cloudPort = port;
 }
 
 /* Forward declarations of functions implemented in smartdesk.ino */
@@ -74,9 +117,17 @@ extern bool    s_sensorValid;
 inline void broadcastCloudState() {
     if (!s_cloudConnected) return;
 
-    char msg[384];
+    // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
+    char msg[896];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\","
+        "\"relays\":["
+        "{\"load\":%s,\"remainingMin\":%u},"
+        "{\"load\":%s,\"remainingMin\":%u},"
+        "{\"load\":%s,\"remainingMin\":%u},"
+        "{\"load\":%s,\"remainingMin\":%u}],"
+        "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
+        "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
         "\"state\":{\"relays\":["
         "{\"load\":%s,\"remainingMin\":%u},"
         "{\"load\":%s,\"remainingMin\":%u},"
@@ -84,17 +135,27 @@ inline void broadcastCloudState() {
         "{\"load\":%s,\"remainingMin\":%u}],"
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
-        CLOUD_DEVICE_ID,
-        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0) ? (uint16_t)((s_timerEndMs[0] - millis()) / 60000UL) : 0,
-        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0) ? (uint16_t)((s_timerEndMs[1] - millis()) / 60000UL) : 0,
-        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0) ? (uint16_t)((s_timerEndMs[2] - millis()) / 60000UL) : 0,
-        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0) ? (uint16_t)((s_timerEndMs[3] - millis()) / 60000UL) : 0,
+        s_cloudDeviceId,
+        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)((s_timerEndMs[0] - millis()) / 60000UL) : 0,
+        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)((s_timerEndMs[1] - millis()) / 60000UL) : 0,
+        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)((s_timerEndMs[2] - millis()) / 60000UL) : 0,
+        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0 && millis() < s_timerEndMs[3]) ? (uint16_t)((s_timerEndMs[3] - millis()) / 60000UL) : 0,
+        s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
+        s_tempC, s_humidity, s_sensorValid ? "true" : "false",
+        s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)((s_timerEndMs[0] - millis()) / 60000UL) : 0,
+        s_relayLoads[1] ? "true" : "false", (s_timerEndMs[1] > 0 && millis() < s_timerEndMs[1]) ? (uint16_t)((s_timerEndMs[1] - millis()) / 60000UL) : 0,
+        s_relayLoads[2] ? "true" : "false", (s_timerEndMs[2] > 0 && millis() < s_timerEndMs[2]) ? (uint16_t)((s_timerEndMs[2] - millis()) / 60000UL) : 0,
+        s_relayLoads[3] ? "true" : "false", (s_timerEndMs[3] > 0 && millis() < s_timerEndMs[3]) ? (uint16_t)((s_timerEndMs[3] - millis()) / 60000UL) : 0,
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false"
     );
 
     if (len > 0 && len < (int)sizeof(msg)) {
         s_cloudWs.sendTXT(msg);
+        Serial.printf(">>> [CLOUD WS] State broadcast sent (%d bytes): R1=%d R2=%d R3=%d R4=%d\n",
+                      len, s_relayLoads[0], s_relayLoads[1], s_relayLoads[2], s_relayLoads[3]);
+    } else {
+        Serial.printf(">>> [CLOUD WS ERROR] State payload truncated! (len=%d, cap=%d)\n", len, (int)sizeof(msg));
     }
 }
 
@@ -104,7 +165,11 @@ static bool getJsonStr(const char* json, const char* key, char* out, size_t maxL
     char needle[48];
     snprintf(needle, sizeof(needle), "\"%s\":\"", key);
     const char* p = strstr(json, needle);
-    if (!p) return false;
+    if (!p) {
+        snprintf(needle, sizeof(needle), "\"%s\": \"", key);
+        p = strstr(json, needle);
+        if (!p) return false;
+    }
     p += strlen(needle);
     const char* end = strchr(p, '"');
     if (!end) return false;
@@ -122,7 +187,7 @@ static int getJsonInt(const char* json, const char* key, int defaultVal) {
     const char* p = strstr(json, needle);
     if (!p) return defaultVal;
     p += strlen(needle);
-    while (*p == ' ') p++;
+    while (*p == ' ' || *p == '\t' || *p == '"') p++;
     return atoi(p);
 }
 
@@ -133,7 +198,7 @@ static bool getJsonBool(const char* json, const char* key, bool defaultVal) {
     const char* p = strstr(json, needle);
     if (!p) return defaultVal;
     p += strlen(needle);
-    while (*p == ' ') p++;
+    while (*p == ' ' || *p == '\t' || *p == '"') p++;
     if (strncmp(p, "true", 4) == 0 || *p == '1') return true;
     if (strncmp(p, "false", 5) == 0 || *p == '0') return false;
     return defaultVal;
@@ -147,47 +212,126 @@ static void handleCloudMessage(const char* payload, size_t length) {
     char msgType[32] = {0};
     getJsonStr(payload, "type", msgType, sizeof(msgType));
 
+    char action[32] = {0};
+    getJsonStr(payload, "action", action, sizeof(action));
+
+    // Normalize command: If type is "command" and action is provided, action is the command;
+    // otherwise msgType itself is the command (e.g. "relay_set", "all_off", "led_set", "ping")
+    const char* cmd = (strcmp(msgType, "command") == 0 && strlen(action) > 0) ? action : msgType;
+
     // 1. Authentication response from server
     if (strcmp(msgType, "auth_res") == 0) {
         bool ok = getJsonBool(payload, "ok", false);
         if (ok) {
-            Serial.println(">>> [CLOUD WS] Device authenticated successfully with cloud relay!");
+            s_cloudAuthenticated = true;
+            Serial.printf(">>> [CLOUD WS] Device authenticated successfully as '%s' (User: %s)!\n", s_cloudDeviceId, s_cloudUser);
+            // PUSH CURRENT HARDWARE STATE IMMEDIATELY UPON AUTHENTICATION
             broadcastCloudState();
         } else {
-            Serial.println(">>> [CLOUD WS WARN] Cloud authentication rejected.");
+            s_cloudAuthenticated = false;
+            char err[64] = {0};
+            getJsonStr(payload, "error", err, sizeof(err));
+            Serial.printf(">>> [CLOUD WS WARN] Cloud authentication rejected: %s\n", strlen(err) > 0 ? err : "Invalid credentials");
         }
         return;
     }
 
-    // 2. Incoming control command from remote user
-    if (strcmp(msgType, "command") == 0) {
-        char action[32] = {0};
-        getJsonStr(payload, "action", action, sizeof(action));
+    // Diagnostics: Check connection state
+    if (!s_cloudConnected) {
+        Serial.println(">>> [CLOUD WS WARN] Inbound message dropped: Cloud WebSocket is offline.");
+        return;
+    }
 
-        if (strcmp(action, "relay") == 0 || strcmp(action, "relay_set") == 0) {
-            int relay = getJsonInt(payload, "relay", -1);
-            if (relay < 0) relay = getJsonInt(payload, "channel", -1);
-            bool state = getJsonBool(payload, "state", false);
-            if (relay >= 0 && relay < RELAY_COUNT) {
-                setRelayLoad((uint8_t)relay, state ? 1 : 0, "Cloud Remote");
-                notifyRelayState();
-                broadcastCloudState();
-            }
-        } else if (strcmp(action, "all_off") == 0) {
-            allRelaysOff("Cloud Remote All-Off");
+    // 2. Incoming Relay Control Command (Supports {type:"relay_set", channel:0, state:true} and {action:"relay", idx:0, load:1})
+    if (strcmp(cmd, "relay_set") == 0 || strcmp(cmd, "relay") == 0) {
+        int relay = getJsonInt(payload, "channel", -1);
+        if (relay < 0) relay = getJsonInt(payload, "idx", -1);
+        if (relay < 0) relay = getJsonInt(payload, "relay", -1);
+
+        // State can be "state": true/false/1/0 or "load": true/false/1/0
+        bool state = false;
+        if (strstr(payload, "\"state\":")) {
+            state = getJsonBool(payload, "state", false);
+        } else if (strstr(payload, "\"load\":")) {
+            state = getJsonBool(payload, "load", false);
+        }
+
+        if (relay >= 0 && relay < RELAY_COUNT) {
+            Serial.printf(">>> [CLOUD WS] Relay %d -> %s (Source: Cloud Remote)\n", relay + 1, state ? "ON" : "OFF");
+            setRelayLoad((uint8_t)relay, state ? 1 : 0, "Cloud Remote");
             notifyRelayState();
             broadcastCloudState();
-        } else if (strcmp(action, "led") == 0 || strcmp(action, "led_set") == 0) {
-            s_ledMode = (uint8_t)getJsonInt(payload, "mode", s_ledMode);
-            s_ledR    = (uint8_t)getJsonInt(payload, "r", s_ledR);
-            s_ledG    = (uint8_t)getJsonInt(payload, "g", s_ledG);
-            s_ledB    = (uint8_t)getJsonInt(payload, "b", s_ledB);
-            s_ledBri  = (uint8_t)getJsonInt(payload, "bri", s_ledBri);
-            s_ledSpd  = (uint8_t)getJsonInt(payload, "spd", s_ledSpd);
-            saveLedStateToNVS();
-            notifyLedState();
+
+            // Send Acknowledgment back to Cloud Server
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"relay_set\",\"channel\":%d,\"success\":true}",
+                s_cloudDeviceId, relay
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        } else {
+            Serial.printf(">>> [CLOUD WS WARN] Invalid relay index received: %d\n", relay);
+        }
+        return;
+    }
+
+    // 3. Emergency All Relays Off Command
+    if (strcmp(cmd, "all_off") == 0) {
+        Serial.println(">>> [CLOUD WS] Command: All Relays OFF (Source: Cloud Remote)");
+        allRelaysOff("Cloud Remote All-Off");
+        notifyRelayState();
+        broadcastCloudState();
+
+        char ackMsg[128];
+        snprintf(ackMsg, sizeof(ackMsg),
+            "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"all_off\",\"success\":true}",
+            s_cloudDeviceId
+        );
+        s_cloudWs.sendTXT(ackMsg);
+        return;
+    }
+
+    // 4. LED Lighting Command
+    if (strcmp(cmd, "led_set") == 0 || strcmp(cmd, "led") == 0) {
+        s_ledMode = (uint8_t)getJsonInt(payload, "mode", s_ledMode);
+        s_ledR    = (uint8_t)getJsonInt(payload, "r", s_ledR);
+        s_ledG    = (uint8_t)getJsonInt(payload, "g", s_ledG);
+        s_ledB    = (uint8_t)getJsonInt(payload, "b", s_ledB);
+        s_ledBri  = (uint8_t)getJsonInt(payload, "bri", s_ledBri);
+        s_ledSpd  = (uint8_t)getJsonInt(payload, "spd", s_ledSpd);
+        saveLedStateToNVS();
+        notifyLedState();
+        broadcastCloudState();
+
+        char ackMsg[128];
+        snprintf(ackMsg, sizeof(ackMsg),
+            "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"led_set\",\"success\":true}",
+            s_cloudDeviceId
+        );
+        s_cloudWs.sendTXT(ackMsg);
+        return;
+    }
+
+    // 5. State Request or Ping from Client
+    if (strcmp(cmd, "request_state") == 0 || strcmp(cmd, "get_state") == 0 || strcmp(cmd, "ping") == 0) {
+        Serial.println(">>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...");
+        broadcastCloudState();
+        return;
+    }
+
+    // 6. Dynamic Device Credential Update over WebSocket
+    if (strcmp(cmd, "set_credentials") == 0) {
+        char newUser[36] = {0};
+        char newPass[36] = {0};
+        bool hasUser = getJsonStr(payload, "userId", newUser, sizeof(newUser));
+        bool hasPass = getJsonStr(payload, "password", newPass, sizeof(newPass));
+        if (hasUser || hasPass) {
+            saveCloudConfigToNVS(NULL, 0, NULL, NULL, hasUser ? newUser : NULL, hasPass ? newPass : NULL);
+            Serial.printf(">>> [CLOUD WS] Updated Device Credentials (User: %s, Pass: %s)\n",
+                          s_cloudUser, strlen(s_cloudPassword) > 0 ? "******" : "(disabled)");
             broadcastCloudState();
         }
+        return;
     }
 }
 
@@ -195,17 +339,19 @@ static void handleCloudMessage(const char* payload, size_t length) {
 static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
     switch (type) {
         case WStype_DISCONNECTED:
-            s_cloudConnected = false;
+            s_cloudConnected     = false;
+            s_cloudAuthenticated = false;
             Serial.println(">>> [CLOUD WS] Disconnected from cloud relay.");
             break;
 
         case WStype_CONNECTED: {
-            s_cloudConnected = true;
+            s_cloudConnected     = true;
+            s_cloudAuthenticated = false;
             Serial.printf(">>> [CLOUD WS] Connected to %s:%d! Sending auth handshake...\n", s_cloudHost, s_cloudPort);
-            char authMsg[160];
+            char authMsg[256];
             snprintf(authMsg, sizeof(authMsg),
-                "{\"type\":\"auth\",\"role\":\"device\",\"deviceId\":\"%s\",\"deviceKey\":\"%s\"}",
-                CLOUD_DEVICE_ID, CLOUD_AUTH_KEY
+                "{\"type\":\"auth\",\"role\":\"device\",\"deviceId\":\"%s\",\"deviceKey\":\"%s\",\"userId\":\"%s\",\"password\":\"%s\"}",
+                s_cloudDeviceId, s_cloudDeviceKey, s_cloudUser, s_cloudPassword
             );
             s_cloudWs.sendTXT(authMsg);
             break;
@@ -216,6 +362,10 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
             break;
 
         case WStype_PONG:
+            break;
+
+        case WStype_ERROR:
+            Serial.println(">>> [CLOUD WS ERROR] WebSocket transport error.");
             break;
 
         default:
@@ -241,12 +391,26 @@ static void startCloudClient() {
 static void stopCloudClient() {
     if (s_cloudConnected) {
         s_cloudWs.disconnect();
-        s_cloudConnected = false;
+        s_cloudConnected     = false;
+        s_cloudAuthenticated = false;
     }
 }
 
 static void updateCloudClient() {
     s_cloudWs.loop();
+}
+
+/* ── Status & Telemetry Accessors ────────────────────────────────────────── */
+inline bool isCloudWsConnected() {
+    return s_cloudConnected && s_cloudAuthenticated;
+}
+
+inline const char* getCloudDeviceId() {
+    return s_cloudDeviceId;
+}
+
+inline const char* getCloudUser() {
+    return s_cloudUser;
 }
 
 #endif // SMARTDESK_CLOUD_H
