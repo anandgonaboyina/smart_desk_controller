@@ -1,3 +1,4 @@
+#line 1 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk_cloud.h"
 /**
  * smartdesk_cloud.h — Cloud WebSocket Client for SmartDesk V2
  *
@@ -25,6 +26,7 @@
 static WebSocketsClient s_cloudWs;
 static bool             s_cloudConnected     = false;
 static bool             s_cloudAuthenticated = false;
+static bool             s_cloudWsStarted     = false;
 static uint32_t         s_lastCloudPingMs    = 0;
 static char             s_cloudHost[64]      = DEFAULT_CLOUD_HOST;
 static uint16_t         s_cloudPort          = DEFAULT_CLOUD_PORT;
@@ -625,6 +627,7 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
         case WStype_DISCONNECTED:
             s_cloudConnected     = false;
             s_cloudAuthenticated = false;
+            s_cloudWsStarted     = false;
             Serial.println(">>> [CLOUD WS] Disconnected from cloud relay.");
             break;
 
@@ -661,8 +664,6 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 
 /* ── Cloud Client Lifecycle ──────────────────────────────────────────────── */
-static bool s_cloudWsStarted = false;
-
 static void startCloudClient() {
     if (s_cloudWsStarted && s_cloudConnected) return;
 
