@@ -134,37 +134,57 @@ export default function AodFaceScreen({
     <div className="fixed inset-0 w-full h-[100dvh] max-h-[100dvh] bg-zinc-950 text-white flex flex-col justify-between overflow-hidden select-none font-sans touch-none overscroll-none">
       
       {/* ── TOP SECTION: Header Info & Controls ── */}
-      <div className="flex justify-between items-start p-4 sm:p-6 w-full z-10 shrink-0 border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur-md">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 p-3 sm:p-6 w-full z-10 shrink-0 border-b border-zinc-900/60 bg-zinc-950/80 backdrop-blur-md">
         
-        {/* Top-Left: Room Climate Pill */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-500 font-extrabold text-[11px] uppercase tracking-wider">ROOM CLIMATE</span>
-            <span className={`w-2 h-2 rounded-full ${envData.valid ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
+        {/* Row 1 on mobile / Left on desktop: Room Climate + Mobile Presence */}
+        <div className="flex items-center justify-between w-full sm:w-auto">
+          {/* Room Climate Pill */}
+          <div className="flex flex-col gap-0.5 sm:gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-500 font-extrabold text-[10px] sm:text-[11px] uppercase tracking-wider">ROOM CLIMATE</span>
+              <span className={`w-2 h-2 rounded-full ${envData.valid ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
+            </div>
+            <div className="flex items-baseline gap-3 sm:gap-4">
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl sm:text-3xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
+                  {envData.valid ? envData.tempC.toFixed(1) : "--"}
+                </span>
+                <span className="text-xs font-bold text-cyan-400">°C</span>
+              </div>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl sm:text-3xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
+                  {envData.valid ? Math.round(envData.humidity) : "--"}
+                </span>
+                <span className="text-xs font-bold text-cyan-400">%</span>
+              </div>
+            </div>
           </div>
-          <div className="flex items-baseline gap-4 mt-0.5">
-            <div className="flex items-baseline gap-1">
-              <span className="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
-                {envData.valid ? envData.tempC.toFixed(1) : "--"}
+
+          {/* Presence Radar Indicator - visible on mobile next to climate */}
+          <div className="sm:hidden flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-zinc-900/80 border border-zinc-800">
+            {presenceData.state === 1 ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <span>👤</span> At Desk
               </span>
-              <span className="text-xs font-bold text-cyan-400">°C</span>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]">
-                {envData.valid ? Math.round(envData.humidity) : "--"}
+            ) : presenceData.state === 2 ? (
+              <span className="text-amber-400 font-extrabold animate-pulse flex items-center gap-1">
+                <span>🚶</span> Away ({presenceData.remainingMin}m)
               </span>
-              <span className="text-xs font-bold text-cyan-400">%</span>
-            </div>
+            ) : (
+              <span className="text-zinc-500 flex items-center gap-1">
+                <span>⚪</span> Radar Standby
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Top-Right: Web Flasher, Wi-Fi & Link Status */}
-        <div className="flex flex-col items-end gap-1.5">
-          <div className="flex items-center gap-2">
+        {/* Row 2 on mobile / Right on desktop: Horizontal scrolling badge strip + desktop presence */}
+        <div className="flex flex-col items-end gap-1.5 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide no-scrollbar w-full sm:w-auto py-0.5">
             {/* Cloud Remote Status Pill */}
             <div
               onClick={onOpenHandshakeModal || onOpenRemote}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-[11px] font-bold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer active:scale-95 ${
                 isCloudOnline
                   ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
                   : isWsConnected
@@ -189,7 +209,7 @@ export default function AodFaceScreen({
             {/* Cloud Handshake & Diagnostics Button */}
             <button
               onClick={onOpenHandshakeModal}
-              className="px-2.5 sm:px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black flex items-center gap-1.5 shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
+              className="px-2.5 sm:px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black flex items-center gap-1.5 shrink-0 shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
               title="Step-by-step Worldwide Handshake Verification"
             >
               <span>🤝</span>
@@ -199,7 +219,7 @@ export default function AodFaceScreen({
             {/* Wi-Fi Status Pill */}
             <button
               onClick={onOpenWifiModal}
-              className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-[11px] font-bold tracking-wide flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+              className={`px-2.5 sm:px-3 py-1.5 rounded-full border text-[11px] font-bold tracking-wide flex items-center gap-1.5 shrink-0 transition-all cursor-pointer active:scale-95 ${
                 wifiConnected
                   ? "bg-emerald-950/80 border-emerald-500/60 text-emerald-300 shadow-[0_0_10px_rgba(52,211,153,0.3)]"
                   : wifiState === 2
@@ -241,19 +261,21 @@ export default function AodFaceScreen({
               />
             </button>
 
+            {/* Flash Firmware button */}
             <button
               onClick={() => setShowFlasherModal(true)}
-              className="px-3 py-1.5 rounded-full border border-cyan-500/50 bg-zinc-900 hover:bg-cyan-950/80 text-xs font-black text-cyan-300 flex items-center gap-1.5 shadow-[0_0_12px_rgba(6,182,212,0.25)] active:scale-95 transition-all cursor-pointer"
+              className="px-3 py-1.5 rounded-full border border-cyan-500/50 bg-zinc-900 hover:bg-cyan-950/80 text-xs font-black text-cyan-300 flex items-center gap-1.5 shrink-0 shadow-[0_0_12px_rgba(6,182,212,0.25)] active:scale-95 transition-all cursor-pointer"
               title="ESP32 Web Flasher & USB Serial"
             >
               <span className="text-sm">⚡</span>
               <span className="hidden sm:inline">FLASH FIRMWARE</span>
             </button>
 
+            {/* BLE Link button */}
             <button
               onClick={connected ? undefined : onConnect}
               disabled={connected}
-              className={`px-3 py-1.5 rounded-full border text-xs font-extrabold tracking-wide flex items-center gap-2 transition-all ${
+              className={`px-3 py-1.5 rounded-full border text-xs font-extrabold tracking-wide flex items-center gap-2 shrink-0 transition-all ${
                 connected
                   ? "bg-emerald-950/80 border-emerald-500/50 text-emerald-300 cursor-default select-none pointer-events-none"
                   : connecting
@@ -262,14 +284,14 @@ export default function AodFaceScreen({
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : connecting ? "bg-amber-400" : "bg-rose-500 shadow-[0_0_6px_#f43f5e]"}`} />
-              <span className="truncate max-w-[140px] sm:max-w-[200px]">
-                {connected ? `BLE: ${deviceName}` : connecting ? "BLE: Connecting..." : "BLE: Disconnected (Link)"}
+              <span className="truncate max-w-[120px] sm:max-w-[200px]">
+                {connected ? `BLE: ${deviceName}` : connecting ? "BLE: Linking..." : "BLE: Disconnected"}
               </span>
             </button>
           </div>
 
-          {/* Presence Radar Indicator */}
-          <div className="flex items-center gap-1.5 text-[11px] font-bold">
+          {/* Desktop Presence Radar Indicator */}
+          <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-bold">
             {presenceData.state === 1 ? (
               <span className="text-emerald-400 flex items-center gap-1">
                 <span>👤</span> At Desk

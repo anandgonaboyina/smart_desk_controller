@@ -83,6 +83,7 @@ export default function SettingsPanel({
 
   const [inputCloudUser, setInputCloudUser] = useState<string>(cloudUser);
   const [inputCloudPass, setInputCloudPass] = useState<string>(cloudPassword);
+  const [showCloudPass, setShowCloudPass] = useState<boolean>(false);
   const [credSavedMsg, setCredSavedMsg] = useState<boolean>(false);
 
   useEffect(() => {
@@ -360,13 +361,23 @@ export default function SettingsPanel({
           </div>
           <div>
             <label className="text-[10px] text-zinc-300 font-bold block mb-1">Device Password (Optional):</label>
-            <input
-              type="password"
-              value={inputCloudPass}
-              onChange={(e) => setInputCloudPass(e.target.value)}
-              placeholder="Leave blank for open access"
-              className="w-full bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-mono text-xs focus:border-cyan-500 outline-none"
-            />
+            <div className="relative">
+              <input
+                type={showCloudPass ? "text" : "password"}
+                value={inputCloudPass}
+                onChange={(e) => setInputCloudPass(e.target.value)}
+                placeholder="Leave blank for open access"
+                className="w-full bg-black border border-zinc-700 rounded-lg px-3 py-2 pr-9 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCloudPass(!showCloudPass)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
+                title={showCloudPass ? "Hide password" : "Show password"}
+              >
+                {showCloudPass ? "👁️" : "🙈"}
+              </button>
+            </div>
           </div>
         </div>
 

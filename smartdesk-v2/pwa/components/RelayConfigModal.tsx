@@ -52,20 +52,20 @@ export default function RelayConfigModal({
   const [beepEnd, setBeepEnd] = useState<boolean>(config?.beepTimerEnd ?? true);
 
   useEffect(() => {
-    if (config) {
-      setName(config.name);
-      setWiring(config.wiring);
-      setOnEn(config.onAnimEnabled);
-      setOnMd(config.onAnimMode);
-      setOnDu(config.onAnimDuration);
-      setOffEn(config.offAnimEnabled);
-      setOffMd(config.offAnimMode);
-      setOffDu(config.offAnimDuration);
+    if (isOpen && config) {
+      setName(config.name || `Relay ${relayIndex + 1}`);
+      setWiring(config.wiring ?? 0);
+      setOnEn(config.onAnimEnabled ?? true);
+      setOnMd(config.onAnimMode ?? 1);
+      setOnDu(config.onAnimDuration ?? 2);
+      setOffEn(config.offAnimEnabled ?? true);
+      setOffMd(config.offAnimMode ?? 3);
+      setOffDu(config.offAnimDuration ?? 2);
       setBeepOn(config.beepOn ?? true);
       setBeepOff(config.beepOff ?? true);
       setBeepEnd(config.beepTimerEnd ?? true);
     }
-  }, [config, relayIndex]);
+  }, [isOpen, relayIndex]);
 
   if (!isOpen) return null;
 

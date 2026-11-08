@@ -58,19 +58,33 @@ export default function WifiManagerModal({
 }: WifiManagerModalProps) {
   const [apSsid, setApSsid] = useState<string>("AnandSmartDesk");
   const [apPass, setApPass] = useState<string>("Anandsmartdesk");
+  const [showApPass, setShowApPass] = useState<boolean>(false);
   const [savingAp, setSavingAp] = useState<boolean>(false);
 
   // New / Edit Network fields
   const [newSsid, setNewSsid] = useState<string>("");
   const [newPass, setNewPass] = useState<string>("");
+  const [showNewPass, setShowNewPass] = useState<boolean>(false);
   const [isCollegeWifi, setIsCollegeWifi] = useState<boolean>(false);
   const [newCpUrl, setNewCpUrl] = useState<string>("http://192.168.80.1:1000/fgtauth?");
   const [newCpUser, setNewCpUser] = useState<string>("");
   const [newCpPass, setNewCpPass] = useState<string>("");
+  const [showCpPass, setShowCpPass] = useState<boolean>(false);
   const [savingNet, setSavingNet] = useState<boolean>(false);
 
-  // Saved networks & scanning
-  const [savedNets, setSavedNets] = useState<SavedNetItem[]>([]);
+  // Saved networks & scanning — loads from localStorage cache so networks are always visible
+  const [savedNets, setSavedNets] = useState<SavedNetItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("smartdesk_saved_wifi_profiles");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
   const [scannedNets, setScannedNets] = useState<{ ssid: string; rssi: number }[]>(scannedNetworks);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(false);
@@ -97,8 +111,11 @@ export default function WifiManagerModal({
       if (res.ok) {
         const data = await res.json();
         if (data.ap?.ssid) setApSsid(data.ap.ssid);
-        if (Array.isArray(data.saved)) {
+        if (Array.isArray(data.saved) && data.saved.length > 0) {
           setSavedNets(data.saved);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("smartdesk_saved_wifi_profiles", JSON.stringify(data.saved));
+          }
         }
       }
     } catch (_) {
@@ -253,6 +270,23 @@ export default function WifiManagerModal({
         isCollegeWifi ? newCpUser.trim() : "",
         isCollegeWifi ? newCpPass || "" : ""
       );
+
+      // Persist to local saved profiles list so the user can always see it
+      const newProfile: SavedNetItem = {
+        idx: savedNets.length,
+        ssid: newSsid.trim(),
+        hasCP: isCollegeWifi,
+        cpUser: isCollegeWifi ? newCpUser.trim() : undefined,
+      };
+      setSavedNets((prev) => {
+        const filtered = prev.filter((n) => n.ssid.toLowerCase() !== newProfile.ssid.toLowerCase());
+        const updated = [newProfile, ...filtered].slice(0, 8);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("smartdesk_saved_wifi_profiles", JSON.stringify(updated));
+        }
+        return updated;
+      });
+
       onToast?.(`Sent "${newSsid}" to ESP32 over BLE! Connecting...`, "success");
       setNewSsid("");
       setNewPass("");
@@ -266,16 +300,29 @@ export default function WifiManagerModal({
     }
   };
 
+  const handleSelectSavedNet = (net: SavedNetItem) => {
+    setNewSsid(net.ssid);
+    setIsCollegeWifi(Boolean(net.hasCP));
+    if (net.cpUser) setNewCpUser(net.cpUser);
+    onToast?.(`Selected "${net.ssid}" — enter password if needed`, "info");
+  };
+
   const handleDeleteNetwork = async (idx: number, name: string) => {
+    setSavedNets((prev) => {
+      const updated = prev.filter((n) => n.ssid !== name);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("smartdesk_saved_wifi_profiles", JSON.stringify(updated));
+      }
+      return updated;
+    });
+    onToast?.(`Removed network "${name}" from saved list`, "info");
     try {
-      const res = await fetch(`http://${deskHost}/api/wifi/delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idx }),
-      });
-      if (res.ok) {
-        onToast?.(`Removed network "${name}"`, "info");
-        fetchStatus();
+      if (deskHost) {
+        await fetch(`http://${deskHost}/api/wifi/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idx, ssid: name }),
+        });
       }
     } catch (_) {}
   };
@@ -444,14 +491,24 @@ export default function WifiManagerModal({
             </div>
             <div>
               <label className="text-[10px] text-zinc-400 font-bold block mb-1">Wi-Fi Password (Empty if Open, max 63 chars):</label>
-              <input
-                type="password"
-                maxLength={63}
-                value={newPass}
-                onChange={(e) => setNewPass(e.target.value)}
-                placeholder="Password (if protected)"
-                className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white text-xs font-bold focus:border-cyan-500 outline-none"
-              />
+              <div className="relative">
+                <input
+                  type={showNewPass ? "text" : "password"}
+                  maxLength={63}
+                  value={newPass}
+                  onChange={(e) => setNewPass(e.target.value)}
+                  placeholder="Password (if protected)"
+                  className="w-full bg-black border border-zinc-700 rounded-lg p-2 pr-9 text-white text-xs font-bold focus:border-cyan-500 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPass(!showNewPass)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-sm cursor-pointer select-none"
+                  title={showNewPass ? "Hide password" : "Show password"}
+                >
+                  {showNewPass ? "👁️" : "🙈"}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -500,13 +557,23 @@ export default function WifiManagerModal({
                   </div>
                   <div>
                     <label className="text-[9px] text-zinc-400 font-bold block mb-0.5">STUDENT PORTAL PASSWORD:</label>
-                    <input
-                      type="password"
-                      value={newCpPass}
-                      onChange={(e) => setNewCpPass(e.target.value)}
-                      placeholder="Your Password"
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-1.5 text-white text-xs"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showCpPass ? "text" : "password"}
+                        value={newCpPass}
+                        onChange={(e) => setNewCpPass(e.target.value)}
+                        placeholder="Your Password"
+                        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-1.5 pr-8 text-white text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCpPass(!showCpPass)}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
+                        title={showCpPass ? "Hide password" : "Show password"}
+                      >
+                        {showCpPass ? "👁️" : "🙈"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -541,10 +608,16 @@ export default function WifiManagerModal({
           ) : (
             <div className="space-y-1.5">
               {savedNets.map((net) => (
-                <div key={net.idx} className="p-2.5 rounded-lg bg-black border border-zinc-800 flex items-center justify-between">
-                  <div>
+                <div key={net.idx} className="p-2.5 rounded-lg bg-black border border-zinc-800 flex items-center justify-between hover:border-zinc-700 transition-all">
+                  <div
+                    onClick={() => handleSelectSavedNet(net)}
+                    className="cursor-pointer group flex-1 mr-2"
+                    title="Click to auto-fill network into form"
+                  >
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-white">{net.ssid}</span>
+                      <span className="text-xs font-extrabold text-white group-hover:text-cyan-300 transition-colors">
+                        📶 {net.ssid}
+                      </span>
                       {net.hasCP && (
                         <span className="text-[9px] font-bold px-1.5 py-0.2 bg-amber-950/80 text-amber-300 border border-amber-700 rounded">
                           Fortinet Portal
@@ -553,18 +626,20 @@ export default function WifiManagerModal({
                     </div>
                     {net.cpUser && <span className="text-[10px] text-zinc-400 block font-mono">User: {net.cpUser}</span>}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      onClick={() => handleConnectSlot(net.idx, net.ssid)}
-                      className="px-2.5 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-cyan-300 border border-zinc-700 cursor-pointer"
+                      onClick={() => handleSelectSavedNet(net)}
+                      className="px-2.5 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-cyan-300 border border-zinc-700 cursor-pointer active:scale-95"
+                      title="Auto-fill this network"
                     >
-                      Connect
+                      Use
                     </button>
                     <button
                       onClick={() => handleDeleteNetwork(net.idx, net.ssid)}
-                      className="px-2 py-1 rounded-md bg-rose-950/80 hover:bg-rose-900 text-rose-300 text-xs font-bold border border-rose-800 cursor-pointer"
+                      className="px-2 py-1 rounded-md bg-rose-950/80 hover:bg-rose-900 text-rose-300 text-xs font-bold border border-rose-800 cursor-pointer active:scale-95"
+                      title="Remove from saved networks"
                     >
-                      Delete
+                      ✕
                     </button>
                   </div>
                 </div>
@@ -621,13 +696,23 @@ export default function WifiManagerModal({
             </div>
             <div>
               <label className="text-[10px] text-zinc-400 font-bold block mb-1">Hotspot Password (min 8 chars):</label>
-              <input
-                type="text"
-                value={apPass}
-                onChange={(e) => setApPass(e.target.value)}
-                placeholder="Anandsmartdesk"
-                className="w-full bg-black border border-zinc-700 rounded-lg p-2 text-white text-xs font-bold focus:border-cyan-500 outline-none font-mono"
-              />
+              <div className="relative">
+                <input
+                  type={showApPass ? "text" : "password"}
+                  value={apPass}
+                  onChange={(e) => setApPass(e.target.value)}
+                  placeholder="Anandsmartdesk"
+                  className="w-full bg-black border border-zinc-700 rounded-lg p-2 pr-9 text-white text-xs font-bold focus:border-cyan-500 outline-none font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApPass(!showApPass)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-sm cursor-pointer select-none"
+                  title={showApPass ? "Hide password" : "Show password"}
+                >
+                  {showApPass ? "👁️" : "🙈"}
+                </button>
+              </div>
             </div>
           </div>
           <button

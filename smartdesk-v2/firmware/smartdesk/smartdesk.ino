@@ -39,8 +39,8 @@ uint32_t    s_timerEndMs[RELAY_COUNT]   = {0, 0, 0, 0}; // 0 = no timer
 bool        s_connected                 = false;
 
 // Strip Dynamic Length & Strip Instance
-static uint16_t          s_stripLen = DEFAULT_STRIP_LEN; // Dynamic up to 800 LEDs
-static Adafruit_NeoPixel s_strip(DEFAULT_STRIP_LEN, LED_PIN, NEO_GRB + NEO_KHZ800);
+uint16_t          s_stripLen = DEFAULT_STRIP_LEN; // Dynamic up to 800 LEDs
+Adafruit_NeoPixel s_strip(DEFAULT_STRIP_LEN, LED_PIN, NEO_GRB + NEO_KHZ800);
 static Preferences       s_prefs;
 
 // LED State (Modes 0..15)

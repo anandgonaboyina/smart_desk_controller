@@ -285,6 +285,9 @@ wss.on("connection", (ws, req) => {
         if (msg.led) dev.state.led = msg.led;
         if (msg.env) dev.state.env = msg.env;
         if (msg.presence) dev.state.presence = msg.presence;
+        if (msg.deviceName) dev.state.deviceName = msg.deviceName;
+        if (msg.stripLen !== undefined) dev.state.stripLen = msg.stripLen;
+        if (msg.matrix) dev.state.matrix = msg.matrix;
 
         // Broadcast directly to authorized clients watching this device
         broadcastToDeviceClients(meta.deviceId, {
@@ -331,7 +334,7 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
-      // Device Control Commands (Relay, Countdown Timers, Configurations, LED, All-Off, State Request, Credentials)
+      // Device Control Commands (Relay, Countdown Timers, Configurations, LED, Rename, Strip Length, Matrix, All-Off, State Request, Credentials)
       if (
         msg.type === "relay_set" ||
         msg.type === "relay_timer" ||
@@ -339,6 +342,12 @@ wss.on("connection", (ws, req) => {
         msg.type === "relay_config" ||
         msg.type === "config_set" ||
         msg.type === "led_set" ||
+        msg.type === "device_rename" ||
+        msg.type === "rename" ||
+        msg.type === "strip_length" ||
+        msg.type === "strip" ||
+        msg.type === "matrix_set" ||
+        msg.type === "matrix" ||
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||

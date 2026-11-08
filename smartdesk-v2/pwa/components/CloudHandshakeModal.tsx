@@ -69,6 +69,7 @@ export default function CloudHandshakeModal({
   // Local state for Step 2 Wi-Fi input
   const [targetSsid, setTargetSsid] = useState<string>("");
   const [targetPass, setTargetPass] = useState<string>("");
+  const [showTargetPass, setShowTargetPass] = useState<boolean>(false);
   const [isScanningAirwaves, setIsScanningAirwaves] = useState<boolean>(false);
   const [isSendingWifi, setIsSendingWifi] = useState<boolean>(false);
   const [discoveredNets, setDiscoveredNets] = useState<{ ssid: string; rssi: number }[]>(scannedNetworks);
@@ -77,6 +78,7 @@ export default function CloudHandshakeModal({
   const [isCollege, setIsCollege] = useState<boolean>(false);
   const [cpUser, setCpUser] = useState<string>("");
   const [cpPass, setCpPass] = useState<string>("");
+  const [showCpPass, setShowCpPass] = useState<boolean>(false);
 
   // Device Username & Password for Cloud Handshake
   const [cloudUser, setCloudUser] = useState<string>(() => {
@@ -91,6 +93,7 @@ export default function CloudHandshakeModal({
     }
     return "";
   });
+  const [showCloudPass, setShowCloudPass] = useState<boolean>(false);
 
   const handleSaveCloudCredentials = () => {
     if (typeof window !== "undefined") {
@@ -431,14 +434,24 @@ export default function CloudHandshakeModal({
                 onChange={(e) => setTargetSsid(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
               />
-              <input
-                type="password"
-                maxLength={63}
-                placeholder="Wi-Fi Password (max 63 chars, empty if open)"
-                value={targetPass}
-                onChange={(e) => setTargetPass(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
-              />
+              <div className="relative">
+                <input
+                  type={showTargetPass ? "text" : "password"}
+                  maxLength={63}
+                  placeholder="Wi-Fi Password (max 63 chars, empty if open)"
+                  value={targetPass}
+                  onChange={(e) => setTargetPass(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 pr-8 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTargetPass(!showTargetPass)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
+                  title={showTargetPass ? "Hide password" : "Show password"}
+                >
+                  {showTargetPass ? "👁️" : "🙈"}
+                </button>
+              </div>
             </div>
 
             {/* Optional College Portal Route */}
@@ -472,13 +485,23 @@ export default function CloudHandshakeModal({
                   onChange={(e) => setCpUser(e.target.value)}
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
                 />
-                <input
-                  type="password"
-                  placeholder="Portal Password"
-                  value={cpPass}
-                  onChange={(e) => setCpPass(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
-                />
+                <div className="relative">
+                  <input
+                    type={showCpPass ? "text" : "password"}
+                    placeholder="Portal Password"
+                    value={cpPass}
+                    onChange={(e) => setCpPass(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 pr-8 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCpPass(!showCpPass)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
+                    title={showCpPass ? "Hide password" : "Show password"}
+                  >
+                    {showCpPass ? "👁️" : "🙈"}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -556,13 +579,23 @@ export default function CloudHandshakeModal({
               </div>
               <div>
                 <label className="text-[9px] text-zinc-400 block font-bold mb-1">Device Password (Optional):</label>
-                <input
-                  type="password"
-                  value={cloudPass}
-                  onChange={(e) => setCloudPass(e.target.value)}
-                  placeholder="Leave empty for open setup"
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-white font-mono text-xs focus:border-cyan-500 outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type={showCloudPass ? "text" : "password"}
+                    value={cloudPass}
+                    onChange={(e) => setCloudPass(e.target.value)}
+                    placeholder="Leave empty for open setup"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 pr-8 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCloudPass(!showCloudPass)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
+                    title={showCloudPass ? "Hide password" : "Show password"}
+                  >
+                    {showCloudPass ? "👁️" : "🙈"}
+                  </button>
+                </div>
               </div>
             </div>
             <button

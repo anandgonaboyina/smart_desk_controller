@@ -28,6 +28,9 @@ export interface RemoteDeviceState {
   led: { mode: number; r: number; g: number; b: number; bri: number; spd: number };
   env: { tempC: number; humidity: number; valid: boolean };
   presence?: { state: number; distanceM: number; remainingMin: number };
+  deviceName?: string;
+  stripLength?: number;
+  matrix?: { mode: number; speed?: number; bri?: number; r?: number; g?: number; b?: number; text?: string };
 }
 
 export interface UseRemoteDeskWsOptions {
@@ -174,6 +177,9 @@ export function useRemoteDeskWs({
                     led: stateObj.led || data.led || { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
                     env: stateObj.env || data.env || { tempC: 0, humidity: 0, valid: false },
                     presence: stateObj.presence,
+                    deviceName: stateObj.deviceName || data.deviceName,
+                    stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
+                    matrix: stateObj.matrix || data.matrix,
                   };
                   setDeviceState(updated);
                   if (onStateUpdate) onStateUpdate(updated);
@@ -203,7 +209,10 @@ export function useRemoteDeskWs({
               const led = data.led || data.state?.led || prev.led;
               const env = data.env || data.state?.env || prev.env;
               const presence = data.presence || data.state?.presence || prev.presence;
-              const updated: RemoteDeviceState = { relays, configs, led, env, presence };
+              const deviceName = data.deviceName || data.state?.deviceName || prev.deviceName;
+              const stripLength = data.stripLen || data.state?.stripLen || data.stripLength || data.state?.stripLength || prev.stripLength;
+              const matrix = data.matrix || data.state?.matrix || prev.matrix;
+              const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix };
               if (onStateUpdate) onStateUpdate(updated);
               return updated;
             });
@@ -400,6 +409,89 @@ export function useRemoteDeskWs({
     [currentDeviceId, onStateUpdate]
   );
 
+  // Rename Controller over Cloud
+  const sendRenameCommand = useCallback(
+    (name: string) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      const cleanName = name.trim().slice(0, 24);
+      setDeviceState((prev) => {
+        const updated: RemoteDeviceState = { ...prev, deviceName: cleanName };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+      wsRef.current.send(
+        JSON.stringify({
+          type: "device_rename",
+          deviceId: currentDeviceId,
+          name: cleanName,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate]
+  );
+
+  // Set Strip Length over Cloud
+  const sendStripLengthCommand = useCallback(
+    (length: number) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      const clamped = Math.max(1, Math.min(800, length));
+      setDeviceState((prev) => {
+        const updated: RemoteDeviceState = { ...prev, stripLength: clamped };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+      wsRef.current.send(
+        JSON.stringify({
+          type: "strip_length",
+          deviceId: currentDeviceId,
+          length: clamped,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate]
+  );
+
+  // Set 2D Matrix Display over Cloud
+  const sendMatrixCommand = useCallback(
+    (
+      mode: number,
+      text?: string,
+      speed?: number,
+      bri?: number,
+      r?: number,
+      g?: number,
+      b?: number
+    ) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      const cleanText = (text || "SMARTDESK V2").slice(0, 60);
+      setDeviceState((prev) => {
+        const updated: RemoteDeviceState = {
+          ...prev,
+          matrix: { mode, text: cleanText, speed: speed ?? 5, bri: bri ?? 180, r: r ?? 0, g: g ?? 240, b: b ?? 255 },
+        };
+        if (onStateUpdate) onStateUpdate(updated);
+        return updated;
+      });
+      wsRef.current.send(
+        JSON.stringify({
+          type: "matrix_set",
+          deviceId: currentDeviceId,
+          mode,
+          text: cleanText,
+          speed: speed ?? 5,
+          bri: bri ?? 180,
+          r: r ?? 0,
+          g: g ?? 240,
+          b: b ?? 255,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId, onStateUpdate]
+  );
+
   // Emergency All Relays Off Command
   const sendAllOff = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -437,6 +529,9 @@ export function useRemoteDeskWs({
     sendRelayTimerCommand,
     sendRelayConfigCommand,
     sendLedCommand,
+    sendRenameCommand,
+    sendStripLengthCommand,
+    sendMatrixCommand,
     sendAllOff,
   };
 }

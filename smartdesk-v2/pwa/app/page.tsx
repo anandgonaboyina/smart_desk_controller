@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useSmartDeskBle } from "../hooks/useSmartDeskBle";
 import AodFaceScreen from "../components/AodFaceScreen";
 import BottomNavbar, { NavTab } from "../components/BottomNavbar";
@@ -53,45 +53,93 @@ export default function SmartDeskApp() {
   const remote = useRemoteDeskWs({ onToast: showToast });
 
   const isDeskConnected = ble.connected || ble.wifiConnected || (remote.isWsConnected && remote.isDeviceOnline);
-  const currentDeskName = ble.connected
-    ? ble.deviceName
-    : ble.wifiConnected
-    ? `SmartDesk (Wi-Fi ${ble.wifiIp || ble.wifiHost})`
-    : (remote.isWsConnected && remote.isDeviceOnline)
-    ? `SmartDesk (Cloud Remote)`
-    : ble.deviceName;
+  
+  const currentDeskName = useMemo(() => {
+    if (ble.connected) return ble.deviceName;
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.deviceName) {
+      return remote.deviceState.deviceName;
+    }
+    if (ble.wifiConnected) return `SmartDesk (Wi-Fi ${ble.wifiIp || ble.wifiHost})`;
+    if (remote.isWsConnected && remote.isDeviceOnline) return `SmartDesk (Cloud Remote)`;
+    return ble.deviceName;
+  }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName]);
 
-  const effectiveRelays = (ble.connected || ble.wifiConnected)
-    ? ble.relays
-    : (remote.isWsConnected && remote.isDeviceOnline)
-    ? remote.deviceState.relays.map((r) => ({
+  const effectiveRelays = useMemo(() => {
+    if (ble.connected || ble.wifiConnected) {
+      return ble.relays;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      return remote.deviceState.relays.map((r) => ({
         load: r.load,
         remainingMin: r.remainingMin || 0,
-      }))
-    : ble.relays;
+      }));
+    }
+    return ble.relays;
+  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
 
-  const effectiveConfigs = (ble.connected || ble.wifiConnected)
-    ? ble.configs
-    : (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.configs)
-    ? ble.configs.map((c, i) => {
+  const effectiveConfigs = useMemo(() => {
+    if (ble.connected || ble.wifiConnected) {
+      return ble.configs;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.configs) {
+      return ble.configs.map((c, i) => {
         const remCfg = remote.deviceState.configs?.[i];
         return remCfg
           ? { ...c, name: remCfg.name || c.name, wiring: remCfg.wiring !== undefined ? remCfg.wiring : c.wiring }
           : c;
-      })
-    : ble.configs;
+      });
+    }
+    return ble.configs;
+  }, [ble.connected, ble.wifiConnected, ble.configs, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.configs]);
 
-  const effectiveLed = (ble.connected || ble.wifiConnected)
-    ? ble.led
-    : (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led)
-    ? remote.deviceState.led
-    : ble.led;
+  const effectiveLed = useMemo(() => {
+    if (ble.connected || ble.wifiConnected) {
+      return ble.led;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led) {
+      return remote.deviceState.led;
+    }
+    return ble.led;
+  }, [ble.connected, ble.wifiConnected, ble.led, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.led]);
 
-  const effectiveEnvData = (ble.connected || ble.wifiConnected)
-    ? ble.envData
-    : (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.env?.valid)
-    ? remote.deviceState.env
-    : ble.envData;
+  const effectiveEnvData = useMemo(() => {
+    if (ble.connected || ble.wifiConnected) {
+      return ble.envData;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.env?.valid) {
+      return remote.deviceState.env;
+    }
+    return ble.envData;
+  }, [ble.connected, ble.wifiConnected, ble.envData, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.env]);
+
+  const effectiveStripLength = useMemo(() => {
+    if (ble.connected || ble.wifiConnected) {
+      return ble.stripLength;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.stripLength) {
+      return remote.deviceState.stripLength;
+    }
+    return ble.stripLength;
+  }, [ble.connected, ble.wifiConnected, ble.stripLength, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.stripLength]);
+
+  const effectiveMatrixConfig = useMemo(() => {
+    if (ble.connected || ble.wifiConnected) {
+      return ble.matrixConfig;
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.matrix) {
+      return {
+        ...ble.matrixConfig,
+        mode: remote.deviceState.matrix.mode ?? ble.matrixConfig.mode,
+        speed: remote.deviceState.matrix.speed ?? ble.matrixConfig.speed,
+        bri: remote.deviceState.matrix.bri ?? ble.matrixConfig.bri,
+        colorR: remote.deviceState.matrix.r ?? ble.matrixConfig.colorR,
+        colorG: remote.deviceState.matrix.g ?? ble.matrixConfig.colorG,
+        colorB: remote.deviceState.matrix.b ?? ble.matrixConfig.colorB,
+        text: remote.deviceState.matrix.text ?? ble.matrixConfig.text,
+      };
+    }
+    return ble.matrixConfig;
+  }, [ble.connected, ble.wifiConnected, ble.matrixConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.matrix]);
 
   const handleToggleRelay = useCallback((idx: number, explicitTarget?: boolean) => {
     if (ble.connected || ble.wifiConnected) {
@@ -157,6 +205,50 @@ export default function SmartDeskApp() {
       showToast("[Cloud Remote] LED state updated");
     } else {
       ble.sendLedCommand(mode, r, g, b, bri, spd);
+    }
+  }, [ble, remote, showToast]);
+
+  const handleRename = useCallback((newName: string) => {
+    if (ble.connected) {
+      ble.saveRename(newName);
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendRenameCommand(newName);
+      showToast(`[Cloud Remote] Device renamed to "${newName}"`);
+    } else if (!ble.connected) {
+      ble.saveRename(newName);
+    }
+  }, [ble, remote, showToast]);
+
+  const handleSaveStripLength = useCallback((len: number) => {
+    if (ble.connected) {
+      ble.saveStripLength(len);
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendStripLengthCommand(len);
+      showToast(`[Cloud Remote] Strip length set to ${len} LEDs`);
+    } else if (!ble.connected) {
+      ble.saveStripLength(len);
+    }
+  }, [ble, remote, showToast]);
+
+  const handleSetMatrixDisplay = useCallback((
+    mode: number,
+    speed?: number,
+    bri?: number,
+    r?: number,
+    g?: number,
+    b?: number,
+    text?: string
+  ) => {
+    if (ble.connected) {
+      ble.setMatrixDisplay(mode, speed, bri, r, g, b, text);
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendMatrixCommand(mode, text, speed, bri, r, g, b);
+      showToast("[Cloud Remote] Matrix display updated");
+    } else if (!ble.connected) {
+      ble.setMatrixDisplay(mode, speed, bri, r, g, b, text);
     }
   }, [ble, remote, showToast]);
 
@@ -226,7 +318,7 @@ export default function SmartDeskApp() {
           onToggleRelay={handleToggleRelay}
           onAllRelaysOff={handleAllRelaysOff}
           onSendLed={handleSendLed}
-          onSetMatrixMode={(mode, text) => ble.setMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
+          onSetMatrixMode={(mode, text) => handleSetMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
           onStartMusic={ble.startMusicSync}
           onStopMusic={ble.stopMusicSync}
         />
@@ -234,21 +326,34 @@ export default function SmartDeskApp() {
         <div className="flex flex-col w-full h-[100dvh] max-w-7xl mx-auto px-2 sm:px-6">
           
           {/* HIGH-CONTRAST HEADER */}
-          <header className="flex items-center justify-between py-4 border-b-2 border-zinc-800 shrink-0">
-            <div className="flex items-center gap-3">
-              <img src="/SmartDesk logo.png" alt="SmartDesk Logo" className="w-8 h-8 rounded-lg object-contain shadow-md border border-zinc-800" />
-              <div className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${isDeskConnected ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,1)]" : ble.connecting ? "bg-amber-400 animate-ping" : "bg-zinc-600"}`} />
-                <span className="text-sm font-extrabold tracking-wide text-white">
-                  {isDeskConnected ? currentDeskName : ble.connecting ? "Connecting..." : "Standby"}
-                </span>
+          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-2.5 sm:py-4 border-b-2 border-zinc-800 shrink-0 gap-2 sm:gap-3">
+            {/* Top row on mobile / Left column on desktop */}
+            <div className="flex items-center justify-between w-full sm:w-auto">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <img src="/SmartDesk logo.png" alt="SmartDesk Logo" className="w-8 h-8 rounded-lg object-contain shadow-md border border-zinc-800 shrink-0" />
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isDeskConnected ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,1)]" : ble.connecting ? "bg-amber-400 animate-ping" : "bg-zinc-600"}`} />
+                  <span className="text-sm font-extrabold tracking-wide text-white truncate max-w-[170px] sm:max-w-none">
+                    {isDeskConnected ? currentDeskName : ble.connecting ? "Connecting..." : "Standby"}
+                  </span>
+                </div>
               </div>
+
+              {/* AOD Button on mobile (top right) */}
+              <button
+                onClick={() => setActiveTab("aod")}
+                className="sm:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-black transition-all active:scale-95 shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer shrink-0"
+              >
+                <span>😴</span>
+                <span>AOD</span>
+              </button>
             </div>
             
-            <div className="flex items-center gap-2">
+            {/* Row 2 on mobile (horizontal scrolling strip) / Right column on desktop */}
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide no-scrollbar w-full sm:w-auto pb-0.5 sm:pb-0">
               <div
                 onClick={() => setShowHandshakeModal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95 ${
                   remote.isWsConnected && remote.isDeviceOnline
                     ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
                     : remote.isWsConnected
@@ -278,7 +383,7 @@ export default function SmartDeskApp() {
 
               <button
                 onClick={() => setShowHandshakeModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black shrink-0 shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
                 title="Step-by-step Worldwide Handshake Verification"
               >
                 <span>🤝</span>
@@ -287,7 +392,7 @@ export default function SmartDeskApp() {
 
               <button
                 onClick={() => setShowWifiModal(true)}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95 ${
                   ble.wifiConnected
                     ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
                     : ble.wifiState === 2
@@ -332,7 +437,7 @@ export default function SmartDeskApp() {
               <button
                 onClick={ble.connected ? undefined : ble.handleConnect}
                 disabled={ble.connected}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-all ${
                   ble.connected
                     ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300"
                     : ble.connecting
@@ -356,9 +461,10 @@ export default function SmartDeskApp() {
                 />
               </button>
 
+              {/* AOD Button on desktop (in the badge strip) */}
               <button
                 onClick={() => setActiveTab("aod")}
-                className="flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs sm:text-sm font-extrabold transition-all active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)] cursor-pointer"
+                className="hidden sm:flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs sm:text-sm font-extrabold transition-all active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)] cursor-pointer shrink-0"
               >
                 😴 AOD SCREEN
               </button>
@@ -374,14 +480,14 @@ export default function SmartDeskApp() {
                   relays={effectiveRelays}
                   configs={effectiveConfigs}
                   led={effectiveLed}
-                  matrixConfig={ble.matrixConfig}
+                  matrixConfig={effectiveMatrixConfig}
                   rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
                   onToggleRelay={handleToggleRelay}
                   onSetRelayTimer={handleSetRelayTimer}
                   onAllRelaysOff={handleAllRelaysOff}
                   onSendLed={handleSendLed}
                   onSetRgbTimer={handleSetRgbTimer}
-                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onSetMatrixDisplay={handleSetMatrixDisplay}
                   onStartMusic={ble.startMusicSync}
                   onStopMusic={ble.stopMusicSync}
                   onNavigateTab={(tab) => setActiveTab(tab)}
@@ -403,11 +509,11 @@ export default function SmartDeskApp() {
                 <LedPanel
                   led={effectiveLed}
                   previewTick={ble.previewTick}
-                  stripLength={ble.stripLength}
-                  onSaveStripLength={ble.saveStripLength}
-                  matrixConfig={ble.matrixConfig}
+                  stripLength={effectiveStripLength}
+                  onSaveStripLength={handleSaveStripLength}
+                  matrixConfig={effectiveMatrixConfig}
                   onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
-                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onSetMatrixDisplay={handleSetMatrixDisplay}
                   musicSyncActive={ble.musicSyncActive}
                   musicBri={ble.musicBri}
                   setMusicBri={ble.setMusicBri}
@@ -434,21 +540,21 @@ export default function SmartDeskApp() {
                 <SettingsPanel
                   envData={effectiveEnvData}
                   masterBuzzer={ble.masterBuzzer}
-                  deviceName={ble.deviceName}
+                  deviceName={currentDeskName}
                   connected={isDeskConnected}
                   connecting={ble.connecting}
                   infoString={ble.infoString}
                   logs={ble.logs}
                   showAllDevices={ble.showAllDevices}
                   setShowAllDevices={ble.setShowAllDevices}
-                  stripLength={ble.stripLength}
-                  onSaveStripLength={ble.saveStripLength}
-                  matrixConfig={ble.matrixConfig}
+                  stripLength={effectiveStripLength}
+                  onSaveStripLength={handleSaveStripLength}
+                  matrixConfig={effectiveMatrixConfig}
                   onSaveMatrixConfig={ble.saveMatrixHardwareConfig}
-                  onSetMatrixDisplay={ble.setMatrixDisplay}
+                  onSetMatrixDisplay={handleSetMatrixDisplay}
                   onToggleMasterBuzzer={ble.toggleMasterBuzzer}
                   onTestBuzzer={ble.testBuzzerBeep}
-                  onRename={ble.saveRename}
+                  onRename={handleRename}
                   onConnect={ble.handleConnect}
                   onDisconnect={ble.handleDisconnected}
                   onClearLogs={ble.clearLogs}
