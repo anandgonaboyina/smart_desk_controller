@@ -11,6 +11,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { ScheduleRule } from "../types/smartdesk";
 
 export interface RemoteRelayState {
   load: boolean;
@@ -40,6 +41,7 @@ export interface RemoteDeviceState {
     arrivalRgbOn?: boolean;
     arrivalRgbMode?: number;
   };
+  schedules?: ScheduleRule[];
   deviceName?: string;
   stripLength?: number;
   matrix?: { mode: number; speed?: number; bri?: number; r?: number; g?: number; b?: number; text?: string };
@@ -248,6 +250,20 @@ export function useRemoteDeskWs({
                   if (onStateUpdate) onStateUpdate(updated);
                 }
               }
+
+              // Automatically synchronize device hardware clock with browser's local time upon connection
+              const now = new Date();
+              socket.send(
+                JSON.stringify({
+                  type: "time_sync",
+                  deviceId: credsRef.current.devId,
+                  h: now.getHours(),
+                  m: now.getMinutes(),
+                  s: now.getSeconds(),
+                  dow: now.getDay(),
+                  timestamp: Date.now(),
+                })
+              );
             } else {
               console.error("[CLOUD WS] Authentication failed:", data.error);
               if (onToast) onToast(`Cloud Auth Failed: ${data.error || "Unauthorized"}`, "error");
@@ -275,7 +291,13 @@ export function useRemoteDeskWs({
               const deviceName = data.deviceName || data.state?.deviceName || prev.deviceName;
               const stripLength = data.stripLen || data.state?.stripLen || data.stripLength || data.state?.stripLength || prev.stripLength;
               const matrix = data.matrix || data.state?.matrix || prev.matrix;
-              const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix };
+              const schedules = data.schedules || data.state?.schedules || prev.schedules;
+              if (schedules && typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("smartdesk_schedules", JSON.stringify(schedules));
+                } catch (_) {}
+              }
+              const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix, schedules };
               if (onStateUpdate) onStateUpdate(updated);
               return updated;
             });
@@ -734,6 +756,129 @@ export function useRemoteDeskWs({
     );
   }, [currentDeviceId]);
 
+  // Send Save / Update Schedule Rule Command over Cloud WS
+  const sendScheduleSave = useCallback(
+    (rule: ScheduleRule) => {
+      const relayMask = rule.relayMask !== undefined
+        ? rule.relayMask
+        : (rule.targetType === 4 ? 0x0F : rule.targetType < 4 ? (1 << rule.targetType) : 0);
+      const ledTarget = rule.ledTarget !== undefined
+        ? rule.ledTarget
+        : (rule.targetType === 5);
+
+      const normalizedRule: ScheduleRule = { ...rule, relayMask, ledTarget };
+
+      // Optimistically update deviceState.schedules
+      setDeviceState((prev) => {
+        const curSchedules = prev.schedules || [];
+        const next = curSchedules.some((s) => s.id === rule.id)
+          ? curSchedules.map((s) => (s.id === rule.id ? normalizedRule : s))
+          : [...curSchedules, normalizedRule];
+        return { ...prev, schedules: next };
+      });
+
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot save schedule: Cloud WebSocket offline", "warn");
+        return;
+      }
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "schedule_set",
+          deviceId: currentDeviceId,
+          id: rule.id,
+          enabled: rule.enabled,
+          daysMask: rule.daysMask,
+          startHour: rule.startHour,
+          startMin: rule.startMin,
+          stopType: rule.stopType,
+          durationMin: rule.durationMin,
+          stopHour: rule.stopHour,
+          stopMin: rule.stopMin,
+          targetType: rule.targetType ?? 6,
+          targetAction: rule.targetAction,
+          relayMask,
+          ledTarget,
+          rgbR: rule.rgbR ?? 0,
+          rgbG: rule.rgbG ?? 180,
+          rgbB: rule.rgbB ?? 255,
+          rgbBri: rule.rgbBri ?? 50,
+          name: rule.name,
+          timestamp: Date.now(),
+        })
+      );
+      if (onToast) onToast(`Schedule rule #${rule.id + 1} synced over Cloud!`, "success");
+    },
+    [currentDeviceId, onToast]
+  );
+
+  // Send Delete / Disable Schedule Rule Command over Cloud WS
+  const sendScheduleDelete = useCallback(
+    (ruleId: number) => {
+      setDeviceState((prev) => {
+        const curSchedules = prev.schedules || [];
+        const next = curSchedules.filter((s) => s.id !== ruleId);
+        return { ...prev, schedules: next };
+      });
+
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot delete: Cloud WebSocket offline", "warn");
+        return;
+      }
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "schedule_delete",
+          deviceId: currentDeviceId,
+          id: ruleId,
+          timestamp: Date.now(),
+        })
+      );
+      if (onToast) onToast(`Disabled rule #${ruleId + 1} over Cloud`, "info");
+    },
+    [currentDeviceId, onToast]
+  );
+
+  // Send Test Schedule Rule Command over Cloud WS
+  const sendScheduleTest = useCallback(
+    (ruleId: number, isStart: boolean = true) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot test: Cloud WebSocket offline", "warn");
+        return;
+      }
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "schedule_test",
+          deviceId: currentDeviceId,
+          id: ruleId,
+          isStart,
+          timestamp: Date.now(),
+        })
+      );
+      if (onToast) onToast(`Tested schedule #${ruleId + 1} (${isStart ? "Start" : "Stop"})`, "info");
+    },
+    [currentDeviceId, onToast]
+  );
+
+  // Send Time Sync Command over Cloud WS
+  const sendTimeSync = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const now = new Date();
+    wsRef.current.send(
+      JSON.stringify({
+        type: "time_sync",
+        deviceId: currentDeviceId,
+        h: now.getHours(),
+        m: now.getMinutes(),
+        s: now.getSeconds(),
+        dow: now.getDay(),
+        timestamp: Date.now(),
+      })
+    );
+    if (onToast) onToast("Synchronized hardware clock with browser time", "info");
+  }, [currentDeviceId, onToast]);
+
   return {
     wsUrl: effectiveWsUrl,
     userId: currentUserId,
@@ -761,6 +906,10 @@ export function useRemoteDeskWs({
     sendRgbTimerCommand,
     sendBuzzerCommand,
     sendBuzzerBeepCommand,
+    sendScheduleSave,
+    sendScheduleDelete,
+    sendScheduleTest,
+    sendTimeSync,
     sendAllOff,
   };
 }

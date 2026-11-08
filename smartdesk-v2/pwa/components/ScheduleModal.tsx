@@ -39,7 +39,23 @@ export default function ScheduleModal({
 
   useEffect(() => {
     if (editingRule) {
-      setRule({ ...editingRule });
+      const rMask = editingRule.relayMask !== undefined
+        ? editingRule.relayMask
+        : (editingRule.targetType === 4 ? 0x0f : editingRule.targetType < 4 ? (1 << editingRule.targetType) : 0);
+      const lTarget = editingRule.ledTarget !== undefined
+        ? editingRule.ledTarget
+        : (editingRule.targetType === 5);
+
+      setRule({
+        ...editingRule,
+        relayMask: rMask,
+        ledTarget: lTarget,
+        rgbR: editingRule.rgbR ?? 0,
+        rgbG: editingRule.rgbG ?? 180,
+        rgbB: editingRule.rgbB ?? 255,
+        rgbBri: editingRule.rgbBri ?? 80,
+      });
+
       if (is12Hr) {
         const h12 = editingRule.startHour % 12 || 12;
         setStartH(String(h12));
@@ -66,6 +82,30 @@ export default function ScheduleModal({
     });
   };
 
+  const toggleRelay = (relayIdx: number) => {
+    setRule((prev) => {
+      if (!prev) return null;
+      const curMask = prev.relayMask ?? 0;
+      return { ...prev, relayMask: curMask ^ (1 << relayIdx), targetType: 6 };
+    });
+  };
+
+  const toggleLedTarget = () => {
+    setRule((prev) => {
+      if (!prev) return null;
+      const cur = prev.ledTarget ?? false;
+      return { ...prev, ledTarget: !cur, targetType: 6 };
+    });
+  };
+
+  const selectAllRelays = () => {
+    setRule((prev) => (prev ? { ...prev, relayMask: 0x0f, targetType: 6 } : null));
+  };
+
+  const clearAllRelays = () => {
+    setRule((prev) => (prev ? { ...prev, relayMask: 0x00, targetType: 6 } : null));
+  };
+
   const handleSave = () => {
     if (!rule) return;
     let finalStartH = 0;
@@ -87,6 +127,13 @@ export default function ScheduleModal({
     const finalStopM = Math.max(0, Math.min(59, parseInt(stopM, 10) || 0));
     const finalDur = Math.max(1, Math.min(1440, parseInt(durationStr, 10) || 30));
 
+    // Fallback if neither relay nor LED is picked: default to Relay 1
+    let safeRelayMask = rule.relayMask ?? 0;
+    let safeLedTarget = rule.ledTarget ?? false;
+    if (safeRelayMask === 0 && !safeLedTarget) {
+      safeRelayMask = 0x01;
+    }
+
     onSave({
       ...rule,
       startHour: finalStartH,
@@ -94,6 +141,9 @@ export default function ScheduleModal({
       stopHour: finalStopH,
       stopMin: finalStopM,
       durationMin: finalDur,
+      relayMask: safeRelayMask,
+      ledTarget: safeLedTarget,
+      targetType: 6,
     });
     onClose();
   };
@@ -227,67 +277,146 @@ export default function ScheduleModal({
               )}
             </div>
 
-            {/* Target Channel */}
+            {/* Target Devices (Multi-Load + RGB LED Strip) */}
             <div>
-              <label className="text-[10px] uppercase text-zinc-400 font-bold block mb-1">
-                Target Device:
-              </label>
-              <select
-                value={rule.targetType}
-                onChange={(e) => setRule({ ...rule, targetType: Number(e.target.value) })}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white"
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] uppercase text-zinc-400 font-bold block">
+                  Target Loads & Lights:
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllRelays}
+                    className="text-[9px] text-cyan-400 hover:text-cyan-300 font-bold underline cursor-pointer"
+                  >
+                    All Relays
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAllRelays}
+                    className="text-[9px] text-zinc-400 hover:text-zinc-300 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* 4 Relays Multi-Select Grid */}
+              <div className="grid grid-cols-4 gap-1.5 mb-1.5">
+                {[0, 1, 2, 3].map((rIdx) => {
+                  const isSelected = Boolean((rule.relayMask ?? 0) & (1 << rIdx));
+                  return (
+                    <button
+                      key={rIdx}
+                      type="button"
+                      onClick={() => toggleRelay(rIdx)}
+                      className={`py-1.5 rounded-lg text-center text-[10px] font-bold border transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-cyan-500/25 border-cyan-500 text-cyan-200 shadow-sm"
+                          : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                      }`}
+                    >
+                      CH{rIdx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* RGB LED Strip Toggle */}
+              <button
+                type="button"
+                onClick={toggleLedTarget}
+                className={`w-full py-1.5 px-2.5 rounded-lg flex items-center justify-between text-[11px] font-bold border transition-all cursor-pointer ${
+                  rule.ledTarget
+                    ? "bg-purple-500/25 border-purple-500 text-purple-200 shadow-sm"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300"
+                }`}
               >
-                <option value={0}>CH1 (Relay 1)</option>
-                <option value={1}>CH2 (Relay 2)</option>
-                <option value={2}>CH3 (Relay 3)</option>
-                <option value={3}>CH4 (Relay 4)</option>
-                <option value={4}>All 4 Relays</option>
-                <option value={5}>RGB Strip</option>
-              </select>
+                <span className="flex items-center gap-1.5">
+                  <span>✨ RGB Strip</span>
+                  {rule.ledTarget && (
+                    <span
+                      className="w-2.5 h-2.5 rounded-full inline-block border border-white/50"
+                      style={{ backgroundColor: `rgb(${rule.rgbR ?? 0}, ${rule.rgbG ?? 180}, ${rule.rgbB ?? 255})` }}
+                    />
+                  )}
+                </span>
+                <span className="text-[9px] uppercase tracking-wider font-mono">
+                  {rule.ledTarget ? "Included" : "Excluded"}
+                </span>
+              </button>
             </div>
           </div>
 
           {/* Action */}
           <div>
             <label className="text-[10px] uppercase text-zinc-400 font-bold block mb-1">
-              Action to Execute:
+              Action to Execute on Targets:
             </label>
-            {rule.targetType === 5 ? (
-              <select
-                value={rule.targetAction}
-                onChange={(e) => setRule({ ...rule, targetAction: Number(e.target.value) })}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-white"
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRule({ ...rule, targetAction: 1 })}
+                className={`p-1.5 rounded border text-center transition-all cursor-pointer text-[11px] ${
+                  rule.targetAction === 1
+                    ? "bg-emerald-500/25 border-emerald-500 text-emerald-200 font-bold"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                }`}
               >
-                <option value={0}>Turn RGB OFF</option>
-                <option value={1}>Solid Color</option>
-                <option value={2}>Breathe (Fade)</option>
-                <option value={3}>Rainbow Glow</option>
-                <option value={15}>Aurora Wave</option>
-              </select>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRule({ ...rule, targetAction: 1 })}
-                  className={`p-1.5 rounded border text-center transition-all cursor-pointer ${
-                    rule.targetAction === 1
-                      ? "bg-emerald-500/25 border-emerald-500 text-emerald-200 font-bold"
-                      : "bg-zinc-900 border-zinc-800 text-zinc-400"
-                  }`}
-                >
-                  Turn ON
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRule({ ...rule, targetAction: 0 })}
-                  className={`p-1.5 rounded border text-center transition-all cursor-pointer ${
-                    rule.targetAction === 0
-                      ? "bg-rose-500/25 border-rose-500 text-rose-200 font-bold"
-                      : "bg-zinc-900 border-zinc-800 text-zinc-400"
-                  }`}
-                >
-                  Turn OFF
-                </button>
+                Turn Selected ON
+              </button>
+              <button
+                type="button"
+                onClick={() => setRule({ ...rule, targetAction: 0 })}
+                className={`p-1.5 rounded border text-center transition-all cursor-pointer text-[11px] ${
+                  rule.targetAction === 0
+                    ? "bg-rose-500/25 border-rose-500 text-rose-200 font-bold"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                }`}
+              >
+                Turn Selected OFF
+              </button>
+            </div>
+
+            {/* RGB Color & Brightness Customization if LED is active and turning ON */}
+            {rule.ledTarget && rule.targetAction === 1 && (
+              <div className="mt-2 p-2 rounded-lg bg-zinc-900/80 border border-zinc-800 space-y-2">
+                <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                  <span className="font-bold">RGB Light Color:</span>
+                  <div className="flex gap-1.5">
+                    {[
+                      { r: 0, g: 240, b: 255, label: "Cyan" },
+                      { r: 168, g: 85, b: 247, label: "Purple" },
+                      { r: 16, g: 185, b: 129, label: "Green" },
+                      { r: 245, g: 158, b: 11, label: "Amber" },
+                      { r: 244, g: 63, b: 94, label: "Rose" },
+                      { r: 255, g: 245, b: 220, label: "Warm" },
+                    ].map((col) => (
+                      <button
+                        key={col.label}
+                        type="button"
+                        onClick={() => setRule({ ...rule, rgbR: col.r, rgbG: col.g, rgbB: col.b })}
+                        className="w-4 h-4 rounded-full border border-white/40 active:scale-95 cursor-pointer"
+                        style={{ backgroundColor: `rgb(${col.r}, ${col.g}, ${col.b})` }}
+                        title={col.label}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-zinc-400">Bri:</label>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    value={rule.rgbBri ?? 80}
+                    onChange={(e) => setRule({ ...rule, rgbBri: Number(e.target.value) })}
+                    className="flex-1 accent-cyan-500 h-1 bg-zinc-700 rounded-lg cursor-pointer"
+                  />
+                  <span className="text-[10px] text-cyan-300 font-bold w-7 text-right">
+                    {rule.rgbBri ?? 80}%
+                  </span>
+                </div>
               </div>
             )}
           </div>

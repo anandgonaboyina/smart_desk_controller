@@ -214,6 +214,14 @@ wss.on("connection", (ws, req) => {
 
         console.log(`[DEVICE AUTH] ESP32 Device registered: "${deviceId}" (User: ${userId || "default"}, Password Protected: ${Boolean(dev.password && dev.password.length > 0)})`);
 
+        // Compute IST (UTC + 5:30) time for ESP32 hardware clock sync
+        const nowUtc = Date.now();
+        const istDate = new Date(nowUtc + 5.5 * 3600 * 1000);
+        const h = istDate.getUTCHours();
+        const m = istDate.getUTCMinutes();
+        const s = istDate.getUTCSeconds();
+        const dow = istDate.getUTCDay();
+
         ws.send(
           JSON.stringify({
             type: "auth_res",
@@ -222,6 +230,11 @@ wss.on("connection", (ws, req) => {
             deviceId,
             remoteModeEnabled: dev.remoteModeEnabled,
             cachedState: dev.state,
+            h,
+            m,
+            s,
+            dow,
+            epoch: Math.floor(nowUtc / 1000),
           })
         );
 
@@ -296,6 +309,7 @@ wss.on("connection", (ws, req) => {
         if (msg.deviceName) dev.state.deviceName = msg.deviceName;
         if (msg.stripLen !== undefined) dev.state.stripLen = msg.stripLen;
         if (msg.matrix) dev.state.matrix = msg.matrix;
+        if (msg.schedules) dev.state.schedules = msg.schedules;
 
         // Broadcast directly to authorized clients watching this device
         broadcastToDeviceClients(meta.deviceId, {
@@ -368,6 +382,14 @@ wss.on("connection", (ws, req) => {
         msg.type === "set_buzzer" ||
         msg.type === "buzzer_beep" ||
         msg.type === "test_buzzer" ||
+        msg.type === "schedule_set" ||
+        msg.type === "set_schedule" ||
+        msg.type === "schedule_delete" ||
+        msg.type === "delete_schedule" ||
+        msg.type === "schedule_test" ||
+        msg.type === "test_schedule" ||
+        msg.type === "time_sync" ||
+        msg.type === "sync_time" ||
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||

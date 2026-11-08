@@ -1472,6 +1472,125 @@ static void handleApiCloudCredentials() {
     s_webServer.send(200, "application/json", res);
 }
 
+static void handleApiSchedulesGet() {
+    setCorsHeaders();
+    String json = "{\"schedules\":[";
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+        if (i > 0) json += ",";
+        json += "{\"id\":" + String(i) + ",";
+        json += "\"enabled\":" + String(s_schedules[i].enabled ? "true" : "false") + ",";
+        json += "\"daysMask\":" + String(s_schedules[i].daysMask) + ",";
+        json += "\"startHour\":" + String(s_schedules[i].startHour) + ",";
+        json += "\"startMin\":" + String(s_schedules[i].startMin) + ",";
+        json += "\"stopType\":" + String(s_schedules[i].stopType) + ",";
+        json += "\"durationMin\":" + String(s_schedules[i].durationMin) + ",";
+        json += "\"stopHour\":" + String(s_schedules[i].stopHour) + ",";
+        json += "\"stopMin\":" + String(s_schedules[i].stopMin) + ",";
+        json += "\"targetType\":" + String(s_schedules[i].targetType) + ",";
+        json += "\"targetAction\":" + String(s_schedules[i].targetAction) + ",";
+        json += "\"relayMask\":" + String(s_schedules[i].relayMask) + ",";
+        json += "\"ledTarget\":" + String(s_schedules[i].ledTarget ? "true" : "false") + ",";
+        json += "\"rgbR\":" + String(s_schedules[i].rgbR) + ",";
+        json += "\"rgbG\":" + String(s_schedules[i].rgbG) + ",";
+        json += "\"rgbB\":" + String(s_schedules[i].rgbB) + ",";
+        json += "\"rgbBri\":" + String(s_schedules[i].rgbBri) + "}";
+    }
+    json += "]}";
+    s_webServer.send(200, "application/json", json);
+}
+
+static void handleApiSchedulesSave() {
+    setCorsHeaders();
+    if (!s_webServer.hasArg("plain")) {
+        s_webServer.send(400, "application/json", "{\"error\":\"Missing body\"}");
+        return;
+    }
+    String body = s_webServer.arg("plain");
+    const char* payload = body.c_str();
+
+    int id = getJsonInt(payload, "id", -1);
+    if (id >= 0 && id < MAX_SCHEDULES) {
+        if (body.indexOf("\"enabled\":") >= 0) {
+            s_schedules[id].enabled = getJsonBool(payload, "enabled", s_schedules[id].enabled);
+        }
+        s_schedules[id].daysMask     = (uint8_t)getJsonInt(payload, "daysMask", s_schedules[id].daysMask);
+        s_schedules[id].startHour    = (uint8_t)getJsonInt(payload, "startHour", s_schedules[id].startHour);
+        s_schedules[id].startMin     = (uint8_t)getJsonInt(payload, "startMin", s_schedules[id].startMin);
+        s_schedules[id].stopType     = (uint8_t)getJsonInt(payload, "stopType", s_schedules[id].stopType);
+        s_schedules[id].durationMin  = (uint16_t)getJsonInt(payload, "durationMin", s_schedules[id].durationMin);
+        s_schedules[id].stopHour     = (uint8_t)getJsonInt(payload, "stopHour", s_schedules[id].stopHour);
+        s_schedules[id].stopMin      = (uint8_t)getJsonInt(payload, "stopMin", s_schedules[id].stopMin);
+        s_schedules[id].targetType   = (uint8_t)getJsonInt(payload, "targetType", s_schedules[id].targetType);
+        s_schedules[id].targetAction = (uint8_t)getJsonInt(payload, "targetAction", s_schedules[id].targetAction);
+
+        int rMask = getJsonInt(payload, "relayMask", -1);
+        if (rMask >= 0) {
+            s_schedules[id].relayMask = (uint8_t)rMask;
+        } else if (s_schedules[id].targetType < RELAY_COUNT) {
+            s_schedules[id].relayMask = (1 << s_schedules[id].targetType);
+        } else if (s_schedules[id].targetType == 4) {
+            s_schedules[id].relayMask = 0x0F;
+        }
+
+        if (body.indexOf("\"ledTarget\":") >= 0) {
+            s_schedules[id].ledTarget = getJsonBool(payload, "ledTarget", s_schedules[id].ledTarget);
+        } else if (s_schedules[id].targetType == 5) {
+            s_schedules[id].ledTarget = true;
+        }
+
+        s_schedules[id].rgbR   = (uint8_t)getJsonInt(payload, "rgbR", s_schedules[id].rgbR);
+        s_schedules[id].rgbG   = (uint8_t)getJsonInt(payload, "rgbG", s_schedules[id].rgbG);
+        s_schedules[id].rgbB   = (uint8_t)getJsonInt(payload, "rgbB", s_schedules[id].rgbB);
+        s_schedules[id].rgbBri = (uint8_t)getJsonInt(payload, "rgbBri", s_schedules[id].rgbBri);
+        s_schedules[id].lastFiredDayMinute = 0xFFFF;
+
+        saveScheduleRuleToNVS((uint8_t)id);
+        broadcastCloudState();
+        s_webServer.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+    s_webServer.send(400, "application/json", "{\"error\":\"Invalid rule ID\"}");
+}
+
+static void handleApiSchedulesDelete() {
+    setCorsHeaders();
+    if (!s_webServer.hasArg("plain")) {
+        s_webServer.send(400, "application/json", "{\"error\":\"Missing body\"}");
+        return;
+    }
+    String body = s_webServer.arg("plain");
+    int id = getJsonInt(body.c_str(), "id", -1);
+    if (id >= 0 && id < MAX_SCHEDULES) {
+        s_schedules[id].enabled = false;
+        saveScheduleRuleToNVS((uint8_t)id);
+        broadcastCloudState();
+        s_webServer.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+    s_webServer.send(400, "application/json", "{\"error\":\"Invalid rule ID\"}");
+}
+
+static void handleApiSchedulesTest() {
+    setCorsHeaders();
+    if (!s_webServer.hasArg("plain")) {
+        s_webServer.send(400, "application/json", "{\"error\":\"Missing body\"}");
+        return;
+    }
+    String body = s_webServer.arg("plain");
+    int id = getJsonInt(body.c_str(), "id", -1);
+    bool isStart = true;
+    if (body.indexOf("\"isStart\":") >= 0) {
+        isStart = getJsonBool(body.c_str(), "isStart", true);
+    }
+    if (id >= 0 && id < MAX_SCHEDULES) {
+        uint8_t act = isStart ? s_schedules[id].targetAction : ((s_schedules[id].targetAction == 1) ? 0 : 1);
+        executeScheduleAction((uint8_t)id, act);
+        s_webServer.send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+    s_webServer.send(400, "application/json", "{\"error\":\"Invalid rule ID\"}");
+}
+
 static void handleCaptiveRedirect() {
     s_webServer.sendHeader("Location", "http://192.168.4.1/", true);
     s_webServer.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -1697,6 +1816,14 @@ static void initWifiSubsystem() {
     s_webServer.on("/api/wifi/logs", HTTP_OPTIONS, handleOptions);
     s_webServer.on("/api/cloud/credentials", HTTP_POST, handleApiCloudCredentials);
     s_webServer.on("/api/cloud/credentials", HTTP_OPTIONS, handleOptions);
+    s_webServer.on("/api/schedules", HTTP_GET, handleApiSchedulesGet);
+    s_webServer.on("/api/schedules", HTTP_OPTIONS, handleOptions);
+    s_webServer.on("/api/schedules/save", HTTP_POST, handleApiSchedulesSave);
+    s_webServer.on("/api/schedules/save", HTTP_OPTIONS, handleOptions);
+    s_webServer.on("/api/schedules/delete", HTTP_POST, handleApiSchedulesDelete);
+    s_webServer.on("/api/schedules/delete", HTTP_OPTIONS, handleOptions);
+    s_webServer.on("/api/schedules/test", HTTP_POST, handleApiSchedulesTest);
+    s_webServer.on("/api/schedules/test", HTTP_OPTIONS, handleOptions);
 
     // Captive Portal Detection Endpoints (Android, iOS, Windows)
     s_webServer.on("/generate_204", handleCaptiveRedirect);

@@ -161,10 +161,17 @@ export default function CloudHandshakeModal({
       show: true,
       success: true,
       title: "PWA Connected to Target Desk!",
-      message: `Browser WebSocket reconnected to monitor Device ID '${d}' under Owner '${u}'.`,
+      message: `Browser WebSocket connected to monitor Device ID '${d}' under Owner '${u}'. Refreshing app to apply freshly connected state...`,
       details: `Target Device ID: ${d} • User Account: ${u} • Password: ${p ? "Configured" : "None"}`,
     });
-    onToast?.(`PWA monitoring device '${d}'`, "success");
+    onToast?.(`PWA monitoring device '${d}'. Refreshing...`, "success");
+
+    // Automatically refresh the entire PWA to load clean WebSocket & device state
+    setTimeout(() => {
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+    }, 500);
   };
 
   // Action 2: Flash new IDs into physical ESP32 Hardware (via BLE with hardware ACK)

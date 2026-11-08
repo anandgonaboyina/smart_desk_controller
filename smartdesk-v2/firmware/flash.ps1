@@ -138,4 +138,5 @@ try {
     }
 }
 
+Pause
 Exit-Script 0

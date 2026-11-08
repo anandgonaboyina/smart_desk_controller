@@ -1951,7 +1951,16 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   /* Schedule Handlers */
   const saveScheduleRule = useCallback(
     (rule: ScheduleRule) => {
-      const payload = new Uint8Array(16);
+      const relayMask = rule.relayMask !== undefined
+        ? rule.relayMask
+        : (rule.targetType === 4 ? 0x0F : rule.targetType < 4 ? (1 << rule.targetType) : 0);
+      const ledTarget = rule.ledTarget !== undefined
+        ? rule.ledTarget
+        : (rule.targetType === 5);
+
+      const normalizedRule: ScheduleRule = { ...rule, relayMask, ledTarget };
+
+      const payload = new Uint8Array(18);
       payload[0] = 0xFA;
       payload[1] = rule.id;
       payload[2] = rule.enabled ? 1 : 0;
@@ -1968,17 +1977,19 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         payload[8] = 0;
         payload[9] = rule.stopMin;
       }
-      payload[10] = rule.targetType;
+      payload[10] = rule.targetType ?? 6;
       payload[11] = rule.targetAction;
       payload[12] = rule.rgbR ?? 0;
       payload[13] = rule.rgbG ?? 180;
       payload[14] = rule.rgbB ?? 255;
       payload[15] = rule.rgbBri ?? 50;
+      payload[16] = relayMask;
+      payload[17] = ledTarget ? 1 : 0;
 
       setSchedules((prev) => {
         const next = prev.some((s) => s.id === rule.id)
-          ? prev.map((s) => (s.id === rule.id ? rule : s))
-          : [...prev, rule];
+          ? prev.map((s) => (s.id === rule.id ? normalizedRule : s))
+          : [...prev, normalizedRule];
         if (typeof window !== "undefined") {
           localStorage.setItem("smartdesk_schedules", JSON.stringify(next));
         }

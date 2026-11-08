@@ -133,6 +133,11 @@ extern void buzzerBeepTimerEnd();
 extern void saveMatrixConfigToNVS();
 extern void initMatrixHardware();
 extern void savePresenceConfigToNVS();
+extern ScheduleRule s_schedules[MAX_SCHEDULES];
+extern void saveScheduleRuleToNVS(uint8_t id);
+extern void executeScheduleAction(uint8_t ruleIdx, uint8_t action);
+extern TimeSync s_timeSync;
+extern void saveTimeBaseToNVS();
 
 /* ── Broadcast Hardware State to Cloud Relay ─────────────────────────────── */
 inline void broadcastCloudState() {
@@ -151,8 +156,33 @@ inline void broadcastCloudState() {
     uint16_t rgbRemMin = (s_rgbTimerEndMs > 0 && millis() < s_rgbTimerEndMs)
         ? (uint16_t)(((s_rgbTimerEndMs - millis()) + 59999UL) / 60000UL) : 0;
 
+    // Serialize Schedules Array for Cloud Sync
+    char schedJson[1400];
+    int sPos = snprintf(schedJson, sizeof(schedJson), "[");
+    for (int i = 0; i < MAX_SCHEDULES; i++) {
+        sPos += snprintf(schedJson + sPos, sizeof(schedJson) - sPos,
+            "%s{\"id\":%d,\"enabled\":%s,\"daysMask\":%u,\"startHour\":%u,\"startMin\":%u,"
+            "\"stopType\":%u,\"durationMin\":%u,\"stopHour\":%u,\"stopMin\":%u,"
+            "\"targetType\":%u,\"targetAction\":%u,\"relayMask\":%u,\"ledTarget\":%s,"
+            "\"rgbR\":%u,\"rgbG\":%u,\"rgbB\":%u,\"rgbBri\":%u}",
+            (i > 0) ? "," : "",
+            i, s_schedules[i].enabled ? "true" : "false", s_schedules[i].daysMask,
+            s_schedules[i].startHour, s_schedules[i].startMin,
+            s_schedules[i].stopType, s_schedules[i].durationMin,
+            s_schedules[i].stopHour, s_schedules[i].stopMin,
+            s_schedules[i].targetType, s_schedules[i].targetAction,
+            s_schedules[i].relayMask, s_schedules[i].ledTarget ? "true" : "false",
+            s_schedules[i].rgbR, s_schedules[i].rgbG, s_schedules[i].rgbB, s_schedules[i].rgbBri
+        );
+        if (sPos >= (int)sizeof(schedJson) - 10) break;
+    }
+    if (sPos < (int)sizeof(schedJson) - 2) {
+        schedJson[sPos++] = ']';
+        schedJson[sPos] = '\0';
+    }
+
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
-    char msg[2000];
+    static char msg[8192];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\",\"deviceName\":\"%s\",\"stripLen\":%u,"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
@@ -169,6 +199,7 @@ inline void broadcastCloudState() {
         "{\"name\":\"%s\",\"wiring\":%u}],"
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
+        "\"schedules\":%s,"
         "\"state\":{\"deviceName\":\"%s\",\"stripLen\":%u,"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
         "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
@@ -197,6 +228,7 @@ inline void broadcastCloudState() {
         s_relayConfigs[3].name, s_relayConfigs[3].wiring,
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd, rgbRemMin,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
+        schedJson,
         s_deviceName, s_stripLen,
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
@@ -214,8 +246,8 @@ inline void broadcastCloudState() {
 
     if (len > 0 && len < (int)sizeof(msg)) {
         s_cloudWs.sendTXT(msg);
-        Serial.printf(">>> [CLOUD WS] State broadcast sent (%d bytes): R1=%d R2=%d R3=%d R4=%d\n",
-                      len, s_relayLoads[0], s_relayLoads[1], s_relayLoads[2], s_relayLoads[3]);
+        Serial.printf(">>> [CLOUD WS] State broadcast sent (%d bytes): R1=%d R2=%d R3=%d R4=%d, LED=%d, Temp=%.1f\n",
+                      len, s_relayLoads[0], s_relayLoads[1], s_relayLoads[2], s_relayLoads[3], s_ledMode, s_tempC);
     } else {
         Serial.printf(">>> [CLOUD WS ERROR] State payload truncated! (len=%d, cap=%d)\n", len, (int)sizeof(msg));
     }
@@ -287,6 +319,21 @@ static void handleCloudMessage(const char* payload, size_t length) {
         if (ok) {
             s_cloudAuthenticated = true;
             Serial.printf(">>> [CLOUD WS] Device authenticated successfully as '%s' (User: %s)!\n", s_cloudDeviceId, s_cloudUser);
+
+            // Auto-sync hardware clock if time is provided by Cloud Relay
+            int h = getJsonInt(payload, "h", -1);
+            int m = getJsonInt(payload, "m", -1);
+            int s = getJsonInt(payload, "s", 0);
+            int dow = getJsonInt(payload, "dow", -1);
+            if (h >= 0 && m >= 0 && dow >= 0) {
+                s_timeSync.synced = true;
+                s_timeSync.baseLocalSec = ((uint32_t)dow * 86400UL) + ((uint32_t)h * 3600UL) + ((uint32_t)m * 60UL) + s;
+                s_timeSync.syncMillis = millis();
+                saveTimeBaseToNVS();
+                notifyEnvState();
+                Serial.printf(">>> [CLOUD WS] Clock auto-synchronized from Cloud: %02d:%02d:%02d (DOW=%d)\n", h, m, s, dow);
+            }
+
             // PUSH CURRENT HARDWARE STATE IMMEDIATELY UPON AUTHENTICATION
             broadcastCloudState();
         } else {
@@ -619,6 +666,113 @@ static void handleCloudMessage(const char* payload, size_t length) {
         buzzerBeepTimerEnd();
         return;
     }
+
+    // 16. Schedule Save / Update Command over Cloud WS
+    if (strcmp(cmd, "schedule_set") == 0 || strcmp(cmd, "set_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            if (strstr(payload, "\"enabled\":")) {
+                s_schedules[id].enabled = getJsonBool(payload, "enabled", s_schedules[id].enabled);
+            }
+            s_schedules[id].daysMask     = (uint8_t)getJsonInt(payload, "daysMask", s_schedules[id].daysMask);
+            s_schedules[id].startHour    = (uint8_t)getJsonInt(payload, "startHour", s_schedules[id].startHour);
+            s_schedules[id].startMin     = (uint8_t)getJsonInt(payload, "startMin", s_schedules[id].startMin);
+            s_schedules[id].stopType     = (uint8_t)getJsonInt(payload, "stopType", s_schedules[id].stopType);
+            s_schedules[id].durationMin  = (uint16_t)getJsonInt(payload, "durationMin", s_schedules[id].durationMin);
+            s_schedules[id].stopHour     = (uint8_t)getJsonInt(payload, "stopHour", s_schedules[id].stopHour);
+            s_schedules[id].stopMin      = (uint8_t)getJsonInt(payload, "stopMin", s_schedules[id].stopMin);
+            s_schedules[id].targetType   = (uint8_t)getJsonInt(payload, "targetType", s_schedules[id].targetType);
+            s_schedules[id].targetAction = (uint8_t)getJsonInt(payload, "targetAction", s_schedules[id].targetAction);
+
+            int rMask = getJsonInt(payload, "relayMask", -1);
+            if (rMask >= 0) {
+                s_schedules[id].relayMask = (uint8_t)rMask;
+            } else if (s_schedules[id].targetType < RELAY_COUNT) {
+                s_schedules[id].relayMask = (1 << s_schedules[id].targetType);
+            } else if (s_schedules[id].targetType == 4) {
+                s_schedules[id].relayMask = 0x0F;
+            }
+
+            if (strstr(payload, "\"ledTarget\":")) {
+                s_schedules[id].ledTarget = getJsonBool(payload, "ledTarget", s_schedules[id].ledTarget);
+            } else if (s_schedules[id].targetType == 5) {
+                s_schedules[id].ledTarget = true;
+            }
+
+            s_schedules[id].rgbR   = (uint8_t)getJsonInt(payload, "rgbR", s_schedules[id].rgbR);
+            s_schedules[id].rgbG   = (uint8_t)getJsonInt(payload, "rgbG", s_schedules[id].rgbG);
+            s_schedules[id].rgbB   = (uint8_t)getJsonInt(payload, "rgbB", s_schedules[id].rgbB);
+            s_schedules[id].rgbBri = (uint8_t)getJsonInt(payload, "rgbBri", s_schedules[id].rgbBri);
+            s_schedules[id].lastFiredDayMinute = 0xFFFF;
+
+            saveScheduleRuleToNVS((uint8_t)id);
+            broadcastCloudState();
+            Serial.printf(">>> [CLOUD WS] Saved Schedule Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Relays=0x%02X, LED=%d, Act=%d)\n",
+                          id + 1, s_schedules[id].enabled, s_schedules[id].daysMask,
+                          s_schedules[id].startHour, s_schedules[id].startMin,
+                          s_schedules[id].relayMask, s_schedules[id].ledTarget ? 1 : 0, s_schedules[id].targetAction);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_set\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 17. Schedule Delete / Disable Command over Cloud WS
+    if (strcmp(cmd, "schedule_delete") == 0 || strcmp(cmd, "delete_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            s_schedules[id].enabled = false;
+            saveScheduleRuleToNVS((uint8_t)id);
+            broadcastCloudState();
+            Serial.printf(">>> [CLOUD WS] Disabled Schedule Rule %d\n", id + 1);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_delete\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 18. Schedule Test Command over Cloud WS
+    if (strcmp(cmd, "schedule_test") == 0 || strcmp(cmd, "test_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        bool isStart = true;
+        if (strstr(payload, "\"isStart\":")) {
+            isStart = getJsonBool(payload, "isStart", true);
+        }
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            uint8_t act = isStart ? s_schedules[id].targetAction : ((s_schedules[id].targetAction == 1) ? 0 : 1);
+            executeScheduleAction((uint8_t)id, act);
+            Serial.printf(">>> [CLOUD WS] Tested Schedule Rule %d (Start=%d)\n", id + 1, isStart ? 1 : 0);
+        }
+        return;
+    }
+
+    // 19. Time Sync Command over Cloud WS
+    if (strcmp(cmd, "time_sync") == 0 || strcmp(cmd, "sync_time") == 0) {
+        int h = getJsonInt(payload, "h", -1);
+        int m = getJsonInt(payload, "m", -1);
+        int s = getJsonInt(payload, "s", 0);
+        int dow = getJsonInt(payload, "dow", -1);
+        if (h >= 0 && m >= 0 && dow >= 0) {
+            s_timeSync.synced = true;
+            s_timeSync.baseLocalSec = ((uint32_t)dow * 86400UL) + ((uint32_t)h * 3600UL) + ((uint32_t)m * 60UL) + s;
+            s_timeSync.syncMillis = millis();
+            saveTimeBaseToNVS();
+            notifyEnvState();
+            Serial.printf(">>> [CLOUD WS] Clock synchronized: %02d:%02d:%02d (DOW=%d)\n", h, m, s, dow);
+            broadcastCloudState();
+        }
+        return;
+    }
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */
@@ -710,7 +864,7 @@ static inline void applyAndRestartCloudCredentials(const char* newDevId, const c
         prefs.begin("desk_cfg", false);
         prefs.putString("dev_name", s_deviceName);
         prefs.end();
-        initBleServer(s_deviceName);
+        // Do NOT call initBleServer() here as reinitializing BLE wipes active GATT client sessions
     }
 
     if (newDevId || newUser || newPass) {

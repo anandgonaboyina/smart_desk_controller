@@ -285,7 +285,7 @@ struct TimeSync {
     uint32_t baseLocalSec;
     uint32_t syncMillis;
 };
-static TimeSync s_timeSync = { false, 0, 0 };
+TimeSync s_timeSync = { false, 0, 0 };
 
 static void getLocalTime(uint8_t* outH, uint8_t* outM, uint8_t* outS, uint8_t* outDOW) {
     if (!s_timeSync.synced) {
@@ -312,15 +312,17 @@ struct ScheduleRule {
     uint16_t durationMin;
     uint8_t  stopHour;
     uint8_t  stopMin;
-    uint8_t  targetType;
-    uint8_t  targetAction;
+    uint8_t  targetType;   // 0..3=CH1..CH4, 4=All Relays, 5=RGB Strip, 6=Multi-Target
+    uint8_t  targetAction; // 1=ON, 0=OFF
+    uint8_t  relayMask;    // Bits 0..3: Relays 1..4 (e.g. 0x01=CH1, 0x0F=All)
+    bool     ledTarget;    // true = include RGB LED strip in this schedule
     uint8_t  rgbR;
     uint8_t  rgbG;
     uint8_t  rgbB;
     uint8_t  rgbBri;
     uint16_t lastFiredDayMinute;
 };
-static ScheduleRule s_schedules[MAX_SCHEDULES];
+ScheduleRule s_schedules[MAX_SCHEDULES];
 
 /* ── Include BLE Plumbing ────────────────────────────────────────────────── */
 #include "smartdesk_ble.h"
@@ -695,7 +697,7 @@ void buildEnvPayload(uint8_t* outPayload) {
 static void loadSchedulesFromNVS() {
     s_prefs.begin("desk_sched", true);
     for (int i = 0; i < MAX_SCHEDULES; i++) {
-        char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16];
+        char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kRM[16], kLT[16], kR[16], kG[16], kB[16], kBri[16];
         snprintf(kEn, sizeof(kEn), "en_%d", i);
         snprintf(kDays, sizeof(kDays), "dy_%d", i);
         snprintf(kSH, sizeof(kSH), "sh_%d", i);
@@ -706,6 +708,8 @@ static void loadSchedulesFromNVS() {
         snprintf(kEM, sizeof(kEM), "em_%d", i);
         snprintf(kTT, sizeof(kTT), "tt_%d", i);
         snprintf(kTA, sizeof(kTA), "ta_%d", i);
+        snprintf(kRM, sizeof(kRM), "rm_%d", i);
+        snprintf(kLT, sizeof(kLT), "lt_%d", i);
         snprintf(kR, sizeof(kR), "r_%d", i);
         snprintf(kG, sizeof(kG), "g_%d", i);
         snprintf(kB, sizeof(kB), "b_%d", i);
@@ -721,29 +725,88 @@ static void loadSchedulesFromNVS() {
         s_schedules[i].stopMin            = s_prefs.getUChar(kEM, 0);
         s_schedules[i].targetType         = s_prefs.getUChar(kTT, 0);
         s_schedules[i].targetAction       = s_prefs.getUChar(kTA, 1);
+        s_schedules[i].relayMask          = s_prefs.getUChar(kRM, 0);
+        s_schedules[i].ledTarget          = s_prefs.getBool(kLT, false);
         s_schedules[i].rgbR               = s_prefs.getUChar(kR, 0);
         s_schedules[i].rgbG               = s_prefs.getUChar(kG, 240);
         s_schedules[i].rgbB               = s_prefs.getUChar(kB, 255);
         s_schedules[i].rgbBri             = s_prefs.getUChar(kBri, 100);
         s_schedules[i].lastFiredDayMinute = 0xFFFF;
+
+        // Backward compatibility fallback if multi-target not explicitly set:
+        if (s_schedules[i].relayMask == 0 && !s_schedules[i].ledTarget) {
+            if (s_schedules[i].targetType < RELAY_COUNT) {
+                s_schedules[i].relayMask = (1 << s_schedules[i].targetType);
+            } else if (s_schedules[i].targetType == 4) {
+                s_schedules[i].relayMask = 0x0F;
+            } else if (s_schedules[i].targetType == 5) {
+                s_schedules[i].ledTarget = true;
+            }
+        }
     }
     s_prefs.end();
 }
 
-static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
+void saveScheduleRuleToNVS(uint8_t id) {
+    if (id >= MAX_SCHEDULES) return;
+    s_prefs.begin("desk_sched", false);
+    char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kRM[16], kLT[16], kR[16], kG[16], kB[16], kBri[16];
+    snprintf(kEn, sizeof(kEn), "en_%d", id);
+    snprintf(kDays, sizeof(kDays), "dy_%d", id);
+    snprintf(kSH, sizeof(kSH), "sh_%d", id);
+    snprintf(kSM, sizeof(kSM), "sm_%d", id);
+    snprintf(kST, sizeof(kST), "st_%d", id);
+    snprintf(kDur, sizeof(kDur), "du_%d", id);
+    snprintf(kEH, sizeof(kEH), "eh_%d", id);
+    snprintf(kEM, sizeof(kEM), "em_%d", id);
+    snprintf(kTT, sizeof(kTT), "tt_%d", id);
+    snprintf(kTA, sizeof(kTA), "ta_%d", id);
+    snprintf(kRM, sizeof(kRM), "rm_%d", id);
+    snprintf(kLT, sizeof(kLT), "lt_%d", id);
+    snprintf(kR, sizeof(kR), "r_%d", id);
+    snprintf(kG, sizeof(kG), "g_%d", id);
+    snprintf(kB, sizeof(kB), "b_%d", id);
+    snprintf(kBri, sizeof(kBri), "br_%d", id);
+
+    s_prefs.putBool(kEn, s_schedules[id].enabled);
+    s_prefs.putUChar(kDays, s_schedules[id].daysMask);
+    s_prefs.putUChar(kSH, s_schedules[id].startHour);
+    s_prefs.putUChar(kSM, s_schedules[id].startMin);
+    s_prefs.putUChar(kST, s_schedules[id].stopType);
+    s_prefs.putUShort(kDur, s_schedules[id].durationMin);
+    s_prefs.putUChar(kEH, s_schedules[id].stopHour);
+    s_prefs.putUChar(kEM, s_schedules[id].stopMin);
+    s_prefs.putUChar(kTT, s_schedules[id].targetType);
+    s_prefs.putUChar(kTA, s_schedules[id].targetAction);
+    s_prefs.putUChar(kRM, s_schedules[id].relayMask);
+    s_prefs.putBool(kLT, s_schedules[id].ledTarget);
+    s_prefs.putUChar(kR, s_schedules[id].rgbR);
+    s_prefs.putUChar(kG, s_schedules[id].rgbG);
+    s_prefs.putUChar(kB, s_schedules[id].rgbB);
+    s_prefs.putUChar(kBri, s_schedules[id].rgbBri);
+    s_prefs.end();
+}
+
+void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
     if (ruleIdx >= MAX_SCHEDULES) return;
     const ScheduleRule& rule = s_schedules[ruleIdx];
-    uint8_t targetType = rule.targetType;
-    Serial.printf(">>> [SCHEDULE TRIGGER] Rule %d, Target=%d, Action=%d\n", ruleIdx, targetType, action);
-    if (targetType < RELAY_COUNT) {
-        setRelayLoad(targetType, action, "Schedule Rule");
-        notifyRelayState();
-    } else if (targetType == 4) { // All Relays
-        for (int r = 0; r < RELAY_COUNT; r++) {
-            setRelayLoad(r, action, "Schedule All");
+    Serial.printf(">>> [SCHEDULE TRIGGER] Rule %d, RelayMask=0x%02X, LedTarget=%d, Action=%d\n",
+                  ruleIdx + 1, rule.relayMask, rule.ledTarget ? 1 : 0, action);
+
+    // 1. Relays multi-load triggering
+    bool relayChanged = false;
+    for (int r = 0; r < RELAY_COUNT; r++) {
+        if (rule.relayMask & (1 << r)) {
+            setRelayLoad(r, action, "Schedule Rule");
+            relayChanged = true;
         }
+    }
+    if (relayChanged) {
         notifyRelayState();
-    } else if (targetType == 5) { // RGB Strip
+    }
+
+    // 2. RGB LED strip triggering
+    if (rule.ledTarget) {
         if (action == 1) {
             s_ledMode = 1; // Solid
             s_ledR   = rule.rgbR;
@@ -756,6 +819,11 @@ static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
         saveLedStateToNVS();
         notifyLedState();
     }
+
+    // 3. Sync Cloud State broadcast if Wi-Fi connected
+    if (relayChanged || rule.ledTarget) {
+        broadcastCloudState();
+    }
 }
 
 static void checkSchedules() {
@@ -766,6 +834,12 @@ static void checkSchedules() {
 
     uint16_t curDayMinute = ((uint16_t)curH * 60) + curM;
     uint8_t dayBit = (1 << (curDOW % 7)); // Bit 0 = Sun, Bit 1 = Mon ... Bit 6 = Sat
+
+    static uint32_t s_lastLogTickMs = 0;
+    if (millis() - s_lastLogTickMs >= 60000UL) {
+        s_lastLogTickMs = millis();
+        Serial.printf(">>> [CLOCK TICK] %02d:%02d:%02d (DOW=%d, DayMin=%d, Synced=1)\n", curH, curM, curS, curDOW, curDayMinute);
+    }
 
     for (int i = 0; i < MAX_SCHEDULES; i++) {
         if (!s_schedules[i].enabled) continue;
@@ -805,7 +879,7 @@ static void loadTimeBaseFromNVS() {
     s_prefs.end();
 }
 
-static void saveTimeBaseToNVS() {
+void saveTimeBaseToNVS() {
     s_prefs.begin("desk_time", false);
     s_prefs.putBool("synced", s_timeSync.synced);
     s_prefs.putUInt("base_sec", s_timeSync.baseLocalSec);
@@ -1522,56 +1596,48 @@ void loop() {
                         s_schedules[id].rgbB   = cmd.data[14];
                         s_schedules[id].rgbBri = cmd.data[15];
                     }
+
+                    // Multi-Target Support (Bytes 16 and 17 if available, otherwise fallback)
+                    if (cmd.len >= 18) {
+                        s_schedules[id].relayMask = cmd.data[16];
+                        s_schedules[id].ledTarget = (cmd.data[17] == 1);
+                    } else {
+                        if (s_schedules[id].targetType < RELAY_COUNT) {
+                            s_schedules[id].relayMask = (1 << s_schedules[id].targetType);
+                            s_schedules[id].ledTarget = false;
+                        } else if (s_schedules[id].targetType == 4) {
+                            s_schedules[id].relayMask = 0x0F;
+                            s_schedules[id].ledTarget = false;
+                        } else if (s_schedules[id].targetType == 5) {
+                            s_schedules[id].relayMask = 0x00;
+                            s_schedules[id].ledTarget = true;
+                        }
+                    }
+
                     s_schedules[id].lastFiredDayMinute = 0xFFFF;
+                    saveScheduleRuleToNVS(id);
+                    broadcastCloudState();
 
-                    s_prefs.begin("desk_sched", false);
-                    char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16];
-                    snprintf(kEn, sizeof(kEn), "en_%d", id);
-                    snprintf(kDays, sizeof(kDays), "dy_%d", id);
-                    snprintf(kSH, sizeof(kSH), "sh_%d", id);
-                    snprintf(kSM, sizeof(kSM), "sm_%d", id);
-                    snprintf(kST, sizeof(kST), "st_%d", id);
-                    snprintf(kDur, sizeof(kDur), "du_%d", id);
-                    snprintf(kEH, sizeof(kEH), "eh_%d", id);
-                    snprintf(kEM, sizeof(kEM), "em_%d", id);
-                    snprintf(kTT, sizeof(kTT), "tt_%d", id);
-                    snprintf(kTA, sizeof(kTA), "ta_%d", id);
-                    snprintf(kR, sizeof(kR), "r_%d", id);
-                    snprintf(kG, sizeof(kG), "g_%d", id);
-                    snprintf(kB, sizeof(kB), "b_%d", id);
-                    snprintf(kBri, sizeof(kBri), "br_%d", id);
-
-                    s_prefs.putBool(kEn, s_schedules[id].enabled);
-                    s_prefs.putUChar(kDays, s_schedules[id].daysMask);
-                    s_prefs.putUChar(kSH, s_schedules[id].startHour);
-                    s_prefs.putUChar(kSM, s_schedules[id].startMin);
-                    s_prefs.putUChar(kST, s_schedules[id].stopType);
-                    s_prefs.putUShort(kDur, s_schedules[id].durationMin);
-                    s_prefs.putUChar(kEH, s_schedules[id].stopHour);
-                    s_prefs.putUChar(kEM, s_schedules[id].stopMin);
-                    s_prefs.putUChar(kTT, s_schedules[id].targetType);
-                    s_prefs.putUChar(kTA, s_schedules[id].targetAction);
-                    s_prefs.putUChar(kR, s_schedules[id].rgbR);
-                    s_prefs.putUChar(kG, s_schedules[id].rgbG);
-                    s_prefs.putUChar(kB, s_schedules[id].rgbB);
-                    s_prefs.putUChar(kBri, s_schedules[id].rgbBri);
-                    s_prefs.end();
-
-                    Serial.printf(">>> [SCHEDULE] Saved Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Target=%d, Act=%d)\n",
-                                  id, s_schedules[id].enabled, s_schedules[id].daysMask,
+                    Serial.printf(">>> [BLE SCHEDULE] Saved Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Relays=0x%02X, LED=%d, Act=%d)\n",
+                                  id + 1, s_schedules[id].enabled, s_schedules[id].daysMask,
                                   s_schedules[id].startHour, s_schedules[id].startMin,
-                                  s_schedules[id].targetType, s_schedules[id].targetAction);
+                                  s_schedules[id].relayMask, s_schedules[id].ledTarget ? 1 : 0, s_schedules[id].targetAction);
                 }
             } else if (cmd.data[0] == 0xF9 && cmd.len >= 2) { // 0xF9: Delete/Disable Schedule Rule
                 uint8_t id = cmd.data[1];
                 if (id < MAX_SCHEDULES) {
                     s_schedules[id].enabled = false;
-                    s_prefs.begin("desk_sched", false);
-                    char kEn[16];
-                    snprintf(kEn, sizeof(kEn), "en_%d", id);
-                    s_prefs.putBool(kEn, false);
-                    s_prefs.end();
-                    Serial.printf(">>> [SCHEDULE] Disabled Rule %d\n", id);
+                    saveScheduleRuleToNVS(id);
+                    broadcastCloudState();
+                    Serial.printf(">>> [BLE SCHEDULE] Disabled Rule %d\n", id + 1);
+                }
+            } else if (cmd.data[0] == 0xF5 && cmd.len >= 2) { // 0xF5: Test Schedule Rule Trigger / Stop
+                uint8_t id = cmd.data[1];
+                uint8_t isStart = (cmd.len >= 3) ? cmd.data[2] : 1;
+                if (id < MAX_SCHEDULES) {
+                    uint8_t act = (isStart == 1) ? s_schedules[id].targetAction : ((s_schedules[id].targetAction == 1) ? 0 : 1);
+                    executeScheduleAction(id, act);
+                    Serial.printf(">>> [BLE SCHEDULE] Test Rule %d (Start=%d)\n", id + 1, isStart);
                 }
             } else if (cmd.data[0] == 0xF8 && cmd.len >= 8) { // Presence Config
                 s_presenceConfig.enabled          = (cmd.data[1] == 1);

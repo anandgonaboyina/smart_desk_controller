@@ -52,8 +52,10 @@ export interface ScheduleRule {
   durationMin: number;  // 1..1440
   stopHour: number;     // 0..23
   stopMin: number;      // 0..59
-  targetType: number;   // 0=CH1, 1=CH2, 2=CH3, 3=CH4, 4=All Relays, 5=RGB Strip
-  targetAction: number; // For Relay: 1=ON, 0=OFF; For RGB: Mode 0..15
+  targetType: number;   // 0=CH1, 1=CH2, 2=CH3, 3=CH4, 4=All Relays, 5=RGB Strip, 6=Multi-Target
+  targetAction: number; // 1=ON, 0=OFF
+  relayMask?: number;   // Bits 0..3: Relays 1..4 (0x01=CH1, 0x0F=All 4, etc.)
+  ledTarget?: boolean;  // true = include RGB LED strip in this schedule
   rgbR: number;
   rgbG: number;
   rgbB: number;

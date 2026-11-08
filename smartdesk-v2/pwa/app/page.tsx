@@ -22,7 +22,7 @@ import TopHeader from "../components/TopHeader";
 import CustomAlertModal, { ModalAlertProps } from "../components/CustomAlertModal";
 import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
-import { PresenceConfig, PresenceData } from "../types/smartdesk";
+import { PresenceConfig, PresenceData, ScheduleRule } from "../types/smartdesk";
 
 export default function SmartDeskApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("aod");
@@ -187,6 +187,88 @@ export default function SmartDeskApp() {
     }
     return remote.deviceState.presence?.masterDevice || "";
   }, [remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.presence?.masterDevice, ble.designatedPresenceDevice]);
+
+  const effectiveSchedules = useMemo(() => {
+    if (ble.connected) {
+      return ble.schedules;
+    }
+    if (remote.isWsConnected && remote.deviceState.schedules && remote.deviceState.schedules.length > 0) {
+      return remote.deviceState.schedules;
+    }
+    return ble.schedules;
+  }, [ble.connected, ble.schedules, remote.isWsConnected, remote.deviceState.schedules]);
+
+  const handleSaveRule = useCallback(
+    (rule: ScheduleRule) => {
+      // 1. Update local hook state & send BLE if connected
+      ble.saveScheduleRule(rule);
+
+      // 2. If Cloud WebSocket is connected, send over Cloud
+      if (remote.isWsConnected) {
+        remote.sendScheduleSave(rule);
+      }
+
+      // 3. If local Wi-Fi IP is active, post to local REST
+      if (ble.wifiIp && ble.wifiConnected) {
+        fetch(`http://${ble.wifiIp}/api/schedules/save`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rule),
+        }).catch((e) => console.log("Local Wi-Fi schedule sync:", e));
+      }
+    },
+    [ble, remote]
+  );
+
+  const handleDeleteRule = useCallback(
+    (ruleId: number) => {
+      ble.deleteScheduleRule(ruleId);
+
+      if (remote.isWsConnected) {
+        remote.sendScheduleDelete(ruleId);
+      }
+
+      if (ble.wifiIp && ble.wifiConnected) {
+        fetch(`http://${ble.wifiIp}/api/schedules/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ruleId }),
+        }).catch((e) => console.log("Local Wi-Fi schedule delete:", e));
+      }
+    },
+    [ble, remote]
+  );
+
+  const handleTestRule = useCallback(
+    (ruleId: number, isStart: boolean) => {
+      if (ble.connected) {
+        ble.handleTestScheduleRule(ruleId, isStart);
+      } else if (remote.isWsConnected) {
+        remote.sendScheduleTest(ruleId, isStart);
+      } else if (ble.wifiIp && ble.wifiConnected) {
+        fetch(`http://${ble.wifiIp}/api/schedules/test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ruleId, isStart }),
+        }).catch((e) => console.log("Local Wi-Fi schedule test:", e));
+      } else {
+        showToast("Connect via BLE or Cloud to test schedule rules!", "warn");
+      }
+    },
+    [ble, remote, showToast]
+  );
+
+  const handleSyncClock = useCallback(() => {
+    if (ble.connected) {
+      ble.syncRealTime();
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendTimeSync();
+      showToast("[Cloud Remote] Hardware clock synced with browser time");
+    } else if (!ble.connected) {
+      showToast("Cannot sync clock: Neither BLE nor Cloud WebSocket connected", "warn");
+    }
+  }, [ble, remote, showToast]);
 
   const handleToggleRelay = useCallback((idx: number, explicitTarget?: boolean) => {
     if (ble.connected || ble.wifiConnected) {
@@ -531,12 +613,12 @@ export default function SmartDeskApp() {
             
             {activeTab === "schedule" && (
               <SchedulePanel 
-                schedules={ble.schedules} 
+                schedules={effectiveSchedules} 
                 espClock={ble.espClock} 
-                onSaveRule={ble.saveScheduleRule} 
-                onDeleteRule={ble.deleteScheduleRule} 
-                onTestRule={ble.handleTestScheduleRule} 
-                onSyncClock={ble.syncRealTime} 
+                onSaveRule={handleSaveRule} 
+                onDeleteRule={handleDeleteRule} 
+                onTestRule={handleTestRule} 
+                onSyncClock={handleSyncClock} 
               />
             )}
             
