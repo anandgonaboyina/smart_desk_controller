@@ -60,8 +60,10 @@ if (-not $arduinoCli) {
     exit 1
 }
 
-$sketchDir = Join-Path $PSScriptRoot "smartdesk"
-$fqbn = "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,CDCOnBoot=default,PartitionScheme=app3M_fat9M_16MB"
+$baseDir = $PSScriptRoot
+$sketchDir = Join-Path $baseDir "smartdesk"
+$inputDir = Join-Path $sketchDir "build\esp32.esp32.esp32s3"
+$fqbn = "esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi"
 
 Write-Host ""
 Write-Host "[STEP 1/3] Compiling SmartDesk V2 Firmware..." -ForegroundColor Cyan
@@ -77,10 +79,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[OK] Compilation successful!" -ForegroundColor Green
 
-# 4. Upload to $Port
+# 4. Upload to $Port using explicit input-dir
 Write-Host ""
 Write-Host "[STEP 2/3] Uploading binary to ESP32-S3 on $Port..." -ForegroundColor Cyan
-& $arduinoCli upload -p $Port --fqbn $fqbn $sketchDir
+& $arduinoCli upload -p $Port --fqbn $fqbn --input-dir $inputDir $sketchDir
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "[FAIL] Upload failed with exit code $LASTEXITCODE" -ForegroundColor Red
@@ -150,4 +152,3 @@ if ($markerFound) {
     Write-Host "The expected BUILD marker (TAG=V2-) was not detected in serial output.`n" -ForegroundColor Red
     exit 1
 }
-
