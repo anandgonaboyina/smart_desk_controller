@@ -41,6 +41,7 @@ export interface SettingsPanelProps {
   cloudUser?: string;
   cloudPassword?: string;
   onUpdateCloudCredentials?: (user: string, pass: string) => void;
+  onSetTempOffset?: (offset: number) => void;
 }
 
 export default function SettingsPanel({
@@ -73,6 +74,7 @@ export default function SettingsPanel({
   cloudUser = "user_anand_primary",
   cloudPassword = "",
   onUpdateCloudCredentials,
+  onSetTempOffset,
 }: SettingsPanelProps) {
   const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
@@ -85,6 +87,24 @@ export default function SettingsPanel({
   const [inputCloudPass, setInputCloudPass] = useState<string>(cloudPassword);
   const [showCloudPass, setShowCloudPass] = useState<boolean>(false);
   const [credSavedMsg, setCredSavedMsg] = useState<boolean>(false);
+
+  // Temperature Calibration Offset
+  const [tempOffset, setTempOffset] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("smartdesk_temp_offset");
+      return saved ? parseFloat(saved) : 0;
+    }
+    return 0;
+  });
+
+  const handleUpdateTempOffset = (val: number) => {
+    const clamped = Math.round(Math.max(-15, Math.min(15, val)) * 10) / 10;
+    setTempOffset(clamped);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_temp_offset", clamped.toString());
+    }
+    onSetTempOffset?.(clamped);
+  };
 
   useEffect(() => {
     if (cloudUser) setInputCloudUser(cloudUser);
@@ -213,6 +233,44 @@ export default function SettingsPanel({
               </div>
               <span className="text-2xl">💧</span>
             </div>
+          </div>
+
+          {/* Temperature Calibration Offset */}
+          <div className="mt-1 p-2.5 rounded-lg bg-black border border-zinc-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-zinc-400 font-bold uppercase">Temp Calibration Offset:</span>
+              <span className="text-xs font-mono font-bold text-cyan-400">
+                {tempOffset > 0 ? `+${tempOffset.toFixed(1)}°C` : `${tempOffset.toFixed(1)}°C`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleUpdateTempOffset(tempOffset - 1.0)}
+                className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs active:scale-95 cursor-pointer"
+              >
+                -1°C
+              </button>
+              <input
+                type="range"
+                min="-15"
+                max="15"
+                step="0.5"
+                value={tempOffset}
+                onChange={(e) => handleUpdateTempOffset(parseFloat(e.target.value))}
+                className="flex-1 accent-cyan-400 cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => handleUpdateTempOffset(tempOffset + 1.0)}
+                className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs active:scale-95 cursor-pointer"
+              >
+                +1°C
+              </button>
+            </div>
+            <p className="text-[9px] text-zinc-500">
+              Calibrates DHT11 sensor to match your room thermometer or compensate for hardware deviation.
+            </p>
           </div>
         </div>
 

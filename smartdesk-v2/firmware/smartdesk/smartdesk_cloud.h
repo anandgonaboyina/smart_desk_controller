@@ -120,6 +120,7 @@ extern char    s_deviceName[25];
 extern uint16_t s_stripLen;
 extern Adafruit_NeoPixel s_strip;
 extern MatrixConfig s_matrixConfig;
+extern void setTempOffset(float offset);
 
 /* ── Broadcast Hardware State to Cloud Relay ─────────────────────────────── */
 inline void broadcastCloudState() {
@@ -479,6 +480,18 @@ static void handleCloudMessage(const char* payload, size_t length) {
             s_cloudDeviceId, s_matrixConfig.mode
         );
         s_cloudWs.sendTXT(ackMsg);
+        return;
+    }
+
+    // 10. Temperature Calibration Offset Command
+    if (strcmp(cmd, "temp_offset") == 0 || strcmp(cmd, "cal_offset") == 0) {
+        float offset = (float)getJsonInt(payload, "offset", 0);
+        char offsetStr[16] = {0};
+        if (getJsonStr(payload, "offset", offsetStr, sizeof(offsetStr))) {
+            offset = atof(offsetStr);
+        }
+        setTempOffset(offset);
+        broadcastCloudState();
         return;
     }
 

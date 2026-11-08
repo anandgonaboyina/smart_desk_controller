@@ -348,6 +348,8 @@ wss.on("connection", (ws, req) => {
         msg.type === "strip" ||
         msg.type === "matrix_set" ||
         msg.type === "matrix" ||
+        msg.type === "temp_offset" ||
+        msg.type === "cal_offset" ||
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||

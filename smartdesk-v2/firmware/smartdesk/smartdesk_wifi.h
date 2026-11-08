@@ -314,15 +314,28 @@ static String extractToken(const String &html, const String &key) {
     return "";
 }
 
+// Internet Probe Rate-Limiting Cache (Prevents continuous polling and ESP32 heating)
+static uint32_t s_lastProbeTimeMs = 0;
+static bool     s_lastProbeResult = false;
+static const uint32_t PROBE_COOLDOWN_MS = 60000UL; // Rate-limit to at most once per 60 seconds
+
 /**
  * Tests if the ESP32 has real internet access by pinging Apple's probe URL.
+ * Rate-limited to execute at most once every 60 seconds (unless force=true or explicit drop).
  * Returns true if HTTP 200 with "Success" in body is received.
  */
-static bool checkInternetAccess() {
+static bool checkInternetAccess(bool force = false) {
+    uint32_t now = millis();
+
+    // Return cached result if within 60-second cooldown window (unless force probe requested)
+    if (!force && s_lastProbeTimeMs != 0 && (now - s_lastProbeTimeMs < PROBE_COOLDOWN_MS)) {
+        return s_lastProbeResult;
+    }
+
     Serial.println(">>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...");
     HTTPClient http;
     http.begin("http://captive.apple.com/hotspot-detect.html");
-    http.setTimeout(4000);
+    http.setTimeout(3500);
     int httpCode = http.GET();
     bool hasInternet = false;
 
@@ -333,6 +346,9 @@ static bool checkInternetAccess() {
         }
     }
     http.end();
+
+    s_lastProbeTimeMs = now;
+    s_lastProbeResult = hasInternet;
 
     if (hasInternet) {
         Serial.println(">>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')");
@@ -526,9 +542,9 @@ static bool performCaptivePortalLogin(const SavedNetwork& net) {
     }
     http.end();
 
-    // 6. Verify internet connectivity
+    // 6. Verify internet connectivity (force fresh probe after portal login)
     delay(5000); 
-    bool internetOk = checkInternetAccess();
+    bool internetOk = checkInternetAccess(true);
     if (internetOk) {
         s_fortinetRetryCount = 0; 
         Serial.println(">>> [FORTINET SUCCESS] Internet access confirmed! Captive portal bypassed.");
@@ -1501,15 +1517,16 @@ static void wifiWorkerTask(void* pvParameters) {
             notifyEnvState();
         }
 
-        // 4. Update cloud WebSocket client if internet is active (with 5s auto-reconnect for Render spin-down)
+        // 4. Update cloud WebSocket client if internet is active (throttled auto-reconnect)
         if (s_wifiConnected) {
             updateCloudClient();
             if (!s_cloudConnected) {
                 static uint32_t s_lastWsAutoReconnectMs = 0;
-                if (millis() - s_lastWsAutoReconnectMs >= 5000UL) {
+                if (millis() - s_lastWsAutoReconnectMs >= 15000UL) {
                     s_lastWsAutoReconnectMs = millis();
+                    // checkInternetAccess uses non-blocking 60-second cooldown cache
                     if (checkInternetAccess()) {
-                        Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (5s tick)...");
+                        Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...");
                         startCloudClient();
                     }
                 }
@@ -1529,6 +1546,8 @@ static void wifiWorkerTask(void* pvParameters) {
                     stopCloudClient();
                     WiFi.disconnect();
                     s_wifiConnected = false;
+                    s_lastProbeTimeMs = 0;
+                    s_lastProbeResult = false;
                 }
                 continue;
             }
@@ -1542,10 +1561,10 @@ static void wifiWorkerTask(void* pvParameters) {
                 s_wifiRssi = WiFi.RSSI();
                 strncpy(s_ipAddress, WiFi.localIP().toString().c_str(), sizeof(s_ipAddress) - 1);
 
-                // Internet & Captive Portal Watchdog (every 30s)
-                if (now - s_lastInternetCheckMs >= 30000UL) {
+                // Internet & Captive Portal Watchdog (rate-limited to 60s)
+                if (now - s_lastInternetCheckMs >= 60000UL) {
                     s_lastInternetCheckMs = now;
-                    if (!checkInternetAccess()) {
+                    if (!checkInternetAccess(true)) {
                         Serial.println(">>> [WATCHDOG] Captive portal / internet drop detected. Blocking cloud WebSocket...");
                         stopCloudClient(); // BLOCK WebSocket immediately
 
@@ -1564,19 +1583,23 @@ static void wifiWorkerTask(void* pvParameters) {
                             restored = performCaptivePortalLogin(curNet);
                         }
 
-                        if (restored && checkInternetAccess()) {
+                        if (restored && checkInternetAccess(true)) {
                             Serial.println(">>> [WATCHDOG] Internet access restored. Resuming cloud WebSocket...");
                             startCloudClient();
                         } else {
                             Serial.println(">>> [WATCHDOG] Re-authentication failed. Triggering network reconnection...");
                             WiFi.disconnect();
                             s_wifiConnected = false;
+                            s_lastProbeTimeMs = 0;
+                            s_lastProbeResult = false;
                             s_reqConnectAny = true;
                         }
                     }
                 }
             } else {
                 s_wifiConnected = false;
+                s_lastProbeTimeMs = 0;
+                s_lastProbeResult = false;
                 stopCloudClient();
                 if (!s_connected && WiFi.softAPgetStationNum() == 0) {
                     s_reqConnectAny = true;

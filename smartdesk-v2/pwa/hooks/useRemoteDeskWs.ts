@@ -492,6 +492,22 @@ export function useRemoteDeskWs({
     [currentDeviceId, onStateUpdate]
   );
 
+  // Send Temperature Calibration Offset Command
+  const sendTempOffsetCommand = useCallback(
+    (offset: number) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      wsRef.current.send(
+        JSON.stringify({
+          type: "temp_offset",
+          deviceId: currentDeviceId,
+          offset,
+          timestamp: Date.now(),
+        })
+      );
+    },
+    [currentDeviceId]
+  );
+
   // Emergency All Relays Off Command
   const sendAllOff = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -532,6 +548,7 @@ export function useRemoteDeskWs({
     sendRenameCommand,
     sendStripLengthCommand,
     sendMatrixCommand,
+    sendTempOffsetCommand,
     sendAllOff,
   };
 }

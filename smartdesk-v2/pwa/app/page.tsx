@@ -17,6 +17,8 @@ import SettingsPanel from "../components/SettingsPanel";
 import RelayConfigModal from "../components/RelayConfigModal";
 import WifiManagerModal from "../components/WifiManagerModal";
 import CloudHandshakeModal from "../components/CloudHandshakeModal";
+import WebFlasherModal from "../components/WebFlasherModal";
+import TopHeader from "../components/TopHeader";
 import CustomAlertModal, { ModalAlertProps } from "../components/CustomAlertModal";
 import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
@@ -26,6 +28,7 @@ export default function SmartDeskApp() {
   const [relayConfigModalIdx, setRelayConfigModalIdx] = useState<number | null>(null);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
   const [showHandshakeModal, setShowHandshakeModal] = useState<boolean>(false);
+  const [showFlasherModal, setShowFlasherModal] = useState<boolean>(false);
 
   const [alertState, setAlertState] = useState<Omit<ModalAlertProps, "onConfirm">>({
     isOpen: false, title: "", message: "", confirmLabel: "OK", isConfirm: false,
@@ -252,6 +255,13 @@ export default function SmartDeskApp() {
     }
   }, [ble, remote, showToast]);
 
+  const handleSetTempOffset = useCallback((offset: number) => {
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendTempOffsetCommand(offset);
+    }
+    showToast(`Temperature offset set to ${offset > 0 ? `+${offset}` : offset}°C`);
+  }, [remote, showToast]);
+
   // Cloud & BLE RGB Sleep Timer Support
   const [cloudRgbTimerRemMin, setCloudRgbTimerRemMin] = useState<number>(0);
   const cloudRgbTimerEndMsRef = useRef<number>(0);
@@ -295,6 +305,27 @@ export default function SmartDeskApp() {
 
   return (
     <main className="min-h-[100dvh] w-full bg-black text-white overflow-hidden flex flex-col font-sans">
+      {/* ── UNIFIED TOP CONTROL HEADER: Renders across all views (AOD, Remote, Settings, etc.) ── */}
+      <TopHeader
+        currentDeskName={currentDeskName}
+        isDeskConnected={isDeskConnected}
+        bleConnected={ble.connected}
+        bleConnecting={ble.connecting}
+        onConnectBle={ble.handleConnect}
+        isWsConnected={remote.isWsConnected}
+        isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
+        onOpenHandshake={() => setShowHandshakeModal(true)}
+        wifiConnected={ble.wifiConnected}
+        wifiState={ble.wifiState}
+        wifiSsid={ble.wifiSsid}
+        wifiIp={ble.wifiIp}
+        onOpenWifiModal={() => setShowWifiModal(true)}
+        onOpenFlasher={() => setShowFlasherModal(true)}
+        activeTab={activeTab}
+        onToggleAod={() => setActiveTab(activeTab === "aod" ? "remote" : "aod")}
+      />
+
+      {/* ── SCREEN CONTENT VIEWPORT ── */}
       {activeTab === "aod" ? (
         <AodFaceScreen
           connected={isDeskConnected}
@@ -323,154 +354,7 @@ export default function SmartDeskApp() {
           onStopMusic={ble.stopMusicSync}
         />
       ) : (
-        <div className="flex flex-col w-full h-[100dvh] max-w-7xl mx-auto px-2 sm:px-6">
-          
-          {/* HIGH-CONTRAST HEADER */}
-          <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-2.5 sm:py-4 border-b-2 border-zinc-800 shrink-0 gap-2 sm:gap-3">
-            {/* Top row on mobile / Left column on desktop */}
-            <div className="flex items-center justify-between w-full sm:w-auto">
-              <div className="flex items-center gap-2.5 sm:gap-3">
-                <img src="/SmartDesk logo.png" alt="SmartDesk Logo" className="w-8 h-8 rounded-lg object-contain shadow-md border border-zinc-800 shrink-0" />
-                <div className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isDeskConnected ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,1)]" : ble.connecting ? "bg-amber-400 animate-ping" : "bg-zinc-600"}`} />
-                  <span className="text-sm font-extrabold tracking-wide text-white truncate max-w-[170px] sm:max-w-none">
-                    {isDeskConnected ? currentDeskName : ble.connecting ? "Connecting..." : "Standby"}
-                  </span>
-                </div>
-              </div>
-
-              {/* AOD Button on mobile (top right) */}
-              <button
-                onClick={() => setActiveTab("aod")}
-                className="sm:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-black transition-all active:scale-95 shadow-[0_0_15px_rgba(6,182,212,0.4)] cursor-pointer shrink-0"
-              >
-                <span>😴</span>
-                <span>AOD</span>
-              </button>
-            </div>
-            
-            {/* Row 2 on mobile (horizontal scrolling strip) / Right column on desktop */}
-            <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide no-scrollbar w-full sm:w-auto pb-0.5 sm:pb-0">
-              <div
-                onClick={() => setShowHandshakeModal(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95 ${
-                  remote.isWsConnected && remote.isDeviceOnline
-                    ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
-                    : remote.isWsConnected
-                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300"
-                    : "border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:border-zinc-700"
-                }`}
-                title="Click to open Cloud Handshake & Worldwide Diagnostics"
-              >
-                <span>☁️</span>
-                <span className="text-[11px] font-bold">
-                  {remote.isWsConnected && remote.isDeviceOnline
-                    ? "Cloud: Online"
-                    : remote.isWsConnected
-                    ? "Cloud: Standby"
-                    : "Cloud: Offline"}
-                </span>
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    remote.isWsConnected && remote.isDeviceOnline
-                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
-                      : remote.isWsConnected
-                      ? "bg-amber-400"
-                      : "bg-zinc-600"
-                  }`}
-                />
-              </div>
-
-              <button
-                onClick={() => setShowHandshakeModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-cyan-500/60 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 text-xs font-black shrink-0 shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition-all cursor-pointer"
-                title="Step-by-step Worldwide Handshake Verification"
-              >
-                <span>🤝</span>
-                <span className="hidden sm:inline">HANDSHAKE</span>
-              </button>
-
-              <button
-                onClick={() => setShowWifiModal(true)}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-all cursor-pointer active:scale-95 ${
-                  ble.wifiConnected
-                    ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.3)]"
-                    : ble.wifiState === 2
-                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300"
-                    : ble.wifiState === 3
-                    ? "border-cyan-500/60 bg-cyan-950/40 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
-                    : "border-zinc-700 bg-zinc-900 text-zinc-300"
-                }`}
-                title={
-                  ble.wifiConnected
-                    ? `Wi-Fi: ${ble.wifiSsid || "Connected"} (${ble.wifiIp})`
-                    : ble.wifiState === 2
-                    ? "Connecting to Wi-Fi..."
-                    : ble.wifiState === 3
-                    ? "Hotspot Mode: AnandSmartDesk (192.168.4.1)"
-                    : "Configure Wi-Fi & College Portal"
-                }
-              >
-                <span>📶</span>
-                <span className="text-[11px] font-bold truncate max-w-[95px] sm:max-w-[150px]">
-                  {ble.wifiConnected
-                    ? ble.wifiSsid ? `Wi-Fi: ${ble.wifiSsid}` : "Wi-Fi: OK"
-                    : ble.wifiState === 2
-                    ? "Wi-Fi: Connecting..."
-                    : ble.wifiState === 3
-                    ? "Hotspot: Active"
-                    : "Wi-Fi: Offline"}
-                </span>
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    ble.wifiConnected
-                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
-                      : ble.wifiState === 2
-                      ? "bg-amber-400 animate-ping"
-                      : ble.wifiState === 3
-                      ? "bg-cyan-400 shadow-[0_0_6px_#06b6d4]"
-                      : "bg-zinc-500"
-                  }`}
-                />
-              </button>
-
-              <button
-                onClick={ble.connected ? undefined : ble.handleConnect}
-                disabled={ble.connected}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold shrink-0 transition-all ${
-                  ble.connected
-                    ? "border-emerald-500/60 bg-emerald-950/40 text-emerald-300"
-                    : ble.connecting
-                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300 animate-pulse cursor-pointer"
-                    : "border-rose-500/50 bg-rose-950/40 text-rose-300 cursor-pointer active:scale-95 shadow-[0_0_8px_rgba(244,63,94,0.2)]"
-                }`}
-                title={ble.connected ? `BLE: ${ble.deviceName}` : "Connect SmartDesk via BLE"}
-              >
-                <span>⚡</span>
-                <span className="text-[11px] font-bold">
-                  {ble.connected ? "BLE: OK" : ble.connecting ? "BLE: Linking..." : "BLE: Disconnected"}
-                </span>
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    ble.connected
-                      ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
-                      : ble.connecting
-                      ? "bg-amber-400"
-                      : "bg-rose-500 shadow-[0_0_6px_#f43f5e]"
-                  }`}
-                />
-              </button>
-
-              {/* AOD Button on desktop (in the badge strip) */}
-              <button
-                onClick={() => setActiveTab("aod")}
-                className="hidden sm:flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs sm:text-sm font-extrabold transition-all active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)] cursor-pointer shrink-0"
-              >
-                😴 AOD SCREEN
-              </button>
-            </div>
-          </header>
-
+        <div className="flex-1 flex flex-col w-full max-w-7xl mx-auto px-2 sm:px-6 overflow-hidden">
           <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide py-3 pb-24 flex flex-col">
             <div className="flex-1 flex flex-col justify-center max-w-full w-full mx-auto">
               {activeTab === "remote" && (
@@ -569,6 +453,7 @@ export default function SmartDeskApp() {
                   cloudUser={remote.userId}
                   cloudPassword={remote.password}
                   onUpdateCloudCredentials={remote.updateCredentials}
+                  onSetTempOffset={handleSetTempOffset}
                 />
               )}
             </div>
@@ -637,6 +522,10 @@ export default function SmartDeskApp() {
         onUpdateCloudCredentials={remote.updateCredentials}
         onToast={showToast}
         recentLogs={ble.logs}
+      />
+      <WebFlasherModal
+        isOpen={showFlasherModal}
+        onClose={() => setShowFlasherModal(false)}
       />
     </main>
   );

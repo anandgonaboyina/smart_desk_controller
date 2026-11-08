@@ -156,158 +156,162 @@ export default function WebFlasherModal({ isOpen, onClose, deskIp = "192.168.4.1
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-      <div className="bg-zinc-950 border-2 border-cyan-500/80 rounded-2xl w-full max-w-lg p-5 flex flex-col gap-4 shadow-[0_0_50px_rgba(6,182,212,0.35)] text-white">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 bg-black animate-in fade-in transition-all">
+      <div className="bg-[#0a0a0a] border border-white/80 rounded-2xl w-full max-w-xl p-3 md:p-6 flex flex-col gap-3 md:gap-5 shadow-[0_0_60px_rgba(6,182,212,0.1)] text-white max-h-[95vh] overflow-y-auto custom-scrollbar">
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">⚡</span>
-            <div>
-              <h3 className="text-base font-extrabold tracking-wide text-cyan-400">Web Serial Firmware Flasher</h3>
-              <span className="text-[10px] text-zinc-400">Direct USB browser flashing for ESP32-S3</span>
+        <div className="flex items-start md:items-center justify-between border-b border-white/5 pb-2 md:pb-4 gap-2">
+          <div className="flex items-center gap-2 md:gap-3 flex-1">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-cyan-500/10 flex items-center justify-center shrink-0 border border-cyan-500/20">
+              <span className="text-base md:text-xl">⚡</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[12px] md:text-lg font-bold tracking-wide text-white leading-tight break-words whitespace-normal">
+                Web Serial Firmware Flasher
+              </h3>
+              <p className="text-[9px] md:text-xs text-white/40 leading-tight break-words whitespace-normal mt-0.5">
+                Direct USB browser flashing for ESP32-S3
+              </p>
             </div>
           </div>
           <button
             onClick={handleClose}
-            className="w-8 h-8 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center font-bold text-sm cursor-pointer"
+            className="w-7 h-7 md:w-8 md:h-8 shrink-0 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center font-bold text-xs md:text-sm transition-colors"
           >
             ✕
           </button>
         </div>
 
         {/* Browser Support Banner */}
-        <div className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 ${serialSupported ? "bg-emerald-950/40 border-emerald-600/60 text-emerald-300" : "bg-amber-950/40 border-amber-600/60 text-amber-300"}`}>
-          <span>{serialSupported ? "✓" : "⚠️"}</span>
-          <span>{serialSupported ? "Web Serial active in Chrome / Edge / Chromium." : "Web Serial requires Google Chrome or Microsoft Edge."}</span>
+        <div className={`p-2 md:p-3 rounded-lg md:rounded-xl border text-[10px] md:text-xs font-medium flex items-start gap-2 break-words whitespace-normal leading-relaxed ${serialSupported ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-amber-500/10 border-amber-500/20 text-amber-400"}`}>
+          <span className="shrink-0 mt-0.5">{serialSupported ? "✓" : "⚠️"}</span>
+          <span className="flex-1">
+            {serialSupported 
+              ? "Web Serial active in Chrome / Edge / Chromium." 
+              : "Web Serial requires Google Chrome or Microsoft Edge."}
+          </span>
         </div>
 
         {/* Animated Step-by-Step Progress Pipeline */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 space-y-3">
-          <div className="flex items-center justify-between text-[11px] font-black uppercase text-zinc-400">
+        <div className="bg-white/[0.02] border border-white/5 rounded-lg md:rounded-xl p-2.5 md:p-4 flex flex-col gap-3 md:gap-4">
+          <div className="flex items-center justify-between text-[9px] md:text-[11px] font-bold uppercase text-white/40 tracking-wider break-words whitespace-normal">
             <span>Flashing Pipeline</span>
             <span className="text-cyan-400 font-mono">Step {flashStep} of 5</span>
           </div>
 
-          <div className="grid grid-cols-5 gap-1.5 text-center">
+          <div className="grid grid-cols-5 gap-1 md:gap-2 w-full">
             {[
               { num: 1, label: "Binary" },
               { num: 2, label: "Port" },
-              { num: 3, label: "Bootloader" },
-              { num: 4, label: "Flashing" },
-              { num: 5, label: "Reboot" },
+              { num: 3, label: "Boot" }, // Shortened for mobile
+              { num: 4, label: "Flash" },
+              { num: 5, label: "Done" },
             ].map((st) => (
               <div
                 key={st.num}
-                className={`py-1.5 px-1 rounded-md text-[10px] font-extrabold transition-all border ${
+                className={`flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-1.5 py-1.5 md:py-2 px-0.5 md:px-2 rounded-md md:rounded-lg text-[8px] md:text-[11px] font-bold transition-all border break-words text-center ${
                   flashStep === st.num
-                    ? "bg-cyan-500 text-black border-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.5)]"
+                    ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.2)]"
                     : flashStep > st.num
-                    ? "bg-emerald-950 text-emerald-300 border-emerald-700"
-                    : "bg-black text-zinc-500 border-zinc-800"
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                    : "bg-black/40 text-white/30 border-white/5"
                 }`}
               >
-                {st.num < flashStep ? "✓" : st.num}. {st.label}
+                <span className="shrink-0">{st.num < flashStep ? "✓" : st.num}</span>
+                <span className="hidden sm:inline-block">.</span>
+                <span className="leading-none mt-0.5 md:mt-0">{st.label}</span>
               </div>
             ))}
           </div>
 
           {/* Dynamic Progress Bar (When flashing or finished) */}
           {(isFlashing || flashProgress > 0) && (
-            <div className="space-y-1.5 pt-2 border-t border-zinc-800">
-              <div className="flex justify-between items-center text-xs font-bold">
-                <span className="text-cyan-300 font-mono">Progress: {flashProgress}%</span>
-                <span className="text-zinc-400 text-[11px] font-mono">{flashStats.speedKb} KB/s</span>
+            <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5">
+              <div className="flex justify-between items-center text-[10px] md:text-xs font-medium">
+                <span className="text-cyan-400 font-mono break-words">Progress: {flashProgress}%</span>
+                <span className="text-white/40 font-mono break-words">{flashStats.speedKb} KB/s</span>
               </div>
-              <div className="w-full h-3 bg-black rounded-full overflow-hidden border border-zinc-700 p-0.5">
+              <div className="w-full h-2 md:h-3 bg-black rounded-full overflow-hidden border border-white/10 p-px">
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-150 shadow-[0_0_12px_rgba(6,182,212,0.8)]"
+                  className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-150 relative"
                   style={{ width: `${flashProgress}%` }}
-                />
+                >
+                  <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                </div>
               </div>
             </div>
           )}
 
           {/* Status Text Box */}
-          <div className="text-xs font-mono text-cyan-300 bg-black p-2.5 rounded-lg border border-zinc-800 truncate">
+          <div className="text-[9px] md:text-[11px] font-mono text-cyan-300 bg-black/60 p-2 md:p-3 rounded-md md:rounded-lg border border-white/10 break-words whitespace-pre-wrap leading-relaxed shadow-inner">
             {serialStatus}
           </div>
         </div>
 
         {/* Actions Grid */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
           {!connectedPort ? (
             <button
               onClick={handleConnectSerial}
               disabled={!serialSupported}
-              className="col-span-2 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-extrabold text-xs transition-all active:scale-95 shadow-lg shadow-cyan-500/20 cursor-pointer"
+              className="col-span-1 sm:col-span-2 py-3 md:py-3.5 rounded-lg md:rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-black font-bold text-[11px] md:text-sm transition-all active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.2)] flex items-center justify-center gap-2 whitespace-normal break-words px-2"
             >
-              🔌 Connect ESP32 USB Port
+              <span className="text-sm md:text-base">🔌</span> Connect ESP32 USB Port
             </button>
           ) : (
             <>
               <button
                 onClick={handleResetBootloader}
-                className="py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-extrabold text-xs active:scale-95 cursor-pointer shadow-md shadow-amber-500/20"
+                className="py-2.5 md:py-3 px-2 rounded-lg md:rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-[10px] md:text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 whitespace-normal break-words text-center"
               >
-                ⚡ 1. Enter Bootloader
+                <span>⚡</span> 1. Enter Bootloader
               </button>
               <button
                 onClick={handleSimulateFlash}
                 disabled={isFlashing}
-                className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold text-xs active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
+                className="py-2.5 md:py-3 px-2 rounded-lg md:rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 disabled:opacity-50 text-emerald-300 font-bold text-[10px] md:text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 whitespace-normal break-words text-center shadow-[0_0_15px_rgba(16,185,129,0.1)]"
               >
                 {isFlashing ? "Writing..." : "🚀 2. Write Flash (.bin)"}
               </button>
               <button
                 onClick={handleNormalReset}
-                className="col-span-2 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs active:scale-95 border border-zinc-700 cursor-pointer"
+                className="col-span-1 sm:col-span-2 py-2 md:py-2.5 px-2 rounded-lg md:rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-medium text-[10px] md:text-xs transition-all active:scale-95 border border-white/10 flex items-center justify-center gap-1.5 whitespace-normal break-words"
               >
-                🔄 Normal ESP32 Restart
+                <span>🔄</span> Normal ESP32 Restart
               </button>
             </>
           )}
         </div>
 
         {/* Choose Custom .bin or Use Default */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex items-center justify-between text-xs">
-          <div>
-            <span className="text-[10px] text-zinc-500 font-bold block">TARGET BINARY:</span>
-            <span className="font-mono text-zinc-300 font-bold truncate max-w-[200px] block">{selectedFileName}</span>
+        <div className="bg-white/[0.02] border border-white/5 rounded-lg md:rounded-xl p-2 md:p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 md:gap-3">
+          <div className="flex-1 min-w-0">
+            <span className="text-[9px] md:text-[10px] text-white/40 font-bold block mb-0.5 md:mb-1 uppercase tracking-wider">Target Binary:</span>
+            <span className="font-mono text-cyan-100/90 font-medium text-[10px] md:text-xs break-all sm:break-words whitespace-normal line-clamp-2 block leading-snug">
+              {selectedFileName}
+            </span>
           </div>
-          <label className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-cyan-300 font-bold text-xs cursor-pointer active:scale-95">
+          <label className="shrink-0 w-full sm:w-auto text-center px-3 py-2 md:py-2 rounded-md md:rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium text-[10px] md:text-xs cursor-pointer transition-all active:scale-95">
             Browse .bin
             <input type="file" accept=".bin" onChange={handleFileSelect} className="hidden" />
           </label>
         </div>
 
         {/* Web Tools & Terminal Command */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
-          <div className="flex gap-2">
-            <a
-              href="https://espressif.github.io/esptool-js/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-cyan-300 font-bold text-xs text-center flex items-center justify-center gap-1.5 transition-all"
-            >
-              <span>🌐</span> Official Espressif Web Flasher ↗
-            </a>
-            <button
-              onClick={copyFlashCommand}
-              className="py-2 px-3 rounded-lg bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-300 font-bold text-xs cursor-pointer active:scale-95 flex items-center gap-1"
-            >
-              <span>📋</span> {copiedCmd ? "Copied! ✓" : "Copy COM3 Cmd"}
-            </button>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end pt-1">
-          <button
-            onClick={handleClose}
-            className="px-5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs transition-all cursor-pointer"
+        <div className="flex flex-col sm:flex-row gap-2">
+          <a
+            href="https://espressif.github.io/esptool-js/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 py-2 md:py-2.5 px-2 rounded-md md:rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white font-medium text-[10px] md:text-xs text-center flex items-center justify-center gap-1.5 transition-all break-words whitespace-normal"
           >
-            Close
+            <span>🌐</span> Official Web Flasher ↗
+          </a>
+          <button
+            onClick={copyFlashCommand}
+            className="flex-1 sm:flex-none py-2 md:py-2.5 px-3 rounded-md md:rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 font-medium text-[10px] md:text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 break-words whitespace-normal"
+          >
+            <span>📋</span> {copiedCmd ? "Copied! ✓" : "Copy CLI Cmd"}
           </button>
         </div>
 
