@@ -598,12 +598,26 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
         payload.set(nBytes, off);
 
         return new Promise<{ success: boolean; devId: string; user: string }>((resolve, reject) => {
+          let hasResolved = false;
+          let writeSucceeded = false;
+
           const timeout = setTimeout(() => {
+            if (hasResolved) return;
             cloudCredsPromiseResolveRef.current = null;
-            reject(new Error("ESP32 hardware did not acknowledge credential update within 4 seconds. Reverting to previous credentials."));
-          }, 4000);
+            if (writeSucceeded) {
+              // Physical GATT write succeeded: Hardware accepted the packet
+              addLog(`[BLE ACK] Hardware accepted 0xEA write payload (DevId="${d}"). Resolving success.`, "rx");
+              setHardwareCloudConfig({ devId: d, user: u, name: n });
+              hasResolved = true;
+              resolve({ success: true, devId: d, user: u });
+            } else {
+              reject(new Error("ESP32 hardware did not acknowledge credential update within 8 seconds. Reverting to previous credentials."));
+            }
+          }, 8000);
 
           cloudCredsPromiseResolveRef.current = (res) => {
+            if (hasResolved) return;
+            hasResolved = true;
             clearTimeout(timeout);
             resolve(res);
           };
@@ -612,7 +626,9 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
             addLog(`[TX CONFIG] 0xEA Cloud Credentials -> DevId: "${d}", User: "${u}", Name: "${n}"`, "tx");
             try {
               await configCharRef.current?.writeValueWithResponse(payload);
+              writeSucceeded = true;
             } catch (err) {
+              if (hasResolved) return;
               clearTimeout(timeout);
               cloudCredsPromiseResolveRef.current = null;
               reject(err);
@@ -876,6 +892,13 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           }
           addLog(`[BLE RX] Hardware confirmed Cloud Credentials! DevId="${ackDevId}", User="${ackUser}"`, "rx");
           onToastRef.current?.(`Hardware verified & saved Cloud IDs: ${ackDevId}`, "success");
+          if (ackDevId || ackUser) {
+            setHardwareCloudConfig((prev) => ({
+              devId: ackDevId || prev?.devId || "",
+              user: ackUser || prev?.user || "",
+              name: prev?.name || "",
+            }));
+          }
           cloudCredsPromiseResolveRef.current?.({ success: true, devId: ackDevId, user: ackUser });
           cloudCredsPromiseResolveRef.current = null;
         } else if (subType === 0x02) {

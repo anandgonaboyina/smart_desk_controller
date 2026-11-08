@@ -223,7 +223,7 @@ export default function CloudHandshakeModal({
         show: true,
         success: false,
         title: "Hardware Sync Failed",
-        message: err?.message || "ESP32 did not acknowledge update within 4 seconds. Previous settings were kept.",
+        message: err?.message || "ESP32 did not acknowledge update. Previous settings were kept.",
         details: "Please verify Bluetooth connection and ensure the desk is powered on and in range.",
       });
       onToast?.("Failed to flash credentials to ESP32", "error");

@@ -1771,31 +1771,31 @@ void loop() {
                             bName[nLen] = '\0';
                         }
 
-                        applyAndRestartCloudCredentials(
-                            strlen(bDevId) > 0 ? bDevId : NULL,
-                            strlen(bUser) > 0 ? bUser : NULL,
-                            strlen(bPass) > 0 ? bPass : "",
-                            strlen(bName) > 0 ? bName : NULL
-                        );
-
-                        // Send IMMEDIATE ACK Notification back to BLE client:
+                        // 1. Send IMMEDIATE ACK Notification back to BLE client FIRST before cloud restart:
                         // [0xEA, 0x01 (SUCCESS), devIdLen, userLen, ...devId, ...user]
                         if (s_pConfigChar && s_connected) {
-                            const char* sDevId = getCloudDeviceId();
-                            const char* sUser  = getCloudUser();
-                            uint8_t sDevLen = (uint8_t)strlen(sDevId);
-                            uint8_t sUserLen = (uint8_t)strlen(sUser);
+                            uint8_t sDevLen = (uint8_t)strlen(bDevId);
+                            uint8_t sUserLen = (uint8_t)strlen(bUser);
                             uint8_t ackBuf[80];
                             ackBuf[0] = 0xEA;
                             ackBuf[1] = 0x01; // Success ACK
                             ackBuf[2] = sDevLen;
                             ackBuf[3] = sUserLen;
                             size_t off = 4;
-                            if (sDevLen > 0 && sDevLen <= 36) { memcpy(&ackBuf[off], sDevId, sDevLen); off += sDevLen; }
-                            if (sUserLen > 0 && sUserLen <= 36) { memcpy(&ackBuf[off], sUser, sUserLen); off += sUserLen; }
+                            if (sDevLen > 0 && sDevLen <= 36) { memcpy(&ackBuf[off], bDevId, sDevLen); off += sDevLen; }
+                            if (sUserLen > 0 && sUserLen <= 36) { memcpy(&ackBuf[off], bUser, sUserLen); off += sUserLen; }
                             s_pConfigChar->setValue(ackBuf, off);
                             s_pConfigChar->notify();
+                            delay(50); // Flush packet over air before socket reconnect
                         }
+
+                        // 2. Apply NVS credentials and live restart WebSocket:
+                        applyAndRestartCloudCredentials(
+                            strlen(bDevId) > 0 ? bDevId : NULL,
+                            strlen(bUser) > 0 ? bUser : NULL,
+                            strlen(bPass) > 0 ? bPass : "",
+                            strlen(bName) > 0 ? bName : NULL
+                        );
                         notifyEnvState();
                     }
                 }

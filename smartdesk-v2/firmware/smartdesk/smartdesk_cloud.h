@@ -709,7 +709,7 @@ static inline void applyAndRestartCloudCredentials(const char* newDevId, const c
         prefs.begin("desk_cfg", false);
         prefs.putString("dev_name", s_deviceName);
         prefs.end();
-        initBleServer(s_deviceName);
+        // Do NOT call initBleServer() here as reinitializing BLE wipes active GATT client sessions
     }
 
     if (newDevId || newUser || newPass) {
