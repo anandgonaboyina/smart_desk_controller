@@ -443,15 +443,21 @@ export default function SmartDeskApp() {
             onOpenHandshakeModal={() => setShowHandshakeModal(true)}
             relays={effectiveRelays}
             relayConfigs={effectiveConfigs}
+            led={effectiveLed}
+            matrixConfig={effectiveMatrixConfig}
             envData={effectiveEnvData}
             presenceData={effectivePresenceData}
             rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
             onConnect={ble.handleConnect}
             onOpenRemote={() => setActiveTab("remote")}
+            onOpenSettings={() => setActiveTab("settings")}
             onToggleRelay={handleToggleRelay}
+            onSetRelayTimer={handleSetRelayTimer}
             onAllRelaysOff={handleAllRelaysOff}
             onSendLed={handleSendLed}
+            onSetRgbTimer={handleSetRgbTimer}
             onSetMatrixMode={(mode, text) => handleSetMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
+            onSetMatrixDisplay={handleSetMatrixDisplay}
             onStartMusic={ble.startMusicSync}
             onStopMusic={ble.stopMusicSync}
           />
