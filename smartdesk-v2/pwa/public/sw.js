@@ -6,6 +6,10 @@
  * Used by : layout.tsx / registerServiceWorker.
  */
 
+try {
+  importScripts("/custom-sw.js");
+} catch (_) {}
+
 const CACHE_NAME = "smartdesk-v2-cache-v1";
 
 const PRECACHE_ASSETS = [

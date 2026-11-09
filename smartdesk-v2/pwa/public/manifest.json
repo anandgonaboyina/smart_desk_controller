@@ -1,26 +1,77 @@
 {
   "name": "SmartDesk V2",
   "short_name": "SmartDesk",
-  "description": "ESP32-S3 BLE Smart Desk Controller",
+  "description": "ESP32-S3 BLE Smart Desk Controller with Environment Sensing & Automation",
+  "id": "/smartdesk-v2",
   "start_url": "/",
   "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#09090b",
   "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "scope_extensions": [
+    {
+      "origin": "https://your-smartdesk-project.vercel.app" 
+    }
+  ],
   "icons": [
     {
-      "src": "/SmartDesk logo.png",
-      "sizes": "192x192 512x512",
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icon.png",
-      "sizes": "192x192 512x512",
+      "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/home.jpeg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "SmartDesk Main Dashboard"
+    },
+    {
+      "src": "/screenshots/1.jpeg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Relay & Power Management"
+    },
+    {
+      "src": "/screenshots/2.jpeg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "RGB Lighting & Visualizer"
+    },
+    {
+      "src": "/screenshots/3.jpeg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Hardware Clock Schedules"
+    },
+    {
+      "src": "/screenshots/4.jpeg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Presence Radar Detection"
+    },
+    {
+      "src": "/screenshots/5.jpeg",
+      "sizes": "1080x2460",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "System Telemetry & Controls"
     }
   ]
 }
-

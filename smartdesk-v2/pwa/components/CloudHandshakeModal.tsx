@@ -171,7 +171,8 @@ export default function CloudHandshakeModal({
       if (typeof window !== "undefined") {
         window.location.reload();
       }
-    }, 500);
+    }, 1000);
+    
   };
 
   // Action 2: Flash new IDs into physical ESP32 Hardware (via BLE with hardware ACK)

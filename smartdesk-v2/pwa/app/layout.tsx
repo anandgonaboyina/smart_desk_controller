@@ -42,7 +42,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false, // Prevents annoying pinch-to-zoom on mobile
-  themeColor: "#050505", // Matched perfectly to the app's OLED background
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
@@ -53,6 +53,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="antialiased bg-[#050505]">
       <head>
+        <link rel="manifest" href="/manifest.json" />
         <link rel="icon" type="image/png" href="/SmartDesk logo.png" />
         <link rel="apple-touch-icon" href="/SmartDesk logo.png" />
       </head>
