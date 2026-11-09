@@ -104,15 +104,40 @@ function handleDeviceVerify(req, res) {
   const query = req.query || {};
   const password = body.password || query.password;
   const deviceName = body.deviceName || query.deviceName;
+  const userId = body.userId || query.userId;
 
-  const dev = getOrCreateDevice(deviceId);
+  if (!deviceId) {
+    return res.status(400).json({
+      ok: false,
+      error: "Device ID is required for verification.",
+    });
+  }
+
+  // Check if device exists in registered devices
+  const dev = devices.get(deviceId);
+  if (!dev || (dev.lastSeen === 0 && !dev.isOnline)) {
+    return res.status(404).json({
+      ok: false,
+      error: `Device "${deviceId}" not found. No device with this ID has registered with the cloud relay.`,
+    });
+  }
+
+  // If user provided a userId and the device registered with an ownerUser, verify it matches
+  if (dev.ownerUser && dev.ownerUser.length > 0 && userId && userId.length > 0) {
+    if (dev.ownerUser !== userId) {
+      return res.status(403).json({
+        ok: false,
+        error: `User ID mismatch: "${userId}" does not match the registered owner for this desk.`,
+      });
+    }
+  }
 
   // If password is configured on hardware, verify it
   if (dev.password && dev.password.length > 0) {
     if (!password || password !== dev.password) {
       return res.status(401).json({
         ok: false,
-        error: "Verification failed: Invalid device password.",
+        error: "Verification failed: Invalid device password. Please check your password.",
       });
     }
   }

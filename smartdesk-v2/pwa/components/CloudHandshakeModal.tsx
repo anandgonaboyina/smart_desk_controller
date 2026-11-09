@@ -205,56 +205,29 @@ export default function CloudHandshakeModal({
         });
         setInlineStatus({ text: "Verified & Connected!", type: "success" });
         onToast?.(`PWA connected to device '${d}'.`, "success");
-      } else if (res.status === 401 && resData?.error) {
-        // Specific password rejection from server
-        const errorMsg = resData.error;
+      } else {
+        const errorMsg =
+          resData?.error ||
+          "Details do not match any registered desk. Please check your Device ID, User ID, and Password.";
         setSaveConfirmStatus({
           show: true,
           success: false,
-          title: "Verification Failed",
+          title: "Details Do Not Match",
           message: errorMsg,
         });
-        setInlineStatus({ text: "Verification Mismatch", type: "error" });
+        setInlineStatus({ text: "Details Mismatch", type: "error" });
         onToast?.(errorMsg, "error");
-      } else {
-        // When connecting directly without BLE or if verification endpoint is unavailable, bind PWA directly to device details
-        const targetName = n || d;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("smartdesk_cloud_user", u);
-          localStorage.setItem("smartdesk_cloud_pass", p);
-          localStorage.setItem("smartdesk_cloud_device_id", d);
-          localStorage.setItem("smartdesk_last_device_name", targetName);
-        }
-
-        onUpdateClientCredentialsOnly?.(u, p, d, targetName);
-
-        setSaveConfirmStatus({
-          show: true,
-          success: true,
-          title: "Device Connected!",
-          message: `PWA linked to '${targetName}' (${d}). Click OK to reload and connect.`,
-        });
-        setInlineStatus({ text: "Connected! Ready to reload.", type: "success" });
-        onToast?.(`PWA connected to device '${d}'.`, "success");
       }
     } catch (err: any) {
-      // If server could not be reached (e.g. Render backend cold boot), save credentials so connection succeeds upon boot
-      if (typeof window !== "undefined") {
-        localStorage.setItem("smartdesk_cloud_user", u);
-        localStorage.setItem("smartdesk_cloud_pass", p);
-        localStorage.setItem("smartdesk_cloud_device_id", d);
-        if (n) localStorage.setItem("smartdesk_last_device_name", n);
-      }
-      onUpdateClientCredentialsOnly?.(u, p, d, n);
-
+      const errorMsg = "Unable to reach verification server. Please check your network connection.";
       setSaveConfirmStatus({
         show: true,
-        success: true,
-        title: "Configuration Saved!",
-        message: `Credentials saved for '${d}'. Server may be waking up. Click OK to reload and connect.`,
+        success: false,
+        title: "Connection Failed",
+        message: errorMsg,
       });
-      setInlineStatus({ text: "Configuration saved. Ready to reload.", type: "success" });
-      onToast?.(`PWA monitoring device '${d}'.`, "info");
+      setInlineStatus({ text: "Connection Failed", type: "error" });
+      onToast?.(errorMsg, "error");
     } finally {
       setIsVerifying(false);
     }
