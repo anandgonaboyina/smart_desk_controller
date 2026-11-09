@@ -150,10 +150,15 @@ inline void broadcastCloudState() {
     uint16_t rgbRemMin = (s_rgbTimerEndMs > 0 && millis() < s_rgbTimerEndMs)
         ? (uint16_t)(((s_rgbTimerEndMs - millis()) + 59999UL) / 60000UL) : 0;
 
+    bool wifiIsConn = (WiFi.status() == WL_CONNECTED);
+    String curSsid = wifiIsConn ? WiFi.SSID() : "";
+    String curIp   = wifiIsConn ? WiFi.localIP().toString() : "";
+
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
     char msg[2000];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\",\"deviceName\":\"%s\",\"stripLen\":%u,"
+        "\"wifi\":{\"connected\":%s,\"ssid\":\"%s\",\"ip\":\"%s\"},"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
         "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
@@ -169,6 +174,7 @@ inline void broadcastCloudState() {
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
         "\"state\":{\"deviceName\":\"%s\",\"stripLen\":%u,"
+        "\"wifi\":{\"connected\":%s,\"ssid\":\"%s\",\"ip\":\"%s\"},"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
         "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
@@ -184,6 +190,7 @@ inline void broadcastCloudState() {
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
         s_cloudDeviceId, s_deviceName, s_stripLen,
+        wifiIsConn ? "true" : "false", curSsid.c_str(), curIp.c_str(),
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
@@ -197,6 +204,7 @@ inline void broadcastCloudState() {
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd, rgbRemMin,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
         s_deviceName, s_stripLen,
+        wifiIsConn ? "true" : "false", curSsid.c_str(), curIp.c_str(),
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,

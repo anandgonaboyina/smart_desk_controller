@@ -28,6 +28,11 @@ export interface RemoteDeviceState {
   configs?: RemoteRelayConfig[];
   led: { mode: number; r: number; g: number; b: number; bri: number; spd: number; remainingMin?: number };
   env: { tempC: number; humidity: number; valid: boolean };
+  wifi?: {
+    connected?: boolean;
+    ssid?: string;
+    ip?: string;
+  };
   presence?: {
     enabled?: boolean;
     state: number;
@@ -322,6 +327,7 @@ export function useRemoteDeskWs({
                       remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
                     };
                   });
+                  const rawWifi = stateObj.wifi || data.wifi;
                   const updated: RemoteDeviceState = {
                     relays,
                     configs: stateObj.configs || data.configs,
@@ -332,6 +338,13 @@ export function useRemoteDeskWs({
                     stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
                     matrix: stateObj.matrix || data.matrix,
                     schedules: stateObj.schedules || data.schedules,
+                    wifi: rawWifi
+                      ? {
+                          connected: Boolean(rawWifi.connected),
+                          ssid: rawWifi.ssid || "",
+                          ip: rawWifi.ip || "",
+                        }
+                      : undefined,
                   };
                   if (typeof window !== "undefined") {
                     try {
@@ -373,9 +386,16 @@ export function useRemoteDeskWs({
           }
 
           if (data.type === "device_status") {
-            setIsDeviceOnline(Boolean(data.isOnline));
+            const isOnline = Boolean(data.isOnline);
+            setIsDeviceOnline(isOnline);
+            if (!isOnline) {
+              setDeviceState((prev) => ({
+                ...prev,
+                wifi: prev.wifi ? { ...prev.wifi, connected: false } : { connected: false },
+              }));
+            }
             if (onToast) {
-              onToast(data.isOnline ? "SmartDesk connected to Cloud" : "SmartDesk went Offline", data.isOnline ? "success" : "warn");
+              onToast(isOnline ? "SmartDesk connected to Cloud" : "SmartDesk went Offline", isOnline ? "success" : "warn");
             }
           }
 
@@ -426,6 +446,14 @@ export function useRemoteDeskWs({
                     valid: typeof rawEnv.valid === "boolean" ? rawEnv.valid : prev.env.valid,
                   }
                 : prev.env;
+              const rawWifi = data.wifi || data.state?.wifi;
+              const wifi = rawWifi
+                ? {
+                    connected: Boolean(rawWifi.connected),
+                    ssid: rawWifi.ssid || "",
+                    ip: rawWifi.ip || "",
+                  }
+                : prev.wifi;
               const presence = data.presence || data.state?.presence || prev.presence;
               const deviceName = data.deviceName || data.state?.deviceName || prev.deviceName;
               const stripLength = data.stripLen || data.state?.stripLen || data.stripLength || data.state?.stripLength || prev.stripLength;
@@ -436,7 +464,7 @@ export function useRemoteDeskWs({
                   localStorage.setItem("smartdesk_schedules", JSON.stringify(schedules));
                 } catch (_) {}
               }
-              const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix, schedules };
+              const updated: RemoteDeviceState = { relays, configs, led, env, wifi, presence, deviceName, stripLength, matrix, schedules };
               if (typeof window !== "undefined") {
                 try {
                   localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));

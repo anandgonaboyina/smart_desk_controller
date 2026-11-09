@@ -47,6 +47,7 @@ function getOrCreateDevice(deviceId) {
           { load: false, remainingMin: 0 },
           { load: false, remainingMin: 0 },
         ],
+        wifi: { connected: false, ssid: "", ip: "" },
         led: { mode: 1, r: 0, g: 180, b: 255, bri: 100, spd: 5 },
         env: { tempC: 0, humidity: 0, valid: false },
         presence: { state: 0, distanceM: 0, remainingMin: 0 },
@@ -355,6 +356,7 @@ wss.on("connection", (ws, req) => {
       if (msg.type === "state_update") {
         if (msg.relays) dev.state.relays = msg.relays;
         if (msg.configs) dev.state.configs = msg.configs;
+        if (msg.wifi) dev.state.wifi = msg.wifi;
         if (msg.led) dev.state.led = msg.led;
         if (msg.env) dev.state.env = msg.env;
         if (msg.presence) dev.state.presence = msg.presence;
@@ -480,6 +482,7 @@ wss.on("connection", (ws, req) => {
         if (dev && dev.ws === ws) {
           dev.ws = null;
           dev.isOnline = false;
+          if (dev.state && dev.state.wifi) dev.state.wifi.connected = false;
           console.log(`[DEVICE OFFLINE] ESP32 "${meta.deviceId}" disconnected`);
           broadcastToDeviceClients(meta.deviceId, {
             type: "device_status",

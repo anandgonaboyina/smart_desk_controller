@@ -62,9 +62,36 @@ export default function SmartDeskApp() {
     onMusicFrame: remote.sendMusicFrame,
   });
 
+  const isWsOnline = remote.isWsConnected && (remote.isDeviceOnline || Boolean(remote.deviceState.wifi?.connected));
+
+  const effectiveWifiConnected = useMemo(() => {
+    if (ble.connected) return ble.wifiConnected;
+    if (remote.deviceState.wifi?.connected !== undefined) return remote.deviceState.wifi.connected;
+    return isWsOnline;
+  }, [ble.connected, ble.wifiConnected, remote.deviceState.wifi?.connected, isWsOnline]);
+
+  const effectiveWifiState = useMemo(() => {
+    if (ble.connected) return ble.wifiState;
+    return effectiveWifiConnected ? 1 : 0;
+  }, [ble.connected, ble.wifiState, effectiveWifiConnected]);
+
+  const effectiveWifiSsid = useMemo(() => {
+    if (ble.connected && ble.wifiSsid) return ble.wifiSsid;
+    if (remote.deviceState.wifi?.ssid) return remote.deviceState.wifi.ssid;
+    if (effectiveWifiConnected) return ble.wifiSsid || "Connected";
+    return "";
+  }, [ble.connected, ble.wifiSsid, remote.deviceState.wifi?.ssid, effectiveWifiConnected]);
+
+  const effectiveWifiIp = useMemo(() => {
+    if (ble.connected && ble.wifiIp) return ble.wifiIp;
+    if (remote.deviceState.wifi?.ip) return remote.deviceState.wifi.ip;
+    if (effectiveWifiConnected) return ble.wifiIp || "Online";
+    return "";
+  }, [ble.connected, ble.wifiIp, remote.deviceState.wifi?.ip, effectiveWifiConnected]);
+
   const isDeskConnected =
     ble.connected ||
-    ble.wifiConnected ||
+    effectiveWifiConnected ||
     (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load)));
   
   // Automatically synchronize remote cloud credentials whenever BLE loads hardware config
@@ -124,10 +151,10 @@ export default function SmartDeskApp() {
     if (remote.isWsConnected && remote.deviceState.deviceName) {
       return remote.deviceState.deviceName;
     }
-    if (ble.wifiConnected) return `SmartDesk (Wi-Fi ${ble.wifiIp || ble.wifiHost})`;
+    if (effectiveWifiConnected) return `SmartDesk (Wi-Fi ${effectiveWifiIp || ble.wifiHost})`;
     if (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load))) return `SmartDesk (Cloud Remote)`;
     return ble.deviceName;
-  }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName, remote.deviceState.relays]);
+  }, [ble.connected, ble.deviceName, effectiveWifiConnected, effectiveWifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName, remote.deviceState.relays]);
 
   const effectiveRelays = useMemo(() => {
     if (ble.connected) {
@@ -586,12 +613,12 @@ export default function SmartDeskApp() {
           onConnectBle={ble.handleConnect}
           onDisconnectBle={ble.handleDisconnected}
           isWsConnected={remote.isWsConnected}
-          isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || ble.wifiConnected || isDeskConnected)}
+          isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || effectiveWifiConnected || isDeskConnected)}
           onOpenHandshake={() => setShowHandshakeModal(true)}
-          wifiConnected={ble.wifiConnected}
-          wifiState={ble.wifiState}
-          wifiSsid={ble.wifiSsid}
-          wifiIp={ble.wifiIp}
+          wifiConnected={effectiveWifiConnected}
+          wifiState={effectiveWifiState}
+          wifiSsid={effectiveWifiSsid}
+          wifiIp={effectiveWifiIp}
           onOpenWifiModal={() => setShowWifiModal(true)}
           onOpenFlasher={() => setShowFlasherModal(true)}
           activeTab={activeTab}
@@ -606,11 +633,11 @@ export default function SmartDeskApp() {
             connected={isDeskConnected}
             connecting={ble.connecting}
             deviceName={currentDeskName}
-            wifiConnected={ble.wifiConnected}
-            wifiState={ble.wifiState}
-            wifiSsid={ble.wifiSsid}
-            wifiIp={ble.wifiIp}
-            isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || ble.wifiConnected || isDeskConnected)}
+            wifiConnected={effectiveWifiConnected}
+            wifiState={effectiveWifiState}
+            wifiSsid={effectiveWifiSsid}
+            wifiIp={effectiveWifiIp}
+            isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || effectiveWifiConnected || isDeskConnected)}
             isWsConnected={remote.isWsConnected}
             onOpenWifiModal={() => setShowWifiModal(true)}
             onOpenHandshakeModal={() => setShowHandshakeModal(true)}
@@ -756,9 +783,9 @@ export default function SmartDeskApp() {
                 onDisconnect={ble.handleDisconnected}
                 onClearLogs={ble.clearLogs}
                 wifiHost={ble.wifiHost}
-                wifiConnected={ble.wifiConnected}
-                wifiIp={ble.wifiIp}
-                wifiSsid={ble.wifiSsid}
+                wifiConnected={effectiveWifiConnected}
+                wifiIp={effectiveWifiIp}
+                wifiSsid={effectiveWifiSsid}
                 wifiOnAwayOnly={ble.wifiOnAwayOnly}
                 onUpdateWifiHost={ble.updateWifiHost}
                 onToggleWifiOnAwayOnly={ble.toggleWifiOnAwayOnly}
@@ -800,19 +827,19 @@ export default function SmartDeskApp() {
         isOpen={showWifiModal}
         onClose={() => setShowWifiModal(false)}
         deskHost={ble.wifiHost || "192.168.4.1"}
-        currentSsid={ble.wifiSsid}
-        currentIp={ble.wifiIp}
+        currentSsid={effectiveWifiSsid}
+        currentIp={effectiveWifiIp}
         portalStatus={
-          ble.wifiConnected
+          effectiveWifiConnected
             ? "Authenticated & Online"
-            : ble.wifiState === 2
+            : effectiveWifiState === 2
             ? "Bypassing Fortinet..."
-            : ble.wifiState === 3
+            : effectiveWifiState === 3
             ? "Hotspot Active (SoftAP)"
             : "Standby"
         }
-        wifiConnected={ble.wifiConnected}
-        wifiState={ble.wifiState}
+        wifiConnected={effectiveWifiConnected}
+        wifiState={effectiveWifiState}
         isBleConnected={ble.connected}
         onScanOverBle={ble.scanWifiOverBle}
         scannedNetworks={ble.scannedNetworks}
@@ -829,10 +856,10 @@ export default function SmartDeskApp() {
         bleConnecting={ble.connecting}
         deviceName={ble.deviceName}
         onConnectBle={ble.handleConnect}
-        wifiState={ble.wifiState}
-        wifiConnected={ble.wifiConnected}
-        wifiSsid={ble.wifiSsid}
-        wifiIp={ble.wifiIp}
+        wifiState={effectiveWifiState}
+        wifiConnected={effectiveWifiConnected}
+        wifiSsid={effectiveWifiSsid}
+        wifiIp={effectiveWifiIp}
         wifiRssi={ble.wifiRssi}
         onScanWifiOverBle={ble.scanWifiOverBle}
         scannedNetworks={ble.scannedNetworks}
