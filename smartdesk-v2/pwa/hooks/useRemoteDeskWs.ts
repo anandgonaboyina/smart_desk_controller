@@ -69,11 +69,21 @@ const resolveDefaultWsUrl = () => {
   return "ws://localhost:3001/ws";
 };
 
+const formatReadyState = (state: number): string => {
+  switch (state) {
+    case 0: return "0 (CONNECTING)";
+    case 1: return "1 (OPEN)";
+    case 2: return "2 (CLOSING)";
+    case 3: return "3 (CLOSED)";
+    default: return String(state);
+  }
+};
+
 export function useRemoteDeskWs({
   wsUrl,
   userId = "user_anand_primary",
   password = "",
-  deviceId = "desk_anand",
+  deviceId = "desk_anandkumar",
   deviceKey = "SmartDesk_Cloud_Secret_2026",
   onStateUpdate,
   onToast,
@@ -99,11 +109,16 @@ export function useRemoteDeskWs({
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("smartdesk_cloud_device_id");
       if (saved && saved.trim()) {
-        // Automatically migrate legacy 'desk_anand_s3' to active 'desk_anand'
-        return saved.trim();
+        const trimmed = saved.trim();
+        // Automatically migrate legacy 'desk_anand' or 'desk_anand_s3' to active 'desk_anandkumar'
+        if (trimmed === "desk_anand" || trimmed === "desk_anand_s3") {
+          localStorage.setItem("smartdesk_cloud_device_id", "desk_anandkumar");
+          return "desk_anandkumar";
+        }
+        return trimmed;
       }
     }
-    return deviceId || "desk_anand";
+    return deviceId || "desk_anandkumar";
   });
 
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
@@ -198,19 +213,30 @@ export function useRemoteDeskWs({
 
   const connect = useCallback(() => {
     if (typeof window === "undefined") return;
+    const isWss = effectiveWsUrl.startsWith("wss://");
+    const scheme = isWss ? "wss://" : "ws://";
+    console.log(
+      `[CLOUD WS LIFECYCLE] connect() called. Target URL: "${effectiveWsUrl}" (${scheme}) | Existing readyState: ${
+        wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"
+      }`
+    );
+
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      console.log(`[CLOUD WS LIFECYCLE] connect() skipped: socket already active with readyState: ${formatReadyState(wsRef.current.readyState)}`);
       return;
     }
 
     try {
+      console.log(`[CLOUD WS LIFECYCLE] Instantiating new WebSocket("${effectiveWsUrl}")...`);
       const socket = new WebSocket(effectiveWsUrl);
       wsRef.current = socket;
+      console.log(`[CLOUD WS LIFECYCLE] WebSocket instantiated. url="${socket.url || effectiveWsUrl}" initial readyState: ${formatReadyState(socket.readyState)}`);
 
       // Watchdog: If stuck in CONNECTING for > 7s (Render wake-up or network stall), auto-reset
       if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
       connectTimeoutRef.current = setTimeout(() => {
         if (socket.readyState === WebSocket.CONNECTING) {
-          console.warn("[CLOUD WS] Connection attempt timed out in CONNECTING. Forcing instant retry...");
+          console.warn(`[CLOUD WS] Connection attempt timed out in CONNECTING (readyState: ${formatReadyState(socket.readyState)}). Forcing instant retry...`);
           try {
             socket.onclose = null;
             socket.onerror = null;
@@ -229,7 +255,7 @@ export function useRemoteDeskWs({
           connectTimeoutRef.current = null;
         }
         setIsWsConnected(true);
-        console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl}`);
+        console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl} | socket.url: "${socket.url}" | readyState: ${formatReadyState(socket.readyState)}`);
 
         // Send Multi-User Authentication Handshake with Device Username & Password
         const authPayload: Record<string, any> = {
@@ -241,27 +267,49 @@ export function useRemoteDeskWs({
           deviceKey,
           timestamp: Date.now(),
         };
+        console.log("[CLOUD WS TX AUTH] Outgoing auth handshake payload:", JSON.stringify(authPayload));
         socket.send(JSON.stringify(authPayload));
 
         // State-sync handshake: Immediately request live hardware state upon WebSocket connect
-        socket.send(
-          JSON.stringify({
-            cmd: "get_state",
-            type: "get_state",
-            deviceId: credsRef.current.devId,
-            timestamp: Date.now(),
-          })
-        );
+        const getStatePayload = {
+          cmd: "get_state",
+          type: "get_state",
+          deviceId: credsRef.current.devId,
+          timestamp: Date.now(),
+        };
+        console.log("[CLOUD WS TX] Requesting live hardware state:", JSON.stringify(getStatePayload));
+        socket.send(JSON.stringify(getStatePayload));
       };
 
       socket.onmessage = (event) => {
+        console.log(
+          `[CLOUD WS RX] readyState: ${formatReadyState(socket.readyState)} | raw data length: ${
+            typeof event.data === "string" ? event.data.length : "non-string"
+          } | payload preview:`,
+          typeof event.data === "string" && event.data.length > 300 ? event.data.substring(0, 300) + "..." : event.data
+        );
         try {
           const data = JSON.parse(event.data);
+          console.log(`[CLOUD WS RX PARSED] type="${data.type || data.cmd || data.action || "(none)"}"`, data);
 
           if (data.type === "auth_res") {
             if (data.ok) {
               setIsDeviceOnline(Boolean(data.deviceOnline));
               setRemoteModeEnabled(Boolean(data.remoteModeEnabled));
+
+              // If server confirmed canonical device ID (e.g. desk_anandkumar), synchronize it immediately
+              if (data.deviceId && data.deviceId !== credsRef.current.devId) {
+                console.log(`[CLOUD WS] Syncing canonical deviceId from server: "${data.deviceId}" (was "${credsRef.current.devId}")`);
+                credsRef.current.devId = data.deviceId;
+                setCurrentDeviceId(data.deviceId);
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem("smartdesk_cloud_device_id", data.deviceId);
+                  } catch (_) {}
+                }
+              }
+
+              const targetDevId = data.deviceId || credsRef.current.devId;
               const stateObj = data.currentState || data.cachedState || data.state;
               if (stateObj) {
                 const rawRelays = stateObj.relays || data.relays;
@@ -296,21 +344,21 @@ export function useRemoteDeskWs({
               }
 
               // State-sync handshake: Send { cmd: 'get_state' } right after auth confirmation
-              socket.send(
-                JSON.stringify({
-                  cmd: "get_state",
-                  type: "get_state",
-                  deviceId: credsRef.current.devId,
-                  timestamp: Date.now(),
-                })
-              );
+              const getStatePayload = {
+                cmd: "get_state",
+                type: "get_state",
+                deviceId: targetDevId,
+                timestamp: Date.now(),
+              };
+              console.log("[CLOUD WS TX] Requesting live hardware state after auth_res:", JSON.stringify(getStatePayload));
+              socket.send(JSON.stringify(getStatePayload));
 
               // Automatically synchronize device hardware clock with browser's local time upon connection
               const now = new Date();
               socket.send(
                 JSON.stringify({
                   type: "time_sync",
-                  deviceId: credsRef.current.devId,
+                  deviceId: targetDevId,
                   h: now.getHours(),
                   m: now.getMinutes(),
                   s: now.getSeconds(),
@@ -411,7 +459,7 @@ export function useRemoteDeskWs({
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         if (connectTimeoutRef.current) {
           clearTimeout(connectTimeoutRef.current);
           connectTimeoutRef.current = null;
@@ -419,12 +467,22 @@ export function useRemoteDeskWs({
         setIsWsConnected(false);
         setIsDeviceOnline(false);
         wsRef.current = null;
-        console.log("[CLOUD WS] Connection closed. Retrying in 2 seconds...");
+        console.warn(
+          `[CLOUD WS] Connection closed. code=${event.code}, reason="${event.reason || "(none)"}", wasClean=${event.wasClean}, readyState: ${formatReadyState(socket.readyState)}. Retrying in 2 seconds...`
+        );
         reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
 
       socket.onerror = (err) => {
-        console.warn("[CLOUD WS] Socket encountered error:", err);
+        const errorDetails = {
+          type: (err as any)?.type || "error",
+          readyState: formatReadyState(socket.readyState),
+          targetUrl: socket.url || effectiveWsUrl,
+          timeStamp: (err as any)?.timeStamp,
+          isTrusted: (err as any)?.isTrusted,
+          message: (err as any)?.message || null,
+        };
+        console.warn("[CLOUD WS] Socket encountered error:", JSON.stringify(errorDetails), err);
       };
     } catch (err) {
       console.error("[CLOUD WS] Connection attempt error", err);
@@ -433,25 +491,29 @@ export function useRemoteDeskWs({
   }, [effectiveWsUrl, deviceKey, onStateUpdate, onToast]);
 
   useEffect(() => {
+    console.log(`[CLOUD WS LIFECYCLE] Hook mount / connect trigger. wsUrl: "${effectiveWsUrl}"`);
     connect();
     return () => {
+      console.log(`[CLOUD WS LIFECYCLE] Hook cleanup. Current readyState: ${wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"}`);
       if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [connect]);
+  }, [connect, effectiveWsUrl]);
 
   // Request State from Hardware ESP32
   const requestState = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          cmd: "get_state",
-          type: "get_state",
-          deviceId: currentDeviceId,
-          timestamp: Date.now(),
-        })
-      );
+      const payload = {
+        cmd: "get_state",
+        type: "get_state",
+        deviceId: currentDeviceId,
+        timestamp: Date.now(),
+      };
+      console.log("[CLOUD WS TX] requestState() sent:", JSON.stringify(payload));
+      wsRef.current.send(JSON.stringify(payload));
+    } else {
+      console.warn(`[CLOUD WS TX] requestState() skipped: socket not OPEN (readyState: ${wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"})`);
     }
   }, [currentDeviceId]);
 

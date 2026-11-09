@@ -68,16 +68,56 @@ export default function SmartDeskApp() {
     (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load)));
   
   // Automatically synchronize remote cloud credentials whenever BLE loads hardware config
+  const prevEffectDepsRef = useRef<{
+    devId?: string;
+    user?: string;
+    name?: string;
+    remoteDevId?: string;
+    mounted?: boolean;
+  }>({});
+
+  const updateRemoteCredentialsRef = useRef(remote.updateCredentials);
+  updateRemoteCredentialsRef.current = remote.updateCredentials;
+
   useEffect(() => {
+    const prev = prevEffectDepsRef.current;
+    const currentDevId = ble.hardwareCloudConfig?.devId;
+    const currentUser = ble.hardwareCloudConfig?.user;
+    const currentName = ble.hardwareCloudConfig?.name;
+    const currentRemoteDevId = remote.deviceId;
+
+    const changes: string[] = [];
+    if (!prev.mounted) {
+      changes.push("initial component mount");
+    } else {
+      if (prev.devId !== currentDevId) changes.push(`ble.hardwareCloudConfig.devId ("${prev.devId}" -> "${currentDevId}")`);
+      if (prev.user !== currentUser) changes.push(`ble.hardwareCloudConfig.user ("${prev.user}" -> "${currentUser}")`);
+      if (prev.name !== currentName) changes.push(`ble.hardwareCloudConfig.name ("${prev.name}" -> "${currentName}")`);
+      if (prev.remoteDevId !== currentRemoteDevId) changes.push(`remote.deviceId ("${prev.remoteDevId}" -> "${currentRemoteDevId}")`);
+    }
+
+    if (changes.length > 0) {
+      console.log(`[EFFECT TRIGGER] app/page.tsx line 72 triggered. Causes: ${changes.join(", ")}`);
+    }
+
+    prevEffectDepsRef.current = {
+      devId: currentDevId,
+      user: currentUser,
+      name: currentName,
+      remoteDevId: currentRemoteDevId,
+      mounted: true,
+    };
+
     if (ble.hardwareCloudConfig?.devId && ble.hardwareCloudConfig.devId !== remote.deviceId) {
-      remote.updateCredentials(
+      console.log(`[EFFECT TRIGGER] Invoking updateCredentials(devId="${ble.hardwareCloudConfig.devId}", user="${ble.hardwareCloudConfig.user}")`);
+      updateRemoteCredentialsRef.current(
         ble.hardwareCloudConfig.user || undefined,
         undefined,
         ble.hardwareCloudConfig.devId,
         ble.hardwareCloudConfig.name || undefined
       );
     }
-  }, [ble.hardwareCloudConfig?.devId, ble.hardwareCloudConfig?.user, ble.hardwareCloudConfig?.name, remote]);
+  }, [ble.hardwareCloudConfig?.devId, ble.hardwareCloudConfig?.user, ble.hardwareCloudConfig?.name, remote.deviceId]);
 
   const currentDeskName = useMemo(() => {
     if (ble.connected) return ble.deviceName;

@@ -49,6 +49,7 @@ function isMatchingDeviceName(inputName, devId, actualName, defaultName) {
     "smartdesk-s3",
     "anandsmartdesk",
     "desk_anand",
+    "desk_anandkumar",
     "desk_anand_s3",
   ];
   if (recognizedDefaults.includes(input)) return true;
@@ -385,6 +386,21 @@ wss.on("connection", (ws, req) => {
             currentState: dev.hasReceivedState ? dev.state : undefined,
           })
         );
+
+        // Instantly push cached hardware state on PWA client authentication
+        if (dev.hasReceivedState && dev.state) {
+          console.log(`[CLIENT AUTH] Immediately pushing cached state to client "${userId}" for "${meta.deviceId}"`);
+          ws.send(
+            JSON.stringify({
+              type: "state_update",
+              cmd: "get_state",
+              deviceId: meta.deviceId,
+              ...dev.state,
+              timestamp: Date.now(),
+            })
+          );
+        }
+
         return;
       }
 
@@ -511,6 +527,18 @@ wss.on("connection", (ws, req) => {
         cmd === "ping"
       ) {
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
+          // If client requested state and server has cached telemetry, deliver it even if hardware is momentarily sleeping
+          if ((cmd === "request_state" || cmd === "get_state") && targetDev.hasReceivedState && targetDev.state) {
+            return ws.send(
+              JSON.stringify({
+                type: "state_update",
+                cmd: "get_state",
+                deviceId: targetDev.deviceId || meta.deviceId,
+                ...targetDev.state,
+                timestamp: Date.now(),
+              })
+            );
+          }
           return ws.send(
             JSON.stringify({
               type: "error",

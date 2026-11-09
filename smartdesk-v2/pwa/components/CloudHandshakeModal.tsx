@@ -63,7 +63,7 @@ export default function CloudHandshakeModal({
   wsUrl = "",
   isWsConnected,
   isDeviceOnline,
-  deviceId = "desk_anand",
+  deviceId = "desk_anandkumar",
   onSendCloudRelayCommand,
   onUpdateCloudCredentials,
   onUpdateClientCredentialsOnly,
@@ -102,9 +102,16 @@ export default function CloudHandshakeModal({
   const [cloudDeviceId, setCloudDeviceId] = useState<string>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("smartdesk_cloud_device_id");
-      if (saved && saved.trim()) return saved.trim();
+      if (saved && saved.trim()) {
+        const trimmed = saved.trim();
+        if (trimmed === "desk_anand" || trimmed === "desk_anand_s3") {
+          localStorage.setItem("smartdesk_cloud_device_id", "desk_anandkumar");
+          return "desk_anandkumar";
+        }
+        return trimmed;
+      }
     }
-    return deviceId || "desk_anand";
+    return deviceId || "desk_anandkumar";
   });
   const [cloudDeskName, setCloudDeskName] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -290,9 +297,9 @@ export default function CloudHandshakeModal({
     }
   };
 
-  // Action 3: Revert to Factory Defaults (desk_anand / user_anand_primary)
+  // Action 3: Revert to Factory Defaults (desk_anandkumar / user_anand_primary)
   const handleResetToDefaults = () => {
-    setCloudDeviceId("desk_anand");
+    setCloudDeviceId("desk_anandkumar");
     setCloudUser("user_anand_primary");
     setCloudPass("");
     setCloudDeskName("SmartDesk");
@@ -300,11 +307,11 @@ export default function CloudHandshakeModal({
     if (typeof window !== "undefined") {
       localStorage.setItem("smartdesk_cloud_user", "user_anand_primary");
       localStorage.setItem("smartdesk_cloud_pass", "");
-      localStorage.setItem("smartdesk_cloud_device_id", "desk_anand");
+      localStorage.setItem("smartdesk_cloud_device_id", "desk_anandkumar");
       localStorage.setItem("smartdesk_last_device_name", "SmartDesk");
     }
 
-    onUpdateClientCredentialsOnly?.("user_anand_primary", "", "desk_anand", "SmartDesk");
+    onUpdateClientCredentialsOnly?.("user_anand_primary", "", "desk_anandkumar", "SmartDesk");
 
     setSaveConfirmStatus({
       show: true,
@@ -789,7 +796,7 @@ export default function CloudHandshakeModal({
 
               {hardwareCloudConfig && (
                 <div className="p-1.5 md:p-2.5 rounded-lg bg-cyan-500/20 border border-cyan-500/50 text-[9px] md:text-xs text-cyan-300 flex items-center justify-between">
-                  <span>⚡ Hardware ID: <strong className="font-mono text-white">{hardwareCloudConfig.devId || "desk_anand"}</strong></span>
+                  <span>⚡ Hardware ID: <strong className="font-mono text-white">{hardwareCloudConfig.devId || "desk_anandkumar"}</strong></span>
                   <button onClick={() => {
                     if (hardwareCloudConfig.devId) setCloudDeviceId(hardwareCloudConfig.devId);
                     if (hardwareCloudConfig.user) setCloudUser(hardwareCloudConfig.user);
