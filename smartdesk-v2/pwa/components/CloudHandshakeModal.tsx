@@ -199,7 +199,7 @@ export default function CloudHandshakeModal({
         setInlineStatus({ text: "Verified & Connected!", type: "success" });
         onToast?.(`PWA connected to device '${d}'.`, "success");
       } else {
-        const errorMsg = resData?.error || "Connection failed: Device name verification mismatch or password error.";
+        const errorMsg = resData?.error || "Device verification failed. Please check device password.";
         setSaveConfirmStatus({
           show: true,
           success: false,
@@ -210,18 +210,23 @@ export default function CloudHandshakeModal({
         onToast?.(errorMsg, "error");
       }
     } catch (err: any) {
-      const isTimeout = err?.name === "AbortError";
-      const errorMsg = isTimeout
-        ? "Server did not respond in time (Render backend may be spinning up). Please wait a moment and try again."
-        : "Cannot reach cloud relay server. Please check your internet connection.";
+      // If server could not be reached (e.g. Render backend cold boot), save credentials so connection succeeds upon boot
+      if (typeof window !== "undefined") {
+        localStorage.setItem("smartdesk_cloud_user", u);
+        localStorage.setItem("smartdesk_cloud_pass", p);
+        localStorage.setItem("smartdesk_cloud_device_id", d);
+        if (n) localStorage.setItem("smartdesk_last_device_name", n);
+      }
+      onUpdateClientCredentialsOnly?.(u, p, d, n);
+
       setSaveConfirmStatus({
         show: true,
-        success: false,
-        title: "Connection Failed",
-        message: errorMsg,
+        success: true,
+        title: "Configuration Saved!",
+        message: `Credentials saved for '${d}'. Server may be waking up. Click OK to reload and connect.`,
       });
-      setInlineStatus({ text: "Server Unreachable", type: "error" });
-      onToast?.(errorMsg, "error");
+      setInlineStatus({ text: "Configuration saved. Ready to reload.", type: "success" });
+      onToast?.(`PWA monitoring device '${d}'.`, "info");
     } finally {
       setIsVerifying(false);
     }

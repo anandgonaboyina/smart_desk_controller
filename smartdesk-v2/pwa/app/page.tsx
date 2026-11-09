@@ -99,6 +99,9 @@ export default function SmartDeskApp() {
         remainingMin: r.remainingMin || 0,
       }));
     }
+    if (ble.wifiConnected) {
+      return ble.relays;
+    }
     if (remote.deviceState?.relays && (remote.isWsConnected || remote.deviceState.relays.some((r) => r.load))) {
       return remote.deviceState.relays.map((r) => ({
         load: Boolean(r.load),
@@ -106,7 +109,7 @@ export default function SmartDeskApp() {
       }));
     }
     return ble.relays;
-  }, [ble.connected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
+  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
 
   const effectiveConfigs = useMemo(() => {
     if (ble.connected) {

@@ -241,10 +241,6 @@ export function useRemoteDeskWs({
           deviceKey,
           timestamp: Date.now(),
         };
-        // Only include deviceName if it matches deviceId to ensure deployed servers don't reject auth on display nickname
-        if (credsRef.current.name && credsRef.current.name.trim() === credsRef.current.devId.trim()) {
-          authPayload.deviceName = credsRef.current.name.trim();
-        }
         socket.send(JSON.stringify(authPayload));
       };
 
@@ -260,10 +256,14 @@ export function useRemoteDeskWs({
               if (stateObj) {
                 const rawRelays = stateObj.relays || data.relays;
                 if (Array.isArray(rawRelays) && rawRelays.length > 0) {
-                  const relays = rawRelays.map((r: any) => ({
-                    load: Boolean(r.load),
-                    remainingMin: typeof r.remainingMin === "number" ? r.remainingMin : 0,
-                  }));
+                  const relays = rawRelays.map((r: any) => {
+                    if (typeof r === "boolean") return { load: r, remainingMin: 0 };
+                    if (typeof r === "number") return { load: Boolean(r), remainingMin: 0 };
+                    return {
+                      load: Boolean(r?.load),
+                      remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
+                    };
+                  });
                   const updated: RemoteDeviceState = {
                     relays,
                     configs: stateObj.configs || data.configs,
@@ -273,6 +273,7 @@ export function useRemoteDeskWs({
                     deviceName: stateObj.deviceName || data.deviceName,
                     stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
                     matrix: stateObj.matrix || data.matrix,
+                    schedules: stateObj.schedules || data.schedules,
                   };
                   if (typeof window !== "undefined") {
                     try {
@@ -327,12 +328,17 @@ export function useRemoteDeskWs({
             setIsDeviceOnline(true);
             setDeviceState((prev) => {
               const rawRelays = data.relays || data.state?.relays;
-              const relays = Array.isArray(rawRelays) && rawRelays.length > 0
-                ? rawRelays.map((r: any) => ({
-                    load: Boolean(r.load),
-                    remainingMin: typeof r.remainingMin === "number" ? r.remainingMin : 0,
-                  }))
-                : prev.relays;
+              let relays = prev.relays;
+              if (Array.isArray(rawRelays) && rawRelays.length > 0) {
+                relays = rawRelays.map((r: any) => {
+                  if (typeof r === "boolean") return { load: r, remainingMin: 0 };
+                  if (typeof r === "number") return { load: Boolean(r), remainingMin: 0 };
+                  return {
+                    load: Boolean(r?.load),
+                    remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
+                  };
+                });
+              }
               const configs = data.configs || data.state?.configs || prev.configs;
               const led = data.led || data.state?.led || prev.led;
               const env = data.env || data.state?.env || prev.env;

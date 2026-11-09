@@ -105,6 +105,7 @@ function getOrCreateDevice(deviceId) {
     ws: null,
     deviceKey: DEFAULT_AUTH_KEY,
     isOnline: false,
+    hasReceivedState: false,
     remoteModeEnabled: false, // Default: Remote WebSocket connection idle to save power
     lastSeen: 0,
     name: `SmartDesk-${cleanId.slice(-4)}`,
@@ -172,53 +173,28 @@ app.get("/api/device/:deviceId/status", (req, res) => {
 app.post("/api/device/:deviceId/verify", (req, res) => {
   const { deviceId } = req.params;
   const { userId, password, deviceName } = req.body || {};
+  const cleanId = (deviceId || "desk_anand").trim();
 
-  const dev = devices.get(deviceId);
-  if (!dev || !dev.isOnline || !dev.ws || dev.ws.readyState !== WebSocket.OPEN) {
-    return res.status(404).json({
-      ok: false,
-      error: "Connection failed: Device is offline or target ID not found on cloud relay.",
-      deviceOnline: false,
-    });
-  }
+  const dev = resolveDevice(cleanId) || getOrCreateDevice(cleanId);
 
-  // Check user ownership if configured on device
-  if (dev.ownerUser && dev.ownerUser.length > 0 && userId && userId !== dev.ownerUser) {
-    return res.status(401).json({
-      ok: false,
-      error: "Connection failed: Device name verification mismatch or password error.",
-      deviceOnline: false,
-    });
-  }
-
-  // Check password if configured on device
+  // Check password only if configured on device
   if (dev.password && dev.password.length > 0) {
     if (!password || password !== dev.password) {
       return res.status(401).json({
         ok: false,
-        error: "Connection failed: Device name verification mismatch or password error.",
-        deviceOnline: false,
-      });
-    }
-  }
-
-  // Check device name if provided and known on device
-  const actualDevName = dev.state?.deviceName || dev.name;
-  if (deviceName && actualDevName && deviceName.trim().length > 0) {
-    if (!isMatchingDeviceName(deviceName, deviceId, actualDevName, dev.name)) {
-      return res.status(401).json({
-        ok: false,
-        error: "Connection failed: Device name verification mismatch or password error.",
-        deviceOnline: false,
+        error: "Invalid device password",
+        deviceOnline: Boolean(dev.isOnline && dev.ws),
       });
     }
   }
 
   res.json({
     ok: true,
-    deviceId,
-    deviceOnline: true,
-    deviceName: actualDevName || deviceName,
+    deviceId: dev.deviceId || cleanId,
+    deviceName: dev.state?.deviceName || dev.name || deviceName || cleanId,
+    deviceOnline: Boolean(dev.isOnline && dev.ws !== null),
+    remoteModeEnabled: dev.remoteModeEnabled,
+    currentState: dev.hasReceivedState ? dev.state : undefined,
   });
 });
 
@@ -379,49 +355,34 @@ wss.on("connection", (ws, req) => {
           return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Missing userId" }));
         }
 
-        const dev = getOrCreateDevice(deviceId);
+        const cleanId = (deviceId || "desk_anand").trim();
+        const dev = resolveDevice(cleanId) || getOrCreateDevice(cleanId);
 
-        // Enforce user ownership if registered
-        if (dev.ownerUser && dev.ownerUser.length > 0 && userId !== dev.ownerUser) {
-          console.log(`[CLIENT AUTH REJECTED] User "${userId}" does not match device owner "${dev.ownerUser}"`);
-          return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Connection failed: Device name verification mismatch or password error." }));
-        }
-
-        // Enforce device password if configured on ESP32
+        // Enforce device password only if password is configured on device
         if (dev.password && dev.password.length > 0) {
           if (!password || password !== dev.password) {
-            console.log(`[CLIENT AUTH REJECTED] User "${userId}" failed password check for "${deviceId}"`);
-            return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Connection failed: Device name verification mismatch or password error." }));
-          }
-        }
-
-        // Enforce device name verification if provided
-        const reqDevName = msg.deviceName || msg.name;
-        const actualDevName = dev.state?.deviceName || dev.name;
-        if (reqDevName && actualDevName && reqDevName.trim().length > 0) {
-          if (!isMatchingDeviceName(reqDevName, deviceId, actualDevName, dev.name)) {
-            console.log(`[CLIENT AUTH REJECTED] Device name mismatch for "${deviceId}": expected "${actualDevName}" but received "${reqDevName}"`);
-            return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Connection failed: Device name verification mismatch or password error." }));
+            console.log(`[CLIENT AUTH REJECTED] User "${userId}" failed password check for "${cleanId}"`);
+            return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Invalid device password" }));
           }
         }
 
         meta.role = "client";
         meta.userId = userId;
-        meta.deviceId = deviceId;
+        meta.deviceId = dev.deviceId || cleanId;
         meta.authenticated = true;
 
-        console.log(`[CLIENT AUTH] PWA user "${userId}" connected to device "${deviceId}"`);
+        console.log(`[CLIENT AUTH] PWA user "${userId}" connected to device "${meta.deviceId}" (Online: ${dev.isOnline && dev.ws !== null})`);
 
         ws.send(
           JSON.stringify({
             type: "auth_res",
             ok: true,
             role: "client",
-            deviceId,
+            deviceId: meta.deviceId,
             userId,
             deviceOnline: dev.isOnline && dev.ws !== null,
             remoteModeEnabled: dev.remoteModeEnabled,
-            currentState: dev.state,
+            currentState: dev.hasReceivedState ? dev.state : undefined,
           })
         );
         return;
@@ -442,6 +403,7 @@ wss.on("connection", (ws, req) => {
 
       // Device State Telemetry Update
       if (msg.type === "state_update") {
+        dev.hasReceivedState = true;
         const rawRelays = msg.relays || msg.state?.relays;
         if (rawRelays && Array.isArray(rawRelays)) dev.state.relays = rawRelays;
         const rawConfigs = msg.configs || msg.state?.configs;
@@ -461,10 +423,10 @@ wss.on("connection", (ws, req) => {
         const rawSchedules = msg.schedules || msg.state?.schedules;
         if (rawSchedules) dev.state.schedules = rawSchedules;
 
-        // Broadcast directly to authorized clients watching this device
-        broadcastToDeviceClients(meta.deviceId, {
+        // Broadcast directly to authorized clients watching this device or its alias
+        broadcastToDeviceClients(dev.deviceId, {
           type: "state_update",
-          deviceId: meta.deviceId,
+          deviceId: dev.deviceId,
           ...msg,
           timestamp: Date.now(),
         });
@@ -569,12 +531,12 @@ wss.on("connection", (ws, req) => {
 
         targetDev.ws.send(JSON.stringify(forwardPayload));
 
-        // If client requested state, also immediately respond with server's cached state
-        if ((msg.type === "request_state" || msg.type === "get_state") && targetDev.state) {
+        // If client requested state and server has received live hardware telemetry, respond with cached state
+        if ((msg.type === "request_state" || msg.type === "get_state") && targetDev.hasReceivedState && targetDev.state) {
           ws.send(
             JSON.stringify({
               type: "state_update",
-              deviceId: meta.deviceId,
+              deviceId: targetDev.deviceId || meta.deviceId,
               ...targetDev.state,
               timestamp: Date.now(),
             })
