@@ -1,4 +1,5 @@
 // Ensure null-prototype header dictionaries safely support .hasOwnProperty()
+// Force Vercel rebuild for assetlinks
 if (typeof Object.create === "function") {
   const origCreate = Object.create;
   Object.create = function (proto: any, props?: any) {

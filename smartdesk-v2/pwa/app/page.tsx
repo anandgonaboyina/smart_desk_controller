@@ -37,14 +37,25 @@ function InstallButton() {
   if (!promptEvent) return null;
 
   return (
-    <div className="flex justify-center items-center w-full bg-black/80 backdrop-blur-md animate-fade-in duration-1000">
-      <button 
-      onClick={() => { promptEvent.prompt(); setPromptEvent(null); }} 
-      className="bg-cyan-500 text-black px-4 py-1 rounded-lg font-bold text-sm"
-    >
-      📱 Install as Pwa App
-    </button>
+<div className="flex flex-wrap items-center gap-3">
+      {promptEvent && (
+        <button 
+          onClick={() => { promptEvent.prompt(); setPromptEvent(null); }} 
+          className="bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg font-bold text-sm transition-all"
+        >
+          📱 Install PWA
+        </button>
+      )}
+
+      <a 
+        href="/smartdesk-v2.apk" 
+        download
+        className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-2"
+      >
+        <span>⬇️</span> Download APK
+      </a>
     </div>
+  
   );
 }
 
