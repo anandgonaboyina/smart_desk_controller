@@ -24,6 +24,31 @@ import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
 import { PresenceConfig, PresenceData, ScheduleRule } from "../types/smartdesk";
 
+export function InstallButton() {
+  const [promptEvent, setPromptEvent] = useState<any>(null);
+
+  useEffect(() => {
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      setPromptEvent(e);
+    });
+  }, []);
+
+  if (!promptEvent) return null;
+
+  return (
+    <div className="flex justify-center items-center w-full bg-black/80 backdrop-blur-md animate-fade-in duration-1000">
+      <button 
+      onClick={() => { promptEvent.prompt(); setPromptEvent(null); }} 
+      className="bg-cyan-500 text-black px-4 py-1 rounded-lg font-bold text-sm"
+    >
+      📱 Install as Pwa App
+    </button>
+    </div>
+  );
+}
+
+
 export default function SmartDeskApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("aod");
   const [relayConfigModalIdx, setRelayConfigModalIdx] = useState<number | null>(null);
@@ -487,6 +512,7 @@ export default function SmartDeskApp() {
       
       {/* ── 1. TOP HEADER (FIXED TO TOP) ── */}
       <div className="w-full shrink-0 z-50 bg-black">
+       { <InstallButton/>}
         <TopHeader
           currentDeskName={currentDeskName}
           isDeskConnected={isDeskConnected}
@@ -684,7 +710,7 @@ export default function SmartDeskApp() {
           </div>
         )}
       </div>
-
+  
       {/* ── 3. BOTTOM NAVBAR (FIXED TO BOTTOM) ── */}
       {activeTab !== "aod" && (
         <div className="absolute bottom-0 left-0 w-full z-40 bg-black/80 backdrop-blur-md">
