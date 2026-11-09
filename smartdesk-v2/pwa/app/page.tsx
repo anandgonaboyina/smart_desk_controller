@@ -777,14 +777,14 @@ export default function SmartDeskApp() {
         onSendCloudRelayCommand={remote.sendRelayCommand}
         onUpdateCloudCredentials={async (user, pass, newDevId, newDevName) => {
           const res = await ble.saveCloudCredentialsOverBle(user, pass, newDevId, newDevName);
-          remote.updateCredentials(user, pass, newDevId);
+          remote.updateCredentials(user, pass, newDevId, newDevName);
           if (newDevName && newDevName !== currentDeskName) {
             handleRename(newDevName);
           }
           return res;
         }}
         onUpdateClientCredentialsOnly={(user, pass, newDevId, newDevName) => {
-          remote.updateCredentials(user, pass, newDevId);
+          remote.updateCredentials(user, pass, newDevId, newDevName);
           if (newDevName && newDevName !== currentDeskName) {
             handleRename(newDevName);
           }

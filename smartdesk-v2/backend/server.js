@@ -57,6 +57,38 @@ function getOrCreateDevice(deviceId) {
 }
 
 /**
+ * Helper: Tolerant device name matching for verification & client auth
+ */
+function isMatchingDeviceName(inputName, devId, actualName, defaultName) {
+  if (!inputName || !inputName.trim()) return true;
+  const input = inputName.trim().toLowerCase();
+  const devIdLower = (devId || "").trim().toLowerCase();
+  const actualLower = (actualName || "").trim().toLowerCase();
+  const defaultLower = (defaultName || "").trim().toLowerCase();
+
+  // 1. Direct equality matches
+  if (input === devIdLower || input === actualLower || input === defaultLower) return true;
+
+  // 2. Recognized standard defaults across all versions
+  const recognizedDefaults = [
+    "smartdesk",
+    "smartdesk s3",
+    "smartdesk controller",
+    "smartdesk-s3",
+    "anandsmartdesk",
+    "desk_anand",
+    "desk_anand_s3",
+  ];
+  if (recognizedDefaults.includes(input)) return true;
+
+  // 3. Substring match: e.g. "smartdesk" in "smartDesk Controller" or "anand" in "desk_anand"
+  if (actualLower && (actualLower.includes(input) || input.includes(actualLower))) return true;
+  if (devIdLower && (devIdLower.includes(input) || input.includes(devIdLower))) return true;
+
+  return false;
+}
+
+/**
  * Broadcast message strictly to all authenticated PWA clients linked to a specific deviceId
  */
 function broadcastToDeviceClients(deviceId, payload) {
@@ -94,6 +126,60 @@ app.get("/api/device/:deviceId/status", (req, res) => {
     remoteModeEnabled: dev.remoteModeEnabled,
     lastSeen: dev.lastSeen,
     hasActiveWs: dev.ws !== null && dev.ws.readyState === WebSocket.OPEN,
+  });
+});
+
+// Device verification endpoint for PWA handshake verification
+app.post("/api/device/:deviceId/verify", (req, res) => {
+  const { deviceId } = req.params;
+  const { userId, password, deviceName } = req.body || {};
+
+  const dev = devices.get(deviceId);
+  if (!dev || !dev.isOnline || !dev.ws || dev.ws.readyState !== WebSocket.OPEN) {
+    return res.status(404).json({
+      ok: false,
+      error: "Connection failed: Device is offline or target ID not found on cloud relay.",
+      deviceOnline: false,
+    });
+  }
+
+  // Check user ownership if configured on device
+  if (dev.ownerUser && dev.ownerUser.length > 0 && userId && userId !== dev.ownerUser) {
+    return res.status(401).json({
+      ok: false,
+      error: "Connection failed: Device name verification mismatch or password error.",
+      deviceOnline: false,
+    });
+  }
+
+  // Check password if configured on device
+  if (dev.password && dev.password.length > 0) {
+    if (!password || password !== dev.password) {
+      return res.status(401).json({
+        ok: false,
+        error: "Connection failed: Device name verification mismatch or password error.",
+        deviceOnline: false,
+      });
+    }
+  }
+
+  // Check device name if provided and known on device
+  const actualDevName = dev.state?.deviceName || dev.name;
+  if (deviceName && actualDevName && deviceName.trim().length > 0) {
+    if (!isMatchingDeviceName(deviceName, deviceId, actualDevName, dev.name)) {
+      return res.status(401).json({
+        ok: false,
+        error: "Connection failed: Device name verification mismatch or password error.",
+        deviceOnline: false,
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    deviceId,
+    deviceOnline: true,
+    deviceName: actualDevName || deviceName,
   });
 });
 
@@ -256,11 +342,27 @@ wss.on("connection", (ws, req) => {
 
         const dev = getOrCreateDevice(deviceId);
 
+        // Enforce user ownership if registered
+        if (dev.ownerUser && dev.ownerUser.length > 0 && userId !== dev.ownerUser) {
+          console.log(`[CLIENT AUTH REJECTED] User "${userId}" does not match device owner "${dev.ownerUser}"`);
+          return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Connection failed: Device name verification mismatch or password error." }));
+        }
+
         // Enforce device password if configured on ESP32
         if (dev.password && dev.password.length > 0) {
           if (!password || password !== dev.password) {
             console.log(`[CLIENT AUTH REJECTED] User "${userId}" failed password check for "${deviceId}"`);
-            return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Invalid device password" }));
+            return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Connection failed: Device name verification mismatch or password error." }));
+          }
+        }
+
+        // Enforce device name verification if provided
+        const reqDevName = msg.deviceName || msg.name;
+        const actualDevName = dev.state?.deviceName || dev.name;
+        if (reqDevName && actualDevName && reqDevName.trim().length > 0) {
+          if (!isMatchingDeviceName(reqDevName, deviceId, actualDevName, dev.name)) {
+            console.log(`[CLIENT AUTH REJECTED] Device name mismatch for "${deviceId}": expected "${actualDevName}" but received "${reqDevName}"`);
+            return ws.send(JSON.stringify({ type: "auth_res", ok: false, error: "Connection failed: Device name verification mismatch or password error." }));
           }
         }
 

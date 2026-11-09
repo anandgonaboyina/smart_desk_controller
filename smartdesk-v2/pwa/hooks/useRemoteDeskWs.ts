@@ -127,10 +127,11 @@ export function useRemoteDeskWs({
   const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Synchronous ref to prevent stale credentials closure across async socket reconnects:
-  const credsRef = useRef<{ user: string; pass: string; devId: string }>({
+  const credsRef = useRef<{ user: string; pass: string; devId: string; name: string }>({
     user: currentUserId,
     pass: currentPassword,
     devId: currentDeviceId,
+    name: typeof window !== "undefined" ? localStorage.getItem("smartdesk_last_device_name") || "" : "",
   });
 
   const forceReconnect = useCallback(() => {
@@ -157,17 +158,19 @@ export function useRemoteDeskWs({
     }, 50);
   }, []);
 
-  const updateCredentials = useCallback((newUser?: string, newPass?: string, newDevId?: string) => {
+  const updateCredentials = useCallback((newUser?: string, newPass?: string, newDevId?: string, newDevName?: string) => {
     const nextUser = newUser !== undefined ? newUser : credsRef.current.user;
     const nextPass = newPass !== undefined ? newPass : credsRef.current.pass;
     const nextDevId = newDevId !== undefined ? newDevId : credsRef.current.devId;
+    const nextName = newDevName !== undefined ? newDevName : credsRef.current.name;
 
     if (typeof window !== "undefined") {
       if (newUser !== undefined) localStorage.setItem("smartdesk_cloud_user", newUser);
       if (newPass !== undefined) localStorage.setItem("smartdesk_cloud_pass", newPass);
       if (newDevId !== undefined) localStorage.setItem("smartdesk_cloud_device_id", newDevId);
+      if (newDevName !== undefined) localStorage.setItem("smartdesk_last_device_name", newDevName);
     }
-    credsRef.current = { user: nextUser, pass: nextPass, devId: nextDevId };
+    credsRef.current = { user: nextUser, pass: nextPass, devId: nextDevId, name: nextName };
     if (newUser !== undefined) setCurrentUserId(nextUser);
     if (newPass !== undefined) setCurrentPassword(nextPass);
     if (newDevId !== undefined) setCurrentDeviceId(nextDevId);
@@ -218,6 +221,7 @@ export function useRemoteDeskWs({
           userId: credsRef.current.user,
           password: credsRef.current.pass,
           deviceId: credsRef.current.devId,
+          deviceName: credsRef.current.name,
           deviceKey,
           timestamp: Date.now(),
         };
