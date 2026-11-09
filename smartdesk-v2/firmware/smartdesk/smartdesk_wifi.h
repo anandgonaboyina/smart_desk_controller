@@ -729,13 +729,33 @@ static bool connectToNetwork(const SavedNetwork& net) {
         snprintf(dLog, sizeof(dLog), "Associated with '%s', IP %s", targetSsid, s_ipAddress);
         appendDebugLog(dLog);
 
-        Serial.println(">>> [WIFI] Waiting 20 seconds for college network gateway & DHCP to stabilize...");
-        uint32_t stabStart = millis();
-        while (millis() - stabStart < 20000) {
-            delay(500);
+        // 1. Initial Fast Check (3 seconds): Pause to let basic DHCP settle
+        Serial.println(">>> [WIFI] Associated! Brief 3s pause for DHCP to settle...");
+        delay(3000);
+
+        // 2. Instant Proceed if Stable: Rapid check if gateway is reachable and internet probing succeeds
+        bool internetOk = false;
+        if (WiFi.gatewayIP() != IPAddress(0, 0, 0, 0)) {
+            Serial.println(">>> [WIFI] Gateway reachable. Testing internet connection...");
+            internetOk = checkInternetAccess(true);
+            if (internetOk) {
+                Serial.println(">>> [WIFI] Network fully active! Skipping remaining delay.");
+            }
         }
 
-        bool internetOk = checkInternetAccess();
+        // 3. Adaptive Fallback Only for No Internet: Secondary check window (up to 15s)
+        if (!internetOk) {
+            Serial.println(">>> [WIFI] Internet not immediately available. Entering adaptive stabilization (up to 15s)...");
+            uint32_t stabStart = millis();
+            while (millis() - stabStart < 15000) {
+                delay(1000);
+                if (checkInternetAccess(true)) {
+                    internetOk = true;
+                    Serial.printf(">>> [WIFI] Internet confirmed during adaptive window after %lu ms!\n", millis() - stabStart);
+                    break;
+                }
+            }
+        }
 
         if (!internetOk && strlen(net.cpUser) > 0 && strlen(net.cpPass) > 0) {
             Serial.println(">>> [WIFI] Captive portal active. Attempting Fortinet login...");
