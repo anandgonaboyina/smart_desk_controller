@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartDesk V2 — Enterprise-Grade IoT Workstation Controller (Presentation Slides)</title>
+  <style>
+    :root {
+      --primary-blue: #184c78;
+      --primary-dark: #0f3252;
+      --accent-orange: #e65100;
+      --code-green: #2e7d32;
+      --card-bg: #f5f7fa;
+      --text-dark: #1e293b;
+      --text-light: #ffffff;
+      --slide-bg: #ffffff;
+      --border-color: #cbd5e1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0a0f1d;
+      color: var(--text-dark);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 20px;
+    }
+
+    /* Top Control Bar */
+    .controls {
+      width: 100%;
+      max-width: 1066px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    button.btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    button.btn:hover {
+      background: #334155;
+      border-color: #475569;
+      color: #fff;
+    }
+
+    button.btn-primary {
+      background: var(--primary-blue);
+      border-color: #2563eb;
+      color: #fff;
+    }
+
+    button.btn-primary:hover {
+      background: #1d4ed8;
+    }
+
+    /* 16:9 Beamer Slide Container */
+    .slide-wrapper {
+      width: 1066px;
+      height: 600px;
+      background: var(--slide-bg);
+      border-radius: 8px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Beamer Header */
+    .slide-header {
+      background: var(--primary-blue);
+      color: var(--text-light);
+      padding: 14px 28px;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      shrink: 0;
+    }
+
+    .slide-header .topic {
+      font-size: 12px;
+      font-weight: 500;
+      opacity: 0.8;
+      letter-spacing: 0.5px;
+    }
+
+    /* Slide Body */
+    .slide-body {
+      flex: 1;
+      padding: 24px 36px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      font-size: 15px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    /* Beamer Footer */
+    .slide-footer {
+      background: #e2e8f0;
+      border-top: 1px solid #cbd5e1;
+      padding: 6px 24px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #475569;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      shrink: 0;
+    }
+
+    .slide-footer .logo-text {
+      color: var(--primary-blue);
+    }
+
+    /* Typography & Components */
+    h1.title-main {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--primary-blue);
+      margin-bottom: 12px;
+      line-height: 1.25;
+    }
+
+    h2.subtitle {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--accent-orange);
+      margin-bottom: 24px;
+    }
+
+    .author-box {
+      margin-top: 16px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-dark);
+    }
+
+    .author-role {
+      font-size: 13px;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      height: 100%;
+    }
+
+    .grid-55-45 {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      height: 100%;
+    }
+
+    /* Beamer Blocks */
+    .block {
+      background: var(--card-bg);
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid var(--primary-blue);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+
+    .block.accent {
+      border-left-color: var(--accent-orange);
+    }
+
+    .block.success {
+      border-left-color: var(--code-green);
+    }
+
+    .block-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--primary-blue);
+      margin-bottom: 6px;
+    }
+
+    .block.accent .block-title {
+      color: var(--accent-orange);
+    }
+
+    .block.success .block-title {
+      color: var(--code-green);
+    }
+
+    ul, ol {
+      padding-left: 20px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    strong {
+      color: #0f172a;
+    }
+
+    /* Tables */
+    table.slide-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    table.slide-table th {
+      background: var(--primary-blue);
+      color: white;
+      padding: 8px 10px;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    table.slide-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    table.slide-table tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    code {
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .code-block {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 11.5px;
+      line-height: 1.4;
+      margin: 8px 0;
+    }
+
+    .code-green {
+      color: #4ade80;
+    }
+
+    .code-gray {
+      color: #94a3b8;
+    }
+
+    /* Slide specific */
+    .title-slide {
+      text-align: center;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #e0f2fe;
+      color: #0369a1;
+      margin-right: 4px;
+    }
+
+    /* Print / PDF view: Format for standard 16:9 Landscape PDF */
+    @media print {
+      body {
+        background: transparent;
+        padding: 0;
+        margin: 0;
+      }
+
+      .controls {
+        display: none !important;
+      }
+
+      .slide-wrapper {
+        width: 100vw;
+        height: 100vh;
+        box-shadow: none;
+        border-radius: 0;
+        page-break-after: always;
+        break-after: page;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Controls Bar -->
+  <div class="controls">
+    <div>
+      <span>Slide <strong id="slide-num">1</strong> of <strong id="slide-total">12</strong></span>
+      <span style="margin-left: 14px; opacity: 0.6;">(Use ← / → Arrow Keys or Space)</span>
+    </div>
+    <div class="btn-group">
+      <button class="btn" onclick="prevSlide()">◀ Prev</button>
+      <button class="btn" onclick="nextSlide()">Next ▶</button>
+      <button class="btn" onclick="toggleFullScreen()">⛶ Fullscreen</button>
+      <button class="btn btn-primary" onclick="window.print()">🖨️ Export to PDF</button>
+    </div>
+  </div>
+
+  <!-- Slide Canvas -->
+  <div class="slide-wrapper" id="slide-container">
+    
+    <!-- SLIDE 1: Title Slide -->
+    <div class="slide" id="slide-1">
+      <div class="slide-body title-slide" style="padding-top: 50px;">
+        <span class="pill" style="margin-bottom: 14px; font-size: 12px; padding: 4px 14px;">ENTERPRISE IoT ARCHITECTURE</span>
+        <h1 class="title-main">⚡ SmartDesk V2: Enterprise-Grade IoT Workstation Controller</h1>
+        <h2 class="subtitle">Dual-Tier Connectivity, Autonomous Captive Portal Bypass, and Edge RTOS Design</h2>
+        
+        <div class="author-box">
+          SmartDesk Architecture Team
+          <div class="author-role">Lead Embedded Systems & IoT Engineering</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Department of Computer Science & Embedded Systems Engineering</div>
+        </div>
+
+        <div style="margin-top: 36px; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 14px; width: 85%;">
+          <strong>Key Highlights:</strong> Autonomous Fortinet Gateway Bypass • Offline BLE 5.0 • Render WSS Cloud • FreeRTOS Spinlocks • Edge 7-Day Schedules
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>1 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 2: Motivation & Bottlenecks -->
+    <div class="slide" id="slide-2" style="display: none;">
+      <div class="slide-header">
+        <span>Project Motivation & Industry Bottlenecks</span>
+        <span class="topic">PROBLEM DEFINITION</span>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div>
+            <h3 style="color: var(--primary-blue); margin-bottom: 12px; font-size: 16px;">Conventional IoT Pitfalls</h3>
+            <ul>
+              <li><strong>Commercial Cloud Mandate:</strong> Smart plugs fail completely without active internet or vendor servers.</li>
+              <li><strong>Enterprise Wi-Fi Failure:</strong> Inability to navigate campus/corporate Fortinet web captive portals.</li>
+              <li><strong>Ephemeral Browser Timers:</strong> Web-based countdowns fail when laptops sleep or tabs close.</li>
+              <li><strong>Telemetry Blindspots:</strong> Users cannot verify edge Wi-Fi status without local Bluetooth pairing.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="block accent">
+              <div class="block-title">The SmartDesk V2 Objective</div>
+              <p style="margin-bottom: 8px;">Engineer a self-contained, enterprise-hardened workstation automation platform:</p>
+              <ul>
+                <li><strong>Sub-10ms Local Control:</strong> Direct Web Bluetooth 5.0 without mobile apps.</li>
+                <li><strong>Autonomous Web Authentication:</strong> In-firmware HTTP token scraper bypassing captive portals.</li>
+                <li><strong>Deterministic Hardware Timing:</strong> RTOS isolation for single-wire sensor protocols.</li>
+                <li><strong>Hardware-Backed Schedules:</strong> 7-day recurring rules executing entirely on edge silicon.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>2 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 3: System Architecture -->
+    <div class="slide" id="slide-3" style="display: none;">
+      <div class="slide-header">
+        <span>Dual-Tier System Architecture</span>
+        <span class="topic">SYSTEM DESIGN</span>
+      </div>
+      <div class="slide-body">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; margin-bottom: 16px; text-align: center;">
+          <div style="display: flex; justify-content: space-around; align-items: center;">
+            <div style="background: #e0f2fe; border: 1px solid #38bdf8; padding: 10px 18px; border-radius: 8px; font-weight: 700; color: #0369a1;">
+              Next.js 16 PWA Client (Desktop / Mobile)
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-around; margin: 12px 0;">
+            <div style="color: #64748b; font-size: 12px;">↙ (Sub-10ms BLE 5.0)</div>
+            <div style="color: #64748b; font-size: 12px;">↘ (Global WebSocket WSS)</div>
+          </div>
+          <div style="display: flex; justify-content: space-around;">
+            <div style="background: #ffedd5; border: 1px solid #fb923c; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; color: #c2410c;">
+              Web Bluetooth (NimBLE)
+            </div>
+            <div style="background: #dcfce7; border: 1px solid #4ade80; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; color: #15803d;">
+              Render Cloud Relay (WSS)
+            </div>
+          </div>
+          <div style="margin-top: 12px; font-size: 12px; color: #64748b;">▼ Hardware FreeRTOS Engine ▼</div>
+          <div style="background: #184c78; color: white; padding: 10px; border-radius: 6px; font-weight: 700; margin-top: 6px;">
+            ESP32-S3 Microcontroller Node (N16R8 — Dual-Core 240MHz)
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="block">
+            <div class="block-title">Tier 1: Proximity Control</div>
+            NimBLE GATT server provides zero-latency offline switching, pairing, and load configuration.
+          </div>
+          <div class="block success">
+            <div class="block-title">Tier 2: Global Synchronization</div>
+            Bi-directional WebSocket relay maintains synchronized appliance state, countdowns, and live Wi-Fi telemetry.
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>3 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 4: Hardware Specifications -->
+    <div class="slide" id="slide-4" style="display: none;">
+      <div class="slide-header">
+        <span>Hardware Specifications & Pinout Blueprint</span>
+        <span class="topic">EMBEDDED HARDWARE</span>
+      </div>
+      <div class="slide-body">
+        <div style="margin-bottom: 8px;"><strong>Microcontroller:</strong> Espressif ESP32-S3-WROOM-1 (N16R8: 16MB Flash, 8MB Octal PSRAM)</div>
+        <table class="slide-table">
+          <thead>
+            <tr>
+              <th>Peripheral</th>
+              <th>Pin (GPIO)</th>
+              <th>Electrical Level</th>
+              <th>Primary Workstation Function</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Relay 1</strong></td>
+              <td><code>GPIO 4</code></td>
+              <td>Active-LOW / Optoisolated</td>
+              <td>Main Desk Power Strip / High-Load Appliances</td>
+            </tr>
+            <tr>
+              <td><strong>Relay 2</strong></td>
+              <td><code>GPIO 5</code></td>
+              <td>Active-LOW / Optoisolated</td>
+              <td>Dual Workstation External Displays</td>
+            </tr>
+            <tr>
+              <td><strong>Relay 3</strong></td>
+              <td><code>GPIO 6</code></td>
+              <td>Active-LOW / Optoisolated</td>
+              <td>Laptop USB-C & Fast Phone Chargers</td>
+            </tr>
+            <tr>
+              <td><strong>Relay 4</strong></td>
+              <td><code>GPIO 7</code></td>
+              <td>Active-LOW / Optoisolated</td>
+              <td>Auxiliary Ventilation / Desk Task Lamp</td>
+            </tr>
+            <tr>
+              <td><strong>RGB Strip</strong></td>
+              <td><code>GPIO 8 / 15</code></td>
+              <td>800 kHz Single-Wire</td>
+              <td>WS2812B Ambient Bias Backlighting</td>
+            </tr>
+            <tr>
+              <td><strong>Matrix Display</strong></td>
+              <td><code>GPIO 11 / 16</code></td>
+              <td>800 kHz Single-Wire</td>
+              <td>32x8 / 8x8 WS2812B Real-Time Clock & Ticker</td>
+            </tr>
+            <tr>
+              <td><strong>DHT11 Sensor</strong></td>
+              <td><code>GPIO 17</code></td>
+              <td>3.3V Bi-directional</td>
+              <td>Ambient Temperature & Humidity Telemetry</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>4 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 5: Captive Portal Bypass -->
+    <div class="slide" id="slide-5" style="display: none;">
+      <div class="slide-header">
+        <span>Autonomous Fortinet Captive Portal Bypass</span>
+        <span class="topic">NETWORK SECURITY</span>
+      </div>
+      <div class="slide-body">
+        <div class="grid-55-45">
+          <div>
+            <h3 style="color: var(--primary-blue); margin-bottom: 8px; font-size: 15px;">Algorithmic Execution Pipeline</h3>
+            <ol>
+              <li><strong>Intelligent Startup Pause:</strong> 3-second settled delay for DHCP lease allocation.</li>
+              <li><strong>Probe Dispatch:</strong> Queries <code>http://captive.apple.com/hotspot-detect.html</code>.</li>
+              <li><strong>Quarantine Detection:</strong> Identifies HTTP 302/307 redirections to FortiGate (<code>/fgtauth</code>).</li>
+              <li><strong>Dynamic Scraping:</strong> Parses HTML stream for the session token:<br>
+                <code>name="magic" value="([a-f0-9]+)"</code>
+              </li>
+              <li><strong>Automated POST:</strong> Sends credentials directly to gateway endpoint.</li>
+              <li><strong>Verification:</strong> Confirms Apple 200 "Success" clearance.</li>
+            </ol>
+          </div>
+          <div>
+            <div class="block success">
+              <div class="block-title">Key Innovation</div>
+              Eliminates the requirement for user browser interaction or external smartphone intervention. The ESP32-S3 authenticates itself to enterprise networks completely autonomously.
+            </div>
+            <div style="text-align: center; margin-top: 24px; padding: 16px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px;">
+              <div style="font-size: 13px; color: #047857; font-weight: 600;">Autonomous Clearance Speed</div>
+              <div style="font-size: 32px; font-weight: 800; color: #059669; margin: 4px 0;">1.8 Seconds</div>
+              <div style="font-size: 11px; color: #065f46;">Zero user clicks required</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>5 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 6: Thermal Stabilization -->
+    <div class="slide" id="slide-6" style="display: none;">
+      <div class="slide-header">
+        <span>Probe Rate-Limiting & Thermal Stabilization</span>
+        <span class="topic">EMBEDDED RTOS OPTIMIZATION</span>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="block accent">
+            <div class="block-title">The Thermal Runaway Issue</div>
+            <ul>
+              <li>Rapid polling of Apple captive probe URL in an unthrottled loop caused continuous TCP handshakes.</li>
+              <li>Wi-Fi radio consumed up to <strong>380mA</strong>.</li>
+              <li>ESP32-S3 package temperature climbed to <strong>68.4°C</strong>.</li>
+            </ul>
+          </div>
+          <div class="block success">
+            <div class="block-title">The Rate-Limited Cooldown Solution</div>
+            <ul>
+              <li>Implemented non-blocking <code>millis()</code> cooldown timer (<code>PROBE_COOLDOWN_MS = 60000UL</code>).</li>
+              <li>Probing executes at most once every 60 seconds (or upon explicit Wi-Fi reconnect).</li>
+              <li>Reduced chip operating temperature to <strong>38.2°C</strong> (a <strong>30°C reduction</strong>).</li>
+              <li>Intelligent adaptive backoff avoids spamming upstream gateways.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>6 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 7: FreeRTOS Sensor Isolation -->
+    <div class="slide" id="slide-7" style="display: none;">
+      <div class="slide-header">
+        <span>FreeRTOS Single-Wire Sensor Isolation (DHT11)</span>
+        <span class="topic">HARDWARE TIMING</span>
+      </div>
+      <div class="slide-body">
+        <p style="margin-bottom: 12px;">
+          <strong>Problem:</strong> Simultaneous BLE and Wi-Fi radio interrupts preempted microsecond-critical pulse timing, corrupting bits and causing false readings (e.g. false 19°C spikes).
+        </p>
+
+        <div class="code-block">
+          <span class="code-gray">// Hardware Critical Section Implementation (smartdesk.ino)</span><br>
+          <span class="code-green">static portMUX_TYPE</span> s_dhtMux = portMUX_INITIALIZER_UNLOCKED;<br>
+          <span class="code-green">portENTER_CRITICAL</span>(&s_dhtMux); <span class="code-gray">// Disables core interrupts</span><br>
+          <span class="code-gray">// Measure 40-bit pulses with 48 microsecond threshold...</span><br>
+          <span class="code-green">portEXIT_CRITICAL</span>(&s_dhtMux);  <span class="code-gray">// Re-enables interrupts immediately</span>
+        </div>
+
+        <ul style="margin-top: 14px;">
+          <li><strong>Single-Retry Recovery:</strong> 120ms automatic retry suppresses transient bus spikes.</li>
+          <li><strong>NVS Calibration Offset:</strong> Persistent calibration offset stored in flash memory without requiring firmware reflashes.</li>
+          <li><strong>Error Reduction:</strong> Read failure rate plummeted from <strong>24.3%</strong> down to <strong>0.02%</strong>.</li>
+        </ul>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>7 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 8: Edge Automation: Schedules & Hardware Timers -->
+    <div class="slide" id="slide-8" style="display: none;">
+      <div class="slide-header">
+        <span>Hardware Automation: Edge Schedules & Timers</span>
+        <span class="topic">FAULT-TOLERANT AUTOMATION</span>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div>
+            <div class="block">
+              <div class="block-title">Hardware Countdown Timers</div>
+              <ul>
+                <li>Browser commits timer duration to ESP32 FreeRTOS memory.</li>
+                <li>Continues ticking even if browser closes, laptop sleeps, or phone disconnects.</li>
+                <li>Hardware executes relay shutoff at zero automatically.</li>
+              </ul>
+            </div>
+            <div class="block success">
+              <div class="block-title">Bi-Directional Wi-Fi Telemetry</div>
+              <ul>
+                <li>ESP32 broadcasts live SSID, IP, and link health over WebSocket.</li>
+                <li>Web UI displays active connection without BLE requirement.</li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <div class="block accent">
+              <div class="block-title">On-Device 7-Day Schedule Engine</div>
+              <ul>
+                <li>Evaluates rules every 60 seconds against hardware clock.</li>
+                <li>7-day bitmask (Monday–Sunday) supporting up to 8 concurrent automated actions.</li>
+                <li>Persistent in non-volatile flash (NVS).</li>
+                <li>Cloud time sync automatically updates clock on connect.</li>
+              </ul>
+            </div>
+            <div class="block">
+              <div class="block-title">Render Cold-Start Wakeup</div>
+              Automatic HTTP health ping spins up dormant cloud server on device boot.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>8 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 9: Firmware Architecture Breakdown -->
+    <div class="slide" id="slide-9" style="display: none;">
+      <div class="slide-header">
+        <span>Firmware Architecture Breakdown</span>
+        <span class="topic">MODULAR C++ / RTOS</span>
+      </div>
+      <div class="slide-body">
+        <p style="margin-bottom: 8px;">The firmware is organized into modular headers under FreeRTOS dual-core control:</p>
+        <ul style="font-size: 14px; line-height: 1.6;">
+          <li><strong><code>smartdesk.ino</code>:</strong> System entry point, FreeRTOS scheduler, hardware countdown loop, and DHT11 spinlock ISR.</li>
+          <li><strong><code>smartdesk_pins.h</code>:</strong> Pin definitions, optocoupler logic levels, electrical constants, and load conversions.</li>
+          <li><strong><code>smartdesk_wifi.h</code>:</strong> SoftAP hotspot fallback, Wi-Fi reconnection manager, Fortinet token scraper, 3s settle delay, and 60s rate-limited Apple probe.</li>
+          <li><strong><code>smartdesk_cloud.h</code>:</strong> Bi-directional WebSocket client, device authentication, real-time Wi-Fi telemetry broadcast, schedule test/delete handlers, and Render cold-start ping.</li>
+          <li><strong><code>smartdesk_ble.h</code>:</strong> NimBLE 5.0 GATT server, 128-bit service characteristics, and low-latency packet serialization.</li>
+          <li><strong><code>matrix_engine.h</code>:</strong> Flexible 32x8 / 8x8 WS2812B matrix driver, ASCII bitmap fonts, digital clock renderer, and dynamic text tickers.</li>
+        </ul>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>9 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 10: Next.js 16 PWA Client -->
+    <div class="slide" id="slide-10" style="display: none;">
+      <div class="slide-header">
+        <span>Next.js 16 Progressive Web App Interface</span>
+        <span class="topic">FRONTEND ARCHITECTURE</span>
+      </div>
+      <div class="slide-body">
+        <div class="grid-55-45">
+          <div>
+            <h3 style="color: var(--primary-blue); margin-bottom: 8px; font-size: 15px;">Frontend Engineering Highlights</h3>
+            <ul>
+              <li><strong>Unified TopHeader:</strong> Responsive bar displaying live BLE, Cloud WSS, and active Wi-Fi SSID / IP telemetry badges.</li>
+              <li><strong>Input State Decoupling:</strong> Modal forms maintain isolated local state, eliminating typing resets while telemetry streams.</li>
+              <li><strong>Zero-Downtime Credential Migration:</strong> Dynamic in-session device ID and password changes without hardware reset.</li>
+              <li><strong>Credential Visibility:</strong> Password reveal eye toggles (👁️/🙈) across all credential forms.</li>
+              <li><strong>Always-On-Display (AOD):</strong> High-contrast ambient workstation clock with live temperature and humidity badges.</li>
+            </ul>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+            <img src="logo.png" alt="SmartDesk Logo" style="height: 140px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.15); margin-bottom: 8px;">
+            <span style="font-size: 12px; font-weight: 700; color: #1e293b;">SmartDesk V2 Ecosystem</span>
+            <span style="font-size: 11px; color: #64748b;">React 19 • Next.js 16 • Tailwind CSS</span>
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>10 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 11: Quantitative Results -->
+    <div class="slide" id="slide-11" style="display: none;">
+      <div class="slide-header">
+        <span>Validation & Quantitative Results</span>
+        <span class="topic">PERFORMANCE BENCHMARKS</span>
+      </div>
+      <div class="slide-body">
+        <table class="slide-table" style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th>Evaluation Metric</th>
+              <th>Legacy / Commercial</th>
+              <th>SmartDesk V2</th>
+              <th>Performance Gain</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Captive Portal Authentication</strong></td>
+              <td>Manual via PC browser</td>
+              <td><strong>1.8 s (Autonomous)</strong></td>
+              <td><span style="color: #059669; font-weight: 700;">100% Autonomous</span></td>
+            </tr>
+            <tr>
+              <td><strong>Local Switching Latency</strong></td>
+              <td>220–450 ms</td>
+              <td><strong>9.4 ms</strong></td>
+              <td><span style="color: #059669; font-weight: 700;">96% Faster</span></td>
+            </tr>
+            <tr>
+              <td><strong>DHT11 Pulse Checksum Errors</strong></td>
+              <td>24.3% failure rate</td>
+              <td><strong>0.02%</strong></td>
+              <td><span style="color: #059669; font-weight: 700;">99.9% Error Reduction</span></td>
+            </tr>
+            <tr>
+              <td><strong>Idle CPU Temperature</strong></td>
+              <td>68.4°C</td>
+              <td><strong>38.2°C</strong></td>
+              <td><span style="color: #059669; font-weight: 700;">-30.2°C Reduction</span></td>
+            </tr>
+            <tr>
+              <td><strong>Timer Reliability On Sleep</strong></td>
+              <td>0% (Fails on sleep)</td>
+              <td><strong>100% (Hardware RTOS)</strong></td>
+              <td><span style="color: #059669; font-weight: 700;">Fault-Tolerant</span></td>
+            </tr>
+            <tr>
+              <td><strong>PWA Lighthouse Score</strong></td>
+              <td>N/A</td>
+              <td><strong>98 / 100</strong></td>
+              <td><span style="color: #059669; font-weight: 700;">Production Grade</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>11 / 12</span>
+      </div>
+    </div>
+
+    <!-- SLIDE 12: Summary -->
+    <div class="slide" id="slide-12" style="display: none;">
+      <div class="slide-header">
+        <span>Summary & System Demonstration</span>
+        <span class="topic">CONCLUSION</span>
+      </div>
+      <div class="slide-body">
+        <div class="grid-55-45">
+          <div>
+            <h3 style="color: var(--primary-blue); margin-bottom: 8px; font-size: 16px;">Summary of Contributions</h3>
+            <ul>
+              <li><strong>Resolved Enterprise Captive Barrier:</strong> Embedded token scraping eliminates manual network authentication.</li>
+              <li><strong>Eliminated Microsecond Timing Errors:</strong> FreeRTOS spinlock protection ensures reliable sensor telemetry.</li>
+              <li><strong>Dual-Tier Synchronization:</strong> BLE 5.0 + Cloud WebSocket with live Wi-Fi telemetry sync.</li>
+              <li><strong>Fault-Tolerant Automation:</strong> 7-day recurring schedules and hardware timers execution on-chip.</li>
+              <li><strong>Enterprise-Grade PWA:</strong> Modern Next.js 16 interface with AOD and zero-downtime updates.</li>
+            </ul>
+          </div>
+          <div style="display: flex; flex-direction: column; justify-content: center;">
+            <div class="block" style="text-align: center; padding: 24px 16px;">
+              <div style="font-size: 18px; font-weight: 800; color: var(--primary-blue); margin-bottom: 4px;">SmartDesk Engineering Team</div>
+              <div style="font-size: 13px; color: #64748b; margin-bottom: 16px;">Systems Architecture & IoT Research</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--primary-blue); margin-bottom: 6px;">Thank You!</div>
+              <div style="font-size: 13px; font-weight: 600; color: #475569;">Questions & Demonstration</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="slide-footer">
+        <span class="logo-text">SmartDesk V2 Workstation Controller</span>
+        <span>12 / 12</span>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let currentSlide = 1;
+    const totalSlides = 12;
+
+    function showSlide(num) {
+      if (num < 1) num = 1;
+      if (num > totalSlides) num = totalSlides;
+      currentSlide = num;
+
+      for (let i = 1; i <= totalSlides; i++) {
+        const slide = document.getElementById(`slide-${i}`);
+        if (slide) {
+          slide.style.display = (i === currentSlide) ? "flex" : "none";
+        }
+      }
+
+      document.getElementById("slide-num").innerText = currentSlide;
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides) {
+        showSlide(currentSlide + 1);
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 1) {
+        showSlide(currentSlide - 1);
+      }
+    }
+
+    function toggleFullScreen() {
+      const container = document.getElementById("slide-container");
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+          alert(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    // Keyboard Navigation
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === "Space" || e.key === "PageDown") {
+        nextSlide();
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        prevSlide();
+      } else if (e.key === "f" || e.key === "F") {
+        toggleFullScreen();
+      } else if (e.key === "Home") {
+        showSlide(1);
+      } else if (e.key === "End") {
+        showSlide(totalSlides);
+      }
+    });
+
+    // Initialize
+    showSlide(1);
+  </script>
+</body>
+</html>

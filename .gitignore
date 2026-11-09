@@ -6,7 +6,16 @@
 !.vscode/extensions.json
 !.vscode/c_cpp_properties.json
 firmware/.vscode/
-docs/*
+# === LaTeX build artifacts ===
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
 
 
 # === Node / Next.js ===

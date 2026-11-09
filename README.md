@@ -31,7 +31,8 @@ Unlike commercial smart accessories that demand proprietary mobile apps, enforce
 1. **Zero-Latency Offline-First BLE 5.0:** Control desk appliances, lighting, and timers directly via the browser's Web Bluetooth API with sub-10ms response times—no router, internet, or app store installation required.
 2. **Worldwide Cloud WebSocket Synchronization:** Control desk equipment from anywhere on earth via an ultra-low-latency Node.js WebSocket relay deployed on Render.
 3. **Autonomous Fortinet Captive Portal Auto-Bypass:** Firmware-level token scraping automatically navigates university and corporate captive portals without needing a smartphone or desktop browser.
-4. **Hardware-Backed Device Autonomy:** Accepted timers, scheduled routines, and safety cutoffs execute entirely on the ESP32-S3, continuing reliably even if the web browser sleeps, crashes, or disconnects.
+4. **Bi-Directional Wi-Fi Telemetry Stream:** Real-time Wi-Fi connectivity (`connected`, `ssid`, `ip`) is transmitted across WebSocket telemetry, allowing users to verify edge Wi-Fi status without Bluetooth pairing.
+5. **Hardware-Backed Device Autonomy:** Accepted countdown timers, 7-day recurring schedules, and safety cutoffs execute entirely on the ESP32-S3, continuing reliably even if the web browser sleeps, crashes, or disconnects.
 
 ---
 
@@ -40,18 +41,21 @@ Unlike commercial smart accessories that demand proprietary mobile apps, enforce
 | Feature | Category | Description |
 |---|---|---|
 | 📡 **Dual-Tier Connectivity** | Networking | Direct Web Bluetooth (BLE 5.0 GATT) for proximity control paired with secure Cloud WebSocket (`wss://`) for global remote management. |
+| 📶 **Bi-Directional Wi-Fi Telemetry** | Telemetry | ESP32 broadcasts live Wi-Fi SSID, local IP, and connection health directly over WebSocket to sync PWA badges without BLE. |
 | 🌐 **Fortinet Captive Bypass** | Security / Wi-Fi | Automated HTTP redirection tracking, dynamic `magic` session token scraping, and credential authentication on enterprise networks. |
+| 🔄 **Intelligent Dynamic Connection** | Firmware RTOS | 3-second settled startup pause for DHCP allocation, dynamic adaptive delay on connection loss, and zero-downtime hot credential migration. |
 | 🛡️ **Network Thermal Protection** | Firmware RTOS | Non-blocking 60-second cooldown on captive probe pinging; terminates tight loops, lowering CPU temperatures by 30°C. |
 | 🔌 **4-Channel Load Control** | Power Electronics | Active-LOW, optically isolated relays with configurable load abstractions, power-on safe states, and anti-chatter protection. |
 | 👤 **Context-Aware Presence** | Automation | Automatic arrival and departure automation: turns workstation loads ON when your phone/laptop pairs, and switches to Away Mode upon disconnect. |
 | ⏲️ **Hardware-Backed Timers** | Automation | Accepted countdown timers execute on-device in FreeRTOS; protected against browser closure, laptop sleep, or connection drops. |
-| 📅 **Weekly Schedules** | Automation | Custom 7-day recurring ON/OFF schedule engine with due-time evaluations and weekday bitmasks. |
+| 📅 **7-Day Hardware Schedules** | Automation | Autonomous on-device weekly schedule engine with weekday bitmasks, non-volatile flash (NVS) storage, and cloud time synchronization. |
 | 🌈 **RGB Lighting Engine** | Lighting | WS2812B addressable LED strip driver with Rainbow, Wave, Breathe, Pulse, Audio-Reactive, and Static illumination. |
-| 🔲 **8x8 Matrix Display Engine** | Display | Dedicated pixel font renderer displaying real-time digital clock, environmental badges, and custom scrolling tickers. |
+| 🔲 **Flexible Matrix Engine (32x8 & 8x8)** | Display | Dedicated pixel font renderer displaying real-time digital clock, environmental badges, and custom scrolling tickers. |
 | 🌡️ **Protected Environmental Telemetry** | Sensors | DHT11 pulse-timing isolated by FreeRTOS hardware critical spinlock (`portENTER_CRITICAL`) with persistent NVS temperature offset calibration. |
 | 🎵 **Music & Audio Reactive** | Multimedia | Web Audio API frequency-band analysis driving real-time reactive desk illumination. |
 | 🖥️ **USB HID PC Unlock** | Security | Hardware USB keyboard emulation for rapid desktop unlock with compile-time security guard locks. |
-| 📱 **Next.js 16 PWA Client** | Software | Responsive `TopHeader` navigation, input state decoupling, and offline service worker. |
+| 📱 **Next.js 16 PWA Client** | Software | Responsive `TopHeader` navigation, input state decoupling, Always-On-Display (AOD), and offline service worker. |
+
 ---
 
 ## 🧠 How It Works: The Dual-Tier Architecture
@@ -61,8 +65,8 @@ Unlike commercial smart accessories that demand proprietary mobile apps, enforce
 │                   Next.js 16 Progressive Web App                       │
 │       (Chrome / Edge / Safari / Android / iOS / Desktop Display)       │
 │                                                                        │
-│   Relay Dashboard • Hardware Timers • RGB & Matrix • Ambient AOD       │
-│   Wi-Fi Setup Modal • Cloud Handshake • Calibration & Telemetry        │
+│   Relay Dashboard • Hardware Timers • 7-Day Schedules • Ambient AOD   │
+│   Wi-Fi Telemetry • Cloud Handshake • Calibration & Diagnostics        │
 └──────────────────┬──────────────────────────────────┬──────────────────┘
                    │                                  │
     (Proximity: < 10m, Latency < 10ms)                │ (Remote: Anywhere on Earth)
@@ -73,7 +77,7 @@ Unlike commercial smart accessories that demand proprietary mobile apps, enforce
        │   NimBLE GATT Client  │          │   Node.js WSS Relay   │
        └───────────┬───────────┘          └───────────┬───────────┘
                    │                                  │
-                   │ (Direct 2.4 GHz)                 │ (WSS JSON Stream)
+                   │ (Direct 2.4 GHz)                 │ (WSS JSON Telemetry Stream)
                    v                                  v
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        ESP32-S3 Microcontroller                        │
@@ -81,15 +85,15 @@ Unlike commercial smart accessories that demand proprietary mobile apps, enforce
 │  [Core 0: Network & Comm Protocols]  [Core 1: Hardware & Real-Time]    │
 │  ├── NimBLE GATT Server (BLE 5.0)    ├── Optocoupler Relay Manager    │
 │  ├── Wi-Fi Station & SoftAP Hotspot  ├── WS2812B LED Lighting Engine  │
-│  ├── Fortinet Captive Token Scraper  ├── 8x8 Pixel Matrix Driver       │
-│  ├── 60s Probe Rate-Limiter Engine   ├── FreeRTOS DHT11 Spinlock ISR   │
-│  └── Cloud WebSocket Client & Auth   ├── Hardware Countdown State      │
-│                                      └── NVS Non-Volatile Storage      │
+│  ├── Fortinet Captive Token Scraper  ├── 32x8 / 8x8 Matrix Driver      │
+│  ├── 3s Settle & 60s Probe Cooldown  ├── FreeRTOS DHT11 Spinlock ISR   │
+│  ├── Cloud WSS Client & Telemetry    ├── 7-Day Hardware Schedule State │
+│  └── Render Cold-Start Wakeup Ping   └── NVS Non-Volatile Flash        │
 └──────────────┬──────────────────┬─────────────────┬────────────────────┘
                │                  │                 │                    │
                v                  v                 v                    v
-        [4x AC Relays]     [WS2812B Strip]    [8x8 Matrix]         [DHT11 Sensor]
-        (GPIO 4,5,6,7)        (GPIO 15)         (GPIO 16)             (GPIO 17)
+        [4x AC Relays]     [WS2812B Strip]    [Matrix Display]     [DHT11 Sensor]
+        (GPIO 4,5,6,7)     (GPIO 8 / 15)       (GPIO 11 / 16)         (GPIO 17)
 ```
 
 ---
@@ -104,8 +108,8 @@ The controller is engineered around the **ESP32-S3 DevKit-C N16R8** (16MB Flash,
 | **Relay 2 (Workstation Monitors)** | `GPIO 5` | Active LOW | 5V Coil / 3.3V Optocoupler isolated; NO (Normally Open) |
 | **Relay 3 (Laptop & Phone Charger)** | `GPIO 6` | Active LOW | 5V Coil / 3.3V Optocoupler isolated; NO (Normally Open) |
 | **Relay 4 (Aux Lighting / Fan)** | `GPIO 7` | Active LOW | 5V Coil / 3.3V Optocoupler isolated; NO (Normally Open) |
-| **WS2812B Addressable LED Strip** | `GPIO 15` | 3.3V Data | 800 kHz single-wire; 300Ω inline resistor recommended |
-| **WS2812B 8x8 Matrix Display** | `GPIO 16` | 3.3V Data | 800 kHz single-wire; powered from external 5V rail |
+| **WS2812B Addressable LED Strip** | `GPIO 8 / 15` | 3.3V Data | 800 kHz single-wire; 300Ω inline resistor recommended |
+| **WS2812B 32x8 / 8x8 Matrix Display** | `GPIO 11 / 16` | 3.3V Data | 800 kHz single-wire; powered from external 5V rail |
 | **DHT11 Environmental Sensor** | `GPIO 17` | 3.3V Bi-dir | Single-wire bus with 4.7kΩ pull-up; FreeRTOS isolated |
 | **Hardware Mode / Fallback Button** | `GPIO 0` | Active LOW | Internal pull-up; 5s hold triggers SoftAP hotspot recovery |
 | **I/O Expansion Option (74HC595)** | `GPIO 8,9,10` | 3.3V Serial | Optional shift register expansion for 8+ relay arrays |
@@ -123,6 +127,9 @@ Connecting standard IoT devices to campus or corporate Wi-Fi (such as Fortinet F
 
 ```
 [ESP32 Connects to Wi-Fi] 
+        │
+        ▼
+[3-Second Settled DHCP Pause]
         │
         ▼
 [HTTP GET captive.apple.com/hotspot-detect.html]
@@ -165,6 +172,54 @@ bool checkInternetAccess(bool force = false) {
 
 ---
 
+## 📶 Bi-Directional Wi-Fi Telemetry Over Cloud WebSocket
+
+In standard IoT controllers, Wi-Fi parameters are only inspectable over a direct local Bluetooth connection. When controlling the desk remotely, users were previously left in the dark about whether the physical board was connected to the network or what IP address it had acquired.
+
+SmartDesk V2 resolves this with **native bi-directional Wi-Fi telemetry**:
+1. **Firmware Telemetry (`smartdesk_cloud.h`):** The ESP32 reads `WiFi.status()`, `WiFi.SSID()`, and `WiFi.localIP().toString()` and injects them into the state broadcast:
+   ```json
+   {
+     "type": "state_update",
+     "deviceId": "desk_anandkumar",
+     "wifi": {
+       "connected": true,
+       "ssid": "National Institute of Technology",
+       "ip": "192.168.80.244"
+     }
+   }
+   ```
+2. **Cloud Server Caching (`server.js`):** The Node.js WebSocket relay stores the Wi-Fi status in its in-memory device registry, immediately supplying it to newly connecting PWA clients and marking `connected: false` if the board goes offline.
+3. **PWA TopHeader Integration (`page.tsx`):** Computes effective Wi-Fi state seamlessly across BLE and Cloud WebSocket. The top diagnostic pill turns glowing green showing `Wi-Fi: <SSID> (<IP>)` worldwide, confirming the workstation is active.
+
+---
+
+## 📅 Hardware-Enforced 7-Day Recurring Schedules
+
+### The Failure of Cloud/Browser Schedulers
+Most smart home systems execute schedules on a smartphone or cloud server, sending an instantaneous switch command over the internet when the scheduled time arrives. If the internet drops or the server lags, the scheduled trigger is missed entirely.
+
+### The SmartDesk Edge Schedule Engine
+SmartDesk V2 commits scheduled routines directly into the ESP32-S3's **Non-Volatile Storage (NVS)**:
+* **7-Day Bitmask:** Set recurring Monday–Sunday rules with independent target appliances (Relays 1–4, Master All-Off, or Ambient RGB).
+* **Automated Clock Sync:** When any client connects via WebSocket or BLE, the ESP32 synchronizes its hardware clock with the client's local time (`time_sync`).
+* **On-Chip Evaluation:** A FreeRTOS task evaluates active rules every 60 seconds against the local clock. Even if the home router is unplugged, scheduled desk power cutoffs execute on time.
+* **Remote Management:** Schedules can be added, tested (`schedule_test`), and deleted over both BLE and Cloud WebSocket without re-flashing firmware.
+
+---
+
+## 🔄 Intelligent Dynamic Connection & Zero-Downtime Migration
+
+### 1. 3-Second Settle & Dynamic Adaptive Delay
+When associating with enterprise access points, DHCP servers often take 1 to 2 seconds to assign an IP and populate DNS routes. SmartDesk V2 implements a non-blocking 3-second settle pause after L2 association before initiating captive portal detection, eliminating race conditions. If internet access is interrupted, dynamic adaptive backoff prevents rapid reconnect loops and hardware resets.
+
+### 2. Zero-Downtime Hot Credential Reconfiguration
+Users can update device names, passwords, or device IDs on the fly:
+* Changing credentials in the PWA or over BLE sends a live re-authentication packet over the active WebSocket link.
+* The cloud broker re-registers the session instantly without dropping the TCP socket or resetting the ESP32-S3.
+
+---
+
 ## 👤 Context-Aware Presence Detection
 
 SmartDesk V2 uses the authorized client's BLE connection state as a context-aware presence sensor:
@@ -196,15 +251,6 @@ SmartDesk V2 uses the browser solely to configure the timer. Once you set a 2-ho
 2. The firmware validates and commits the duration to the on-device FreeRTOS countdown engine.
 3. **The browser can be completely shut down, closed, or disconnected.**
 4. When the countdown reaches zero, the ESP32 executes the relay cutoff at the hardware layer.
-
----
-
-## 📅 Weekly Scheduled Automation
-
-The firmware contains a standalone schedule evaluation engine:
-* Set independent daily ON/OFF events for every relay channel.
-* Configure 7-day weekday masks (e.g., Monday–Friday desk activation at 08:30, weekend sleep mode).
-* Runs autonomously on the ESP32 without requiring an active browser or internet connection.
 
 ---
 
@@ -291,18 +337,18 @@ The firmware is located in `smartdesk-v2/firmware/smartdesk/`:
 smartdesk-v2/firmware/smartdesk/
 ├── smartdesk.ino        # Main entry point: FreeRTOS scheduler, hardware loops, DHT11 spinlock ISR
 ├── smartdesk_pins.h     # Master GPIO mappings, active-LOW electrical abstractions, load conversions
-├── smartdesk_wifi.h     # Wi-Fi Station & SoftAP, Fortinet token scraper, 60s probe rate-limiter
-├── smartdesk_cloud.h    # Cloud WebSocket client, authentication handshake, dual JSON command parser
+├── smartdesk_wifi.h     # Wi-Fi Station & SoftAP, Fortinet token scraper, 3s settle, 60s probe limiter
+├── smartdesk_cloud.h    # Cloud WebSocket client, Wi-Fi telemetry broadcast, schedule test & wake-up
 ├── smartdesk_ble.h      # NimBLE 5.0 GATT peripheral service, fast local characteristics, notifications
-└── matrix_engine.h      # 8x8 WS2812B matrix rendering routines, ASCII font table, scrolling ticker
+└── matrix_engine.h      # 32x8 / 8x8 WS2812B matrix driver, ASCII font table, digital clock, ticker
 ```
 
 - **`smartdesk.ino`**: Initializes hardware, runs the 1,000ms countdown timer decrements, triggers FastLED 60 FPS animation updates, and captures sensor data inside the `portENTER_CRITICAL` spinlock.
 - **`smartdesk_pins.h`**: Hardware pin assignments, load-to-coil translation (`coil = (NC) ? !load : load`), and relay boot protection.
 - **`smartdesk_wifi.h`**: Wi-Fi reconnection state machine, Apple probe tracking, HTML stream parser for Fortinet `magic` tokens, and automated `/fgtauth` POST authentication.
-- **`smartdesk_cloud.h`**: Manages the secure WebSocket (`wss://`) client, role handshake (`role: "device"`), and parses commands (`relay_set`, `device_rename`, `strip_length`, `matrix_set`, `temp_offset`).
+- **`smartdesk_cloud.h`**: Manages the secure WebSocket (`wss://`) client, role handshake (`role: "device"`), real-time Wi-Fi telemetry broadcasting, and parses commands (`relay_set`, `schedule_set`, `schedule_delete`, `matrix_set`, `temp_offset`).
 - **`smartdesk_ble.h`**: Configures NimBLE server advertising, custom 128-bit GATT characteristics, and delivers sub-10ms packet notifications.
-- **`matrix_engine.h`**: Contains font bitmaps and routines for rendering digital clock numbers and text tickers across the 64-pixel matrix.
+- **`matrix_engine.h`**: Contains font bitmaps and routines for rendering digital clock numbers and text tickers across the pixel matrix.
 
 ---
 
@@ -313,7 +359,7 @@ Located in `smartdesk-v2/backend/`:
 * **Role-Based Handshake:**
   * Device connects: `{ "type": "auth", "role": "device", "deviceId": "...", "deviceKey": "..." }`
   * Client connects: `{ "type": "auth", "role": "client", "deviceId": "..." }`
-* **In-Memory Cache:** Stores the latest appliance telemetry snapshot. Connecting clients receive current relay states immediately without waiting for the next telemetry broadcast.
+* **In-Memory Cache:** Stores the latest appliance telemetry and Wi-Fi status snapshot. Connecting clients receive current relay states immediately without waiting for the next telemetry broadcast.
 * **Deployment:** Pre-configured for one-click deployment on **Render** with native SSL/TLS termination (`wss://`).
 
 ---
@@ -322,10 +368,22 @@ Located in `smartdesk-v2/backend/`:
 
 Located in `smartdesk-v2/pwa/`:
 * **Tech Stack:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS.
-* **Unified Responsive `TopHeader`:** Persistent top navigation bar displaying full untruncated action buttons across both mobile and desktop screens.
+* **Unified Responsive `TopHeader`:** Persistent top navigation bar displaying full untruncated action buttons, live Wi-Fi SSID/IP telemetry, and cloud connectivity badges across both mobile and desktop screens.
 * **Decoupled Input State:** Modal configuration fields (e.g. relay naming) maintain isolated local state, eliminating typing resets caused by incoming WebSocket telemetry broadcasts.
 * **Credential Visibility Toggles:** Password fields in Wi-Fi and Cloud modals feature eye toggle icons (`👁️`/`🙈`) to avoid mobile entry errors.
 * **Offline-Ready:** Handcrafted service worker (`public/sw.js`) provides offline caching and PWA installation on mobile and desktop devices.
+
+---
+
+## 📊 Presentation Slides & Technical Documentation
+
+The documentation suite includes presentation-ready slide decks and architectural reports located in [`docs/`](docs/):
+
+* **[Interactive HTML Slides (`docs/presentation_slides.html`)](docs/presentation_slides.html):** A complete 16:9 Beamer-styled interactive presentation deck that works directly in any browser and in VS Code. Features keyboard navigation, fullscreen mode, and 1-click **"Export to PDF"** functionality.
+* **[LaTeX Beamer Source (`docs/presentation_slides.tex`)](docs/presentation_slides.tex):** Academic presentation source code configured for Madrid/Whale themes and compatible with Overleaf, MiKTeX, and TeX Live.
+* **[Slides Quickstart Guide (`docs/README_SLIDES.md`)](docs/README_SLIDES.md):** Instructions on viewing, presenting, and exporting the slide deck locally and online.
+* **[System Architecture Deep-Dive (`docs/SYSTEM_ARCHITECTURE.md`)](docs/SYSTEM_ARCHITECTURE.md):** Exhaustive architectural breakdown of the dual-core FreeRTOS allocation and network layers.
+* **[Comprehensive Technical Report (`docs/TECHNICAL_REPORT.md`)](docs/TECHNICAL_REPORT.md):** Complete benchmark data, thermal curves, and electrical diagrams.
 
 ---
 
@@ -359,9 +417,11 @@ Before attaching high-voltage AC loads:
 | Design Decision | Technical Reason | Architectural Benefit |
 |---|---|---|
 | **Dual BLE + WSS Links** | Proximity control should not depend on internet; remote control requires cloud access. | Zero latency at your desk; total control while away. |
+| **Bi-Directional Wi-Fi Telemetry** | Edge Wi-Fi status was invisible when connected via cloud. | Remote clients instantly verify local router SSID and IP. |
 | **ESP32 as Source of Truth** | Browsers can be killed, sleep, or crash at any time. | Timers and schedules complete on-device reliably. |
 | **FreeRTOS Spinlock for DHT11** | Dual-radio ISRs disrupt microsecond pulse measurement. | Eliminates bit corruption; restores 99.9% read accuracy. |
 | **60s Probe Cooldown Timer** | Unthrottled HTTP polling wastes power and heats microcontroller. | Drops CPU temperature by 30°C and avoids firewall throttling. |
+| **3s Settle & Adaptive Backoff** | DHCP allocation requires settling time on enterprise networks. | Eliminates connection race conditions and hardware reboot loops. |
 | **Load-Based Relay Model** | UI logic should deal with appliances being ON/OFF, not pin polarity. | Decouples electrical wiring (NO/NC, active-LOW) from application UI. |
 | **Pure Logic PWA Modules** | Browser and React APIs prevent isolated unit testing. | Enables 124+ automated tests to run instantly in CI/CD without hardware. |
 
@@ -389,15 +449,6 @@ npm run dev
 ```
 Open `http://localhost:3000` to start controlling your desk. To deploy to Vercel, push the repository to GitHub and link it for instant edge deployment.
 
----
-
-## 🛣️ Future Roadmap
-
-- [ ] Multi-zone WS2812B LED strip segmentation (independent ambient bias lighting and task illumination).
-- [ ] Dynamic capacitive touch desk pad integration for under-desk gesture controls.
-- [ ] Energy monitoring hardware integration via non-invasive CT current sensors (ACS712 / SCT-013).
-- [ ] Native Apple HomeKit and Home Assistant MQTT auto-discovery bridge.
-[ ] Home Assistant MQTT auto-discovery bridge for seamless local smart home telemetry.
 ---
 
 ## 🤝 Contributing
