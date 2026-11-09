@@ -24,7 +24,7 @@ import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
 import { PresenceConfig, PresenceData, ScheduleRule } from "../types/smartdesk";
 
-export function InstallButton() {
+function InstallButton() {
   const [promptEvent, setPromptEvent] = useState<any>(null);
 
   useEffect(() => {
