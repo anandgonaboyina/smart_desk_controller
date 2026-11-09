@@ -1764,6 +1764,94 @@ void loop() {
                     saveWifiNetworkOverBle(bleSsid, blePass, bleUser, bleCpPass, connectNow);
                     notifyEnvState();
                 }
+            } else if (cmd.data[0] == 0xEA) { // 0xEA: Cloud Credentials via BLE
+                if (cmd.len >= 2 && cmd.data[1] == 0xFF) {
+                    // Query current cloud credentials over BLE
+                    const char* curDevId = getCloudDeviceId();
+                    const char* curUser  = getCloudUser();
+                    uint8_t dL = (uint8_t)strlen(curDevId);
+                    uint8_t uL = (uint8_t)strlen(curUser);
+                    uint8_t nL = (uint8_t)strlen(s_deviceName);
+                    uint8_t resp[120];
+                    resp[0] = 0xEA;
+                    resp[1] = 0x02; // Query response
+                    resp[2] = dL;
+                    resp[3] = uL;
+                    resp[4] = nL;
+                    size_t o = 5;
+                    if (dL > 0 && dL <= 36) { memcpy(&resp[o], curDevId, dL); o += dL; }
+                    if (uL > 0 && uL <= 36) { memcpy(&resp[o], curUser, uL); o += uL; }
+                    if (nL > 0 && nL <= 28) { memcpy(&resp[o], s_deviceName, nL); o += nL; }
+                    if (s_pConfigChar && s_connected) {
+                        s_pConfigChar->setValue(resp, o);
+                        s_pConfigChar->notify();
+                    }
+                } else if (cmd.len >= 5) {
+                    // Flash new credentials via BLE [0xEA, dLen, uLen, pLen, nLen, ...d, ...u, ...p, ...n]
+                    uint8_t dLen = cmd.data[1];
+                    uint8_t uLen = cmd.data[2];
+                    uint8_t pLen = cmd.data[3];
+                    uint8_t nLen = cmd.data[4];
+
+                    size_t exp = 5 + dLen + uLen + pLen + nLen;
+                    if (cmd.len >= exp) {
+                        char bDevId[36] = {0};
+                        char bUser[36]  = {0};
+                        char bPass[36]  = {0};
+                        char bName[28]  = {0};
+
+                        size_t cur = 5;
+                        if (dLen > 0 && dLen < sizeof(bDevId)) {
+                            memcpy(bDevId, &cmd.data[cur], dLen);
+                            bDevId[dLen] = '\0';
+                        }
+                        cur += dLen;
+
+                        if (uLen > 0 && uLen < sizeof(bUser)) {
+                            memcpy(bUser, &cmd.data[cur], uLen);
+                            bUser[uLen] = '\0';
+                        }
+                        cur += uLen;
+
+                        if (pLen > 0 && pLen < sizeof(bPass)) {
+                            memcpy(bPass, &cmd.data[cur], pLen);
+                            bPass[pLen] = '\0';
+                        }
+                        cur += pLen;
+
+                        if (nLen > 0 && nLen < sizeof(bName)) {
+                            memcpy(bName, &cmd.data[cur], nLen);
+                            bName[nLen] = '\0';
+                        }
+
+                        // 1. Send IMMEDIATE ACK Notification back to BLE client FIRST before cloud restart:
+                        // [0xEA, 0x01 (SUCCESS), devIdLen, userLen, ...devId, ...user]
+                        if (s_pConfigChar && s_connected) {
+                            uint8_t sDevLen  = (uint8_t)strlen(bDevId);
+                            uint8_t sUserLen = (uint8_t)strlen(bUser);
+                            uint8_t ackBuf[80];
+                            ackBuf[0] = 0xEA;
+                            ackBuf[1] = 0x01; // Success ACK
+                            ackBuf[2] = sDevLen;
+                            ackBuf[3] = sUserLen;
+                            size_t off = 4;
+                            if (sDevLen > 0 && sDevLen <= 36) { memcpy(&ackBuf[off], bDevId, sDevLen); off += sDevLen; }
+                            if (sUserLen > 0 && sUserLen <= 36) { memcpy(&ackBuf[off], bUser, sUserLen); off += sUserLen; }
+                            s_pConfigChar->setValue(ackBuf, off);
+                            s_pConfigChar->notify();
+                            delay(50); // Flush packet over air before socket reconnect
+                        }
+
+                        // 2. Apply NVS credentials and live restart WebSocket:
+                        applyAndRestartCloudCredentials(
+                            strlen(bDevId) > 0 ? bDevId : NULL,
+                            strlen(bUser) > 0 ? bUser : NULL,
+                            strlen(bPass) > 0 ? bPass : "",
+                            strlen(bName) > 0 ? bName : NULL
+                        );
+                        notifyEnvState();
+                    }
+                }
             } else if (cmd.data[0] == '{') { // JSON Wi-Fi Provisioning via BLE
                 char jsonBuf[256];
                 size_t cLen = cmd.len < sizeof(jsonBuf) - 1 ? cmd.len : sizeof(jsonBuf) - 1;

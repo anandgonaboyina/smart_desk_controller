@@ -242,6 +242,16 @@ wss.on("connection", (ws, req) => {
 
     const meta = connections.get(ws);
 
+    // ── 0. Device Unregister / Cleanup ──
+    if (msg.type === "device_unregister" || msg.type === "unregister") {
+      const targetId = msg.deviceId || meta?.deviceId;
+      if (targetId && devices.has(targetId)) {
+        devices.delete(targetId);
+        console.log(`[DEVICE UNREGISTER] Deleted old device "${targetId}" from registry`);
+      }
+      return;
+    }
+
     // ── 1. Authentication Handshake ──
     if (msg.type === "auth") {
       const { role, deviceId, deviceKey, userId, password } = msg;
@@ -252,6 +262,10 @@ wss.on("connection", (ws, req) => {
 
       // Role A: ESP32 Hardware Device
       if (role === "device") {
+        if (msg.oldDeviceId && msg.oldDeviceId !== deviceId) {
+          devices.delete(msg.oldDeviceId);
+          console.log(`[DEVICE CLEANUP] Removed replaced device "${msg.oldDeviceId}" from registry`);
+        }
         const dev = getOrCreateDevice(deviceId);
         dev.ws = ws;
         dev.isOnline = true;

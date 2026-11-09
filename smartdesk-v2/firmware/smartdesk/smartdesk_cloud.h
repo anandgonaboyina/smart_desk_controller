@@ -850,6 +850,40 @@ static void stopCloudClient() {
     }
 }
 
+/* ── Local Cloud Credential Application & Live Re-Authentication ─────────── */
+static inline void applyAndRestartCloudCredentials(const char* newDevId, const char* newUser, const char* newPass, const char* newDevName) {
+    if (newDevName && strlen(newDevName) > 0) {
+        strncpy(s_deviceName, newDevName, sizeof(s_deviceName) - 1);
+        s_deviceName[sizeof(s_deviceName) - 1] = '\0';
+        Preferences prefs;
+        prefs.begin("desk_cfg", false);
+        prefs.putString("dev_name", s_deviceName);
+        prefs.end();
+        // Do NOT call initBleServer() here as reinitializing BLE wipes active GATT client sessions
+    }
+
+    if (newDevId || newUser || newPass) {
+        char oldDevId[36] = {0};
+        strncpy(oldDevId, s_cloudDeviceId, sizeof(oldDevId) - 1);
+
+        // If connected and deviceId is changing, notify server to remove old device registration
+        if (s_cloudConnected && newDevId && strlen(oldDevId) > 0 && strcmp(newDevId, oldDevId) != 0) {
+            char unregMsg[128];
+            snprintf(unregMsg, sizeof(unregMsg), "{\"type\":\"device_unregister\",\"deviceId\":\"%s\"}", oldDevId);
+            s_cloudWs.sendTXT(unregMsg);
+            delay(50);
+        }
+
+        saveCloudConfigToNVS(NULL, 0, newDevId, NULL, newUser, newPass);
+        Serial.printf(">>> [CLOUD CREDENTIALS] Assigned via BLE (DevId: %s, User: %s, Desk: %s)\n",
+                      s_cloudDeviceId, s_cloudUser, s_deviceName);
+
+        // Disconnect existing socket and force immediate restart with new credentials
+        stopCloudClient();
+        startCloudClient();
+    }
+}
+
 static void updateCloudClient() {
     s_cloudWs.loop();
 }
