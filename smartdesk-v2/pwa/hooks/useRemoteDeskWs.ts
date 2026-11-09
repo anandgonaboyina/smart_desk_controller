@@ -215,16 +215,19 @@ export function useRemoteDeskWs({
         console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl}`);
 
         // Send Multi-User Authentication Handshake with Device Username & Password
-        const authPayload = {
+        const authPayload: Record<string, any> = {
           type: "auth",
           role: "client",
           userId: credsRef.current.user,
           password: credsRef.current.pass,
           deviceId: credsRef.current.devId,
-          deviceName: credsRef.current.name,
           deviceKey,
           timestamp: Date.now(),
         };
+        // Only include deviceName if it matches deviceId to ensure deployed servers don't reject auth on display nickname
+        if (credsRef.current.name && credsRef.current.name.trim() === credsRef.current.devId.trim()) {
+          authPayload.deviceName = credsRef.current.name.trim();
+        }
         socket.send(JSON.stringify(authPayload));
       };
 
@@ -238,8 +241,12 @@ export function useRemoteDeskWs({
               setRemoteModeEnabled(Boolean(data.remoteModeEnabled));
               const stateObj = data.currentState || data.cachedState || data.state;
               if (stateObj) {
-                const relays = stateObj.relays || data.relays;
-                if (Array.isArray(relays) && relays.length > 0) {
+                const rawRelays = stateObj.relays || data.relays;
+                if (Array.isArray(rawRelays) && rawRelays.length > 0) {
+                  const relays = rawRelays.map((r: any) => ({
+                    load: Boolean(r.load),
+                    remainingMin: typeof r.remainingMin === "number" ? r.remainingMin : 0,
+                  }));
                   const updated: RemoteDeviceState = {
                     relays,
                     configs: stateObj.configs || data.configs,
@@ -254,6 +261,15 @@ export function useRemoteDeskWs({
                   if (onStateUpdate) onStateUpdate(updated);
                 }
               }
+
+              // Request live hardware state broadcast from the board
+              socket.send(
+                JSON.stringify({
+                  type: "request_state",
+                  deviceId: credsRef.current.devId,
+                  timestamp: Date.now(),
+                })
+              );
 
               // Automatically synchronize device hardware clock with browser's local time upon connection
               const now = new Date();
@@ -286,8 +302,15 @@ export function useRemoteDeskWs({
           }
 
           if (data.type === "state_update") {
+            setIsDeviceOnline(true);
             setDeviceState((prev) => {
-              const relays = data.relays || data.state?.relays || prev.relays;
+              const rawRelays = data.relays || data.state?.relays;
+              const relays = Array.isArray(rawRelays) && rawRelays.length > 0
+                ? rawRelays.map((r: any) => ({
+                    load: Boolean(r.load),
+                    remainingMin: typeof r.remainingMin === "number" ? r.remainingMin : 0,
+                  }))
+                : prev.relays;
               const configs = data.configs || data.state?.configs || prev.configs;
               const led = data.led || data.state?.led || prev.led;
               const env = data.env || data.state?.env || prev.env;

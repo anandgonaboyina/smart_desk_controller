@@ -75,20 +75,20 @@ export default function SmartDeskApp() {
   }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName]);
 
   const effectiveRelays = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.relays;
     }
     if (remote.isWsConnected && remote.isDeviceOnline) {
       return remote.deviceState.relays.map((r) => ({
-        load: r.load,
+        load: Boolean(r.load),
         remainingMin: r.remainingMin || 0,
       }));
     }
     return ble.relays;
-  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
+  }, [ble.connected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
 
   const effectiveConfigs = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.configs;
     }
     if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.configs) {
@@ -100,40 +100,40 @@ export default function SmartDeskApp() {
       });
     }
     return ble.configs;
-  }, [ble.connected, ble.wifiConnected, ble.configs, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.configs]);
+  }, [ble.connected, ble.configs, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.configs]);
 
   const effectiveLed = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.led;
     }
     if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led) {
       return remote.deviceState.led;
     }
     return ble.led;
-  }, [ble.connected, ble.wifiConnected, ble.led, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.led]);
+  }, [ble.connected, ble.led, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.led]);
 
   const effectiveEnvData = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.envData;
     }
     if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.env?.valid) {
       return remote.deviceState.env;
     }
     return ble.envData;
-  }, [ble.connected, ble.wifiConnected, ble.envData, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.env]);
+  }, [ble.connected, ble.envData, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.env]);
 
   const effectiveStripLength = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.stripLength;
     }
     if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.stripLength) {
       return remote.deviceState.stripLength;
     }
     return ble.stripLength;
-  }, [ble.connected, ble.wifiConnected, ble.stripLength, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.stripLength]);
+  }, [ble.connected, ble.stripLength, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.stripLength]);
 
   const effectiveMatrixConfig = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.matrixConfig;
     }
     if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.matrix) {
@@ -149,7 +149,7 @@ export default function SmartDeskApp() {
       };
     }
     return ble.matrixConfig;
-  }, [ble.connected, ble.wifiConnected, ble.matrixConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.matrix]);
+  }, [ble.connected, ble.matrixConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.matrix]);
 
   const effectivePresenceConfig = useMemo((): PresenceConfig => {
     if (ble.connected) {
@@ -277,7 +277,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleToggleRelay = useCallback((idx: number, explicitTarget?: boolean) => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.toggleRelay(idx, explicitTarget);
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       const current = remote.deviceState.relays[idx]?.load ?? false;
@@ -290,7 +290,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleSetRelayTimer = useCallback((idx: number, minutes: number) => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.setRelayTimer(idx, minutes);
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       remote.sendRelayTimerCommand(idx, minutes);
@@ -322,7 +322,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleAllRelaysOff = useCallback(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.allRelaysOff();
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       remote.sendAllOff();
@@ -333,7 +333,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleSendLed = useCallback((mode: number, r: number, g: number, b: number, bri: number, spd: number) => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.sendLedCommand(mode, r, g, b, bri, spd);
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       remote.sendLedCommand(mode, r, g, b, bri, spd);

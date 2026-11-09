@@ -520,6 +520,18 @@ wss.on("connection", (ws, req) => {
         };
 
         targetDev.ws.send(JSON.stringify(forwardPayload));
+
+        // If client requested state, also immediately respond with server's cached state
+        if ((msg.type === "request_state" || msg.type === "get_state") && targetDev.state) {
+          ws.send(
+            JSON.stringify({
+              type: "state_update",
+              deviceId: meta.deviceId,
+              ...targetDev.state,
+              timestamp: Date.now(),
+            })
+          );
+        }
       }
     }
   });

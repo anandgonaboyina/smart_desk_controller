@@ -798,6 +798,13 @@ static void handleCloudMessage(const char* payload, size_t length) {
         }
         return;
     }
+
+    // 21. Live Hardware State Request from Cloud Web Client
+    if (strcmp(cmd, "request_state") == 0 || strcmp(cmd, "get_state") == 0 || strcmp(cmd, "ping") == 0) {
+        Serial.println(">>> [CLOUD WS] Client requested hardware state -> broadcasting live state...");
+        broadcastCloudState();
+        return;
+    }
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */
