@@ -23,41 +23,7 @@ import CustomAlertModal, { ModalAlertProps } from "../components/CustomAlertModa
 import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
 import { PresenceConfig, PresenceData, ScheduleRule } from "../types/smartdesk";
-
-function InstallButton() {
-  const [promptEvent, setPromptEvent] = useState<any>(null);
-
-  useEffect(() => {
-    window.addEventListener("beforeinstallprompt", (e) => {
-      e.preventDefault();
-      setPromptEvent(e);
-    });
-  }, []);
-
-  if (!promptEvent) return null;
-
-  return (
-<div className="flex flex-wrap items-center gap-3">
-      {promptEvent && (
-        <button 
-          onClick={() => { promptEvent.prompt(); setPromptEvent(null); }} 
-          className="bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 rounded-lg font-bold text-sm transition-all"
-        >
-          📱 Install PWA
-        </button>
-      )}
-
-      <a 
-        href="/smartdesk-v2.apk" 
-        download
-        className="bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-2"
-      >
-        <span>⬇️</span> Download APK
-      </a>
-    </div>
-  
-  );
-}
+import InstallButton from "../components/InstallButton";
 
 
 export default function SmartDeskApp() {
@@ -89,8 +55,12 @@ export default function SmartDeskApp() {
     setAlertCallback(null);
   }, [alertCallback]);
 
-  const ble = useSmartDeskBle({ onAlert: showAlert, onToast: showToast });
   const remote = useRemoteDeskWs({ onToast: showToast });
+  const ble = useSmartDeskBle({
+    onAlert: showAlert,
+    onToast: showToast,
+    onMusicFrame: remote.sendMusicFrame,
+  });
 
   const isDeskConnected = ble.connected || ble.wifiConnected || (remote.isWsConnected && remote.isDeviceOnline);
   
@@ -373,6 +343,23 @@ export default function SmartDeskApp() {
     }
   }, [ble, remote, showToast]);
 
+  const handleStartMusic = useCallback(() => {
+    if (!ble.connected && remote.isWsConnected && remote.isDeviceOnline) {
+      showAlert(
+        "Network Latency Warning",
+        "Music sync responds best via BLE or local hotspot. Cloud WiFi may cause slow response times. Continue anyway?",
+        () => {
+          ble.setSoloColor({ r: effectiveLed.r, g: effectiveLed.g, b: effectiveLed.b });
+          ble.startMusicSync();
+        },
+        true
+      );
+    } else {
+      ble.setSoloColor({ r: effectiveLed.r, g: effectiveLed.g, b: effectiveLed.b });
+      ble.startMusicSync();
+    }
+  }, [ble, remote, showAlert, effectiveLed]);
+
   const handleRename = useCallback((newName: string) => {
     if (ble.connected) {
       ble.saveRename(newName);
@@ -577,7 +564,7 @@ export default function SmartDeskApp() {
             onSetRgbTimer={handleSetRgbTimer}
             onSetMatrixMode={(mode, text) => handleSetMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
             onSetMatrixDisplay={handleSetMatrixDisplay}
-            onStartMusic={ble.startMusicSync}
+            onStartMusic={handleStartMusic}
             onStopMusic={ble.stopMusicSync}
           />
         ) : (
@@ -603,7 +590,7 @@ export default function SmartDeskApp() {
                 onSendLed={handleSendLed}
                 onSetRgbTimer={handleSetRgbTimer}
                 onSetMatrixDisplay={handleSetMatrixDisplay}
-                onStartMusic={ble.startMusicSync}
+                onStartMusic={handleStartMusic}
                 onStopMusic={ble.stopMusicSync}
                 onNavigateTab={(tab) => setActiveTab(tab)}
               />
@@ -643,7 +630,7 @@ export default function SmartDeskApp() {
                 micVolume={ble.micVolume}
                 beatPulse={ble.beatPulse}
                 onSendLed={handleSendLed}
-                onStartMusic={ble.startMusicSync}
+                onStartMusic={handleStartMusic}
                 onStopMusic={ble.stopMusicSync}
               />
             )}

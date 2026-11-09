@@ -499,6 +499,31 @@ export function useRemoteDeskWs({
     [currentDeviceId, onStateUpdate]
   );
 
+  // Send Live Music Sync Frame
+  const sendMusicFrame = useCallback(
+    (sub: number, beat: number, r: number, g: number, b: number, bri: number, bands?: number[]) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      const payload: Record<string, unknown> = {
+        type: "music_frame",
+        deviceId: currentDeviceId,
+        sub,
+        beat,
+        r,
+        g,
+        b,
+        bri,
+        timestamp: Date.now(),
+      };
+      if (bands && bands.length >= 8) {
+        for (let i = 0; i < 8; i++) {
+          payload[`b${i}`] = bands[i];
+        }
+      }
+      wsRef.current.send(JSON.stringify(payload));
+    },
+    [currentDeviceId]
+  );
+
   // Rename Controller over Cloud
   const sendRenameCommand = useCallback(
     (name: string) => {
@@ -896,6 +921,7 @@ export function useRemoteDeskWs({
     sendRelayTimerCommand,
     sendRelayConfigCommand,
     sendLedCommand,
+    sendMusicFrame,
     sendRenameCommand,
     sendStripLengthCommand,
     sendMatrixCommand,

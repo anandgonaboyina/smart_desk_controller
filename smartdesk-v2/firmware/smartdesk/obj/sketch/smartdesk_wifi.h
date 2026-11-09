@@ -1677,17 +1677,16 @@ static void wifiWorkerTask(void* pvParameters) {
             notifyEnvState();
         }
 
-        // 4. Update cloud WebSocket client if internet is active (throttled auto-reconnect)
+        // 4. Update cloud WebSocket client if internet is active (throttled exponential auto-reconnect)
         if (s_wifiConnected) {
             updateCloudClient();
-            if (!s_cloudWsStarted) {
-                static uint32_t s_lastWsAutoReconnectMs = 0;
-                if (s_lastWsAutoReconnectMs == 0) s_lastWsAutoReconnectMs = millis();
-                if (millis() - s_lastWsAutoReconnectMs >= 15000UL) {
-                    s_lastWsAutoReconnectMs = millis();
+            if (!s_cloudWsStarted && !s_cloudConnected) {
+                if (millis() - s_lastWsDisconnectMs >= s_wsReconnectIntervalMs) {
+                    s_lastWsDisconnectMs = millis();
                     // checkInternetAccess uses non-blocking 60-second cooldown cache
                     if (checkInternetAccess()) {
-                        Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...");
+                        Serial.printf(">>> [CLOUD WS] Backoff timer elapsed (%lus). Initiating cloud connection...\n",
+                                      (unsigned long)(s_wsReconnectIntervalMs / 1000UL));
                         startCloudClient();
                     }
                 }

@@ -23,16 +23,19 @@
 #define CLOUD_DEFAULT_USER "user_anand_primary"
 
 static WebSocketsClient s_cloudWs;
-static bool             s_cloudConnected     = false;
-static bool             s_cloudAuthenticated = false;
-static bool             s_cloudWsStarted     = false;
-static uint32_t         s_lastCloudPingMs    = 0;
-static char             s_cloudHost[64]      = DEFAULT_CLOUD_HOST;
-static uint16_t         s_cloudPort          = DEFAULT_CLOUD_PORT;
-static char             s_cloudDeviceId[36]  = CLOUD_DEVICE_ID;
-static char             s_cloudDeviceKey[48] = CLOUD_AUTH_KEY;
-static char             s_cloudUser[36]      = CLOUD_DEFAULT_USER;
-static char             s_cloudPassword[36]  = ""; // Default empty / disabled (no password required initially)
+static bool             s_cloudConnected        = false;
+static bool             s_cloudAuthenticated    = false;
+static bool             s_cloudWsStarted        = false;
+static uint32_t         s_lastCloudPingMs       = 0;
+static uint32_t         s_wsReconnectIntervalMs = 5000;
+static uint32_t         s_lastWsDisconnectMs    = 0;
+static uint8_t          s_wsReconnectAttempts   = 0;
+static char             s_cloudHost[64]         = DEFAULT_CLOUD_HOST;
+static uint16_t         s_cloudPort             = DEFAULT_CLOUD_PORT;
+static char             s_cloudDeviceId[36]     = CLOUD_DEVICE_ID;
+static char             s_cloudDeviceKey[48]    = CLOUD_AUTH_KEY;
+static char             s_cloudUser[36]         = CLOUD_DEFAULT_USER;
+static char             s_cloudPassword[36]     = ""; // Default empty / disabled (no password required initially)
 
 /* ── NVS Persistence for Cloud Configuration ─────────────────────────────── */
 static inline void loadCloudConfigFromNVS() {
@@ -316,7 +319,9 @@ static void handleCloudMessage(const char* payload, size_t length) {
     if (strcmp(msgType, "auth_res") == 0) {
         bool ok = getJsonBool(payload, "ok", false);
         if (ok) {
-            s_cloudAuthenticated = true;
+            s_cloudAuthenticated    = true;
+            s_wsReconnectIntervalMs = 5000;
+            s_wsReconnectAttempts   = 0;
             Serial.printf(">>> [CLOUD WS] Device authenticated successfully as '%s' (User: %s)!\n", s_cloudDeviceId, s_cloudUser);
 
             // Auto-sync hardware clock if time is provided by Cloud Relay
@@ -772,6 +777,27 @@ static void handleCloudMessage(const char* payload, size_t length) {
         }
         return;
     }
+
+    // 20. Live Music Sync Frame over Cloud WS
+    if (strcmp(cmd, "music_frame") == 0 || strcmp(cmd, "music_sync") == 0) {
+        s_ledMode = 16;
+        s_musicBri = (uint8_t)getJsonInt(payload, "bri", s_musicBri);
+        uint8_t newSub = (uint8_t)getJsonInt(payload, "sub", s_musicSubMode);
+        if (newSub != s_musicSubMode) {
+            s_musicSubMode = newSub;
+            saveLedStateToNVS();
+        }
+        s_musicBeatVal = (uint8_t)getJsonInt(payload, "beat", 0);
+        s_musicColorR  = (uint8_t)getJsonInt(payload, "r", s_ledR);
+        s_musicColorG  = (uint8_t)getJsonInt(payload, "g", s_ledG);
+        s_musicColorB  = (uint8_t)getJsonInt(payload, "b", s_ledB);
+        for (int i = 0; i < 8; i++) {
+            char bKey[8];
+            snprintf(bKey, sizeof(bKey), "b%d", i);
+            s_musicLevels[i] = (uint8_t)getJsonInt(payload, bKey, s_musicBeatVal);
+        }
+        return;
+    }
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */
@@ -781,7 +807,15 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
             s_cloudConnected     = false;
             s_cloudAuthenticated = false;
             s_cloudWsStarted     = false;
-            Serial.println(">>> [CLOUD WS] Disconnected from cloud relay.");
+            s_lastWsDisconnectMs = millis();
+            if (s_wsReconnectAttempts == 0) s_wsReconnectIntervalMs = 5000;
+            else if (s_wsReconnectAttempts == 1) s_wsReconnectIntervalMs = 12000;
+            else if (s_wsReconnectAttempts == 2) s_wsReconnectIntervalMs = 25000;
+            else if (s_wsReconnectAttempts == 3) s_wsReconnectIntervalMs = 40000;
+            else s_wsReconnectIntervalMs = 60000;
+            s_wsReconnectAttempts++;
+            Serial.printf(">>> [CLOUD WS] Disconnected from cloud relay. Server may be spinning up (Render cold boot). Retrying in %lus (attempt %d)...\n",
+                          s_wsReconnectIntervalMs / 1000UL, s_wsReconnectAttempts);
             break;
 
         case WStype_CONNECTED: {
@@ -820,23 +854,30 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 static void startCloudClient() {
     if (s_cloudWsStarted && s_cloudConnected) return;
 
+    // Fully reset socket state between attempts
+    s_cloudWs.disconnect();
+
     bool isSsl = (s_cloudPort == 443 || strstr(s_cloudHost, ".onrender.com") != NULL || strstr(s_cloudHost, ".vercel.app") != NULL);
     Serial.printf(">>> [CLOUD WS] Initializing WebSocket client -> %s://%s:%d%s\n",
                   isSsl ? "wss" : "ws", s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
 
-    // REVERTED TO KNOWN-WORKING BASICS: No extra headers, no custom SSL overrides.
-    // The WebSocketsClient library handles the upgrade securely by default.
+    // Disable internal library reconnect timer so our exponential backoff state machine has full control
+    s_cloudWs.setReconnectInterval(0);
+
+    // Set standard HTTP Host header for Cloudflare/Render reverse proxies
+    char hostHeader[80];
+    snprintf(hostHeader, sizeof(hostHeader), "Host: %s", s_cloudHost);
+    s_cloudWs.setExtraHeaders(hostHeader);
+
     if (isSsl) {
-        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+        // Begin SSL without forcing subprotocol, allowing standard upgrade handshake
+        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH, "");
     } else {
-        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH, "");
     }
 
     s_cloudWs.onEvent(onCloudWsEvent);
-    s_cloudWs.setReconnectInterval(5000);
-    
-    // Basic heartbeat to keep the Render proxy alive
-    s_cloudWs.enableHeartbeat(15000, 3000, 2);
+    s_cloudWs.enableHeartbeat(15000, 4000, 2);
     s_cloudWsStarted = true;
 }
 

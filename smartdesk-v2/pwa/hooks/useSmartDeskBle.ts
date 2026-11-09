@@ -95,6 +95,7 @@ const bytesToHex = (arr: Uint8Array | DataView): string => {
 interface UseSmartDeskBleOptions {
   onAlert?: (title: string, message: string) => void;
   onToast?: (message: string, type?: "info" | "success" | "warn" | "error") => void;
+  onMusicFrame?: (sub: number, beat: number, r: number, g: number, b: number, bri: number, bands: number[]) => void;
 }
 
 export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
@@ -102,6 +103,8 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
   onAlertRef.current = options?.onAlert;
   const onToastRef = useRef(options?.onToast);
   onToastRef.current = options?.onToast;
+  const onMusicFrameRef = useRef(options?.onMusicFrame);
+  onMusicFrameRef.current = options?.onMusicFrame;
 
   const [bluetoothSupported, setBluetoothSupported] = useState<boolean>(true);
   const [connected, setConnected] = useState<boolean>(false);
@@ -2116,6 +2119,8 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
     try {
       savedLedBeforeMusicRef.current = { ...led };
+      soloColorRef.current = { r: led.r, g: led.g, b: led.b };
+      setSoloColor({ r: led.r, g: led.g, b: led.b });
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         video: false,
@@ -2204,25 +2209,30 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           setTimeout(() => setBeatPulse(false), 90);
         }
 
-        if (now - lastBleMusicWriteMsRef.current >= 45 && ledCharRef.current && connectedRef.current) {
-          lastBleMusicWriteMsRef.current = now;
+        if (now - lastBleMusicWriteMsRef.current >= 45) {
           const sub = musicSubModeRef.current;
           const bri = musicBriRef.current;
           const col = soloColorRef.current;
 
-          const frame = new Uint8Array(15);
-          frame[0] = 16;
-          frame[1] = bri;
-          frame[2] = sub;
-          frame[3] = beatVal;
-          frame[4] = col.r;
-          frame[5] = col.g;
-          frame[6] = col.b;
-          for (let b = 0; b < 8; b++) {
-            frame[7 + b] = bands[b];
-          }
+          if (ledCharRef.current && connectedRef.current) {
+            lastBleMusicWriteMsRef.current = now;
+            const frame = new Uint8Array(15);
+            frame[0] = 16;
+            frame[1] = bri;
+            frame[2] = sub;
+            frame[3] = beatVal;
+            frame[4] = col.r;
+            frame[5] = col.g;
+            frame[6] = col.b;
+            for (let b = 0; b < 8; b++) {
+              frame[7 + b] = bands[b];
+            }
 
-          ledCharRef.current.writeValueWithResponse(frame).catch(() => {});
+            ledCharRef.current.writeValueWithResponse(frame).catch(() => {});
+          } else if (onMusicFrameRef.current && now - lastBleMusicWriteMsRef.current >= 65) {
+            lastBleMusicWriteMsRef.current = now;
+            onMusicFrameRef.current(sub, beatVal, col.r, col.g, col.b, bri, bands);
+          }
         }
 
         animFrameRef.current = requestAnimationFrame(renderAudioFrame);

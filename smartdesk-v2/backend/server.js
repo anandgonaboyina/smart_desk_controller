@@ -390,6 +390,8 @@ wss.on("connection", (ws, req) => {
         msg.type === "test_schedule" ||
         msg.type === "time_sync" ||
         msg.type === "sync_time" ||
+        msg.type === "music_frame" ||
+        msg.type === "music_sync" ||
         msg.type === "all_off" ||
         msg.type === "request_state" ||
         msg.type === "get_state" ||

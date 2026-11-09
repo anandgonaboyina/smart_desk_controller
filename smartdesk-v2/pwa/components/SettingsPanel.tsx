@@ -190,64 +190,70 @@ export default function SettingsPanel({
   };
 
   return (
-    <div className="flex flex-col gap-4 w-full font-sans select-none pb-16">
+    <div className="flex flex-col gap-3 md:gap-5 w-full font-sans select-none pb-16 text-white max-w-full overflow-hidden">
       
       {/* ── HEADER ── */}
-      <div className="flex items-center justify-between px-1 shrink-0">
-        <h2 className="text-lg font-extrabold text-white flex items-center gap-3">
-          <span>⚙️ System Setup &amp; Hardware</span>
+      <div className="flex items-center justify-between px-2 md:px-0 shrink-0 border-b border-white/50 pb-2 md:pb-3">
+        <h2 className="text-[14px] md:text-xl font-extrabold flex items-center gap-2">
+          <span>⚙️</span>
+          <span>System Setup</span>
         </h2>
         {connected ? (
           <button
             onClick={onDisconnect}
-            className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white border-2 border-rose-500 font-extrabold text-sm active:scale-95 cursor-pointer"
+            className="px-3 py-1.5 md:px-5 md:py-2 rounded-lg md:rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold text-[10px] md:text-sm active:scale-95 cursor-pointer transition-all whitespace-nowrap"
           >
             Disconnect Desk
           </button>
         ) : (
-          <div className="text-xs font-bold text-zinc-500">Not connected</div>
+          <div className="text-[10px] md:text-xs font-bold text-white/40">Not connected</div>
         )}
       </div>
 
       {/* ── SENSORS & BUZZER ROW ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 shrink-0">
-        <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400 font-extrabold uppercase">DHT11 Environmental Sensor GPIO 9(check once hardcoded)</span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${envData.valid ? "bg-emerald-950 text-emerald-300 border border-emerald-700" : "bg-zinc-800 text-zinc-500"}`}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 shrink-0">
+        
+        {/* Environment Sensor Box */}
+        <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 flex flex-col gap-2.5 md:gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="text-[9px] md:text-xs text-white/50 font-bold uppercase tracking-widest break-words whitespace-normal leading-tight">
+              DHT11 Env Sensor (GPIO 9)
+            </span>
+            <span className={`text-[8px] md:text-[10px] font-bold px-2 py-0.5 md:py-1 rounded self-start sm:self-auto uppercase tracking-wider ${envData.valid ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-black/50 text-white/30 border border-white/40"}`}>
               {envData.valid ? "Sensor Active" : "No Sensor"}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-4 rounded-lg bg-black border-2 border-zinc-700 flex justify-between items-center">
-              <div>
-                <span className="text-[10px] text-zinc-500 font-bold uppercase block">Temp</span>
-                <span className="text-xl font-bold text-white">{envData.valid ? `${envData.tempC.toFixed(1)}°C` : "--"}</span>
+          
+          <div className="grid grid-cols-2 gap-2 md:gap-3">
+            <div className="p-2.5 md:p-4 rounded-lg md:rounded-xl bg-black/40 border border-white/50 flex justify-between items-center min-w-0">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] md:text-[10px] text-white/40 font-bold uppercase block truncate">Temp</span>
+                <span className="text-[14px] md:text-2xl font-black text-white truncate block">{envData.valid ? `${envData.tempC.toFixed(1)}°C` : "--"}</span>
               </div>
-              <span className="text-2xl">🌡️</span>
+              <span className="text-lg md:text-2xl shrink-0 opacity-80">🌡️</span>
             </div>
-            <div className="p-4 rounded-lg bg-black border-2 border-zinc-700 flex justify-between items-center">
-              <div>
-                <span className="text-[10px] text-zinc-500 font-bold uppercase block">Humidity</span>
-                <span className="text-xl font-bold text-white">{envData.valid ? `${envData.humidity.toFixed(0)}%` : "--"}</span>
+            <div className="p-2.5 md:p-4 rounded-lg md:rounded-xl bg-black/40 border border-white/50 flex justify-between items-center min-w-0">
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] md:text-[10px] text-white/40 font-bold uppercase block truncate">Humidity</span>
+                <span className="text-[14px] md:text-2xl font-black text-white truncate block">{envData.valid ? `${envData.humidity.toFixed(0)}%` : "--"}</span>
               </div>
-              <span className="text-2xl">💧</span>
+              <span className="text-lg md:text-2xl shrink-0 opacity-80">💧</span>
             </div>
           </div>
 
           {/* Temperature Calibration Offset */}
-          <div className="mt-1 p-2.5 rounded-lg bg-black border border-zinc-800 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-zinc-400 font-bold uppercase">Temp Calibration Offset:</span>
-              <span className="text-xs font-mono font-bold text-cyan-400">
+          <div className="mt-1 md:mt-2 p-2 md:p-3.5 rounded-lg md:rounded-xl bg-black/30 border border-white/50 space-y-2 md:space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+              <span className="text-[9px] md:text-[10px] text-white/40 font-bold uppercase tracking-wider">Calibration Offset:</span>
+              <span className="text-[10px] md:text-xs font-mono font-bold text-cyan-400">
                 {tempOffset > 0 ? `+${tempOffset.toFixed(1)}°C` : `${tempOffset.toFixed(1)}°C`}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 md:gap-3">
               <button
                 type="button"
                 onClick={() => handleUpdateTempOffset(tempOffset - 1.0)}
-                className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs active:scale-95 cursor-pointer"
+                className="px-2 md:px-3 py-1.5 md:py-2 rounded-md md:rounded-lg bg-white/5 hover:bg-white/10 text-white font-bold text-[10px] md:text-xs active:scale-95 cursor-pointer shrink-0"
               >
                 -1°C
               </button>
@@ -258,82 +264,89 @@ export default function SettingsPanel({
                 step="0.5"
                 value={tempOffset}
                 onChange={(e) => handleUpdateTempOffset(parseFloat(e.target.value))}
-                className="flex-1 accent-cyan-400 cursor-pointer"
+                className="flex-1 min-w-0 accent-cyan-500 cursor-pointer h-1.5 bg-white/10 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:rounded-full"
               />
               <button
                 type="button"
                 onClick={() => handleUpdateTempOffset(tempOffset + 1.0)}
-                className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs active:scale-95 cursor-pointer"
+                className="px-2 md:px-3 py-1.5 md:py-2 rounded-md md:rounded-lg bg-white/5 hover:bg-white/10 text-white font-bold text-[10px] md:text-xs active:scale-95 cursor-pointer shrink-0"
               >
                 +1°C
               </button>
             </div>
-            <p className="text-[9px] text-zinc-500">
-              Calibrates DHT11 sensor to match your room thermometer or compensate for hardware deviation.
-            </p>
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-cyan-400 font-extrabold uppercase">Acoustic Buzzer</span>
+        {/* Buzzer Box */}
+        <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 flex flex-col gap-2.5 md:gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="text-[9px] md:text-xs text-cyan-500/80 font-bold uppercase tracking-widest break-words whitespace-normal leading-tight">
+              Acoustic Buzzer
+            </span>
             <button
               onClick={onToggleMasterBuzzer}
-              className={`px-4 py-1.5 rounded-lg text-xs font-bold border-2 transition-all active:scale-95 cursor-pointer ${
-                masterBuzzer ? "bg-emerald-600 text-white border-emerald-500" : "bg-zinc-800 text-zinc-400 border-zinc-600"
+              className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-[9px] md:text-xs font-bold transition-all active:scale-95 cursor-pointer self-start sm:self-auto ${
+                masterBuzzer ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-white/5 text-white/30 border border-white/40"
               }`}
             >
               {masterBuzzer ? "BUZZER ON" : "MUTED"}
             </button>
           </div>
-          <div className="flex gap-2 h-full items-end">
+          
+          <div className="flex gap-2 items-end mt-auto h-full">
             <button
               onClick={() => onTestBuzzer(2400, 150)}
-              className="flex-1 py-3 rounded-lg bg-black border-2 border-zinc-600 text-white text-xs font-bold active:scale-95 cursor-pointer"
+              className="flex-1 py-2.5 md:py-4 rounded-lg md:rounded-xl bg-black/40 hover:bg-black/60 border border-white/40 text-white text-[10px] md:text-xs font-bold active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-1 min-w-0"
             >
-              🔊 Short Beep
+              <span className="text-sm md:text-lg opacity-80">🔊</span>
+              <span className="truncate w-full text-center">Short Beep</span>
             </button>
             <button
               onClick={() => onTestBuzzer(3200, 350)}
-              className="flex-1 py-3 rounded-lg bg-cyan-900 border-2 border-cyan-600 text-cyan-300 text-xs font-bold active:scale-95 cursor-pointer"
+              className="flex-1 py-2.5 md:py-4 rounded-lg md:rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[10px] md:text-xs font-bold active:scale-95 cursor-pointer flex flex-col items-center justify-center gap-1 min-w-0 shadow-[0_0_15px_rgba(6,182,212,0.1)]"
             >
-              🔔 Alert Chime
+              <span className="text-sm md:text-lg">🔔</span>
+              <span className="truncate w-full text-center">Alert Chime</span>
             </button>
           </div>
         </div>
+
       </div>
 
       {/* ── WI-FI & REMOTE DESK ACCESS ── */}
-      <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 space-y-4 shrink-0">
-        <div className="flex items-center justify-between">
+      <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 space-y-3 md:space-y-4 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-base">📶</span>
-            <span className="text-xs text-white font-extrabold uppercase">Wi-Fi &amp; Remote Access (Dual-Mode)</span>
+            <span className="text-sm md:text-base">📶</span>
+            <span className="text-[10px] md:text-xs text-white font-bold uppercase tracking-widest break-words whitespace-normal leading-tight">
+              Wi-Fi &amp; Remote Access
+            </span>
           </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${wifiConnected ? "bg-emerald-950 text-emerald-300 border-emerald-600" : "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>
+          <span className={`text-[8px] md:text-[10px] font-bold px-2 py-0.5 md:py-1 rounded self-start sm:self-auto uppercase tracking-wider ${wifiConnected ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-black/50 text-white/30 border border-white/40"}`}>
             {wifiConnected ? `Online (${wifiSsid || "Connected"})` : "Offline / Standby"}
           </span>
         </div>
 
         {/* IP / Host input */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 md:space-y-2">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-zinc-400 font-bold uppercase">Desk Wi-Fi IP / Hostname:</span>
-            <span className="text-[10px] text-cyan-400 font-mono">{wifiIp ? `Assigned IP: ${wifiIp}` : "SoftAP: 192.168.4.1"}</span>
+            <span className="text-[9px] md:text-[10px] text-white/40 font-bold uppercase tracking-wider">Desk Wi-Fi IP / Hostname:</span>
+            <span className="text-[9px] md:text-[10px] text-cyan-400 font-mono hidden sm:inline">{wifiIp ? `Assigned IP: ${wifiIp}` : "SoftAP: 192.168.4.1"}</span>
           </div>
-          <div className="flex gap-2">
+          
+          <div className="flex gap-1.5 md:gap-2">
             <input
               type="text"
               value={hostInput}
               onChange={(e) => setHostInput(e.target.value)}
-              placeholder="e.g. 192.168.4.1 or 192.168.1.150"
-              className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-bold text-xs focus:border-cyan-500 outline-none font-mono"
+              placeholder="e.g. 192.168.4.1"
+              className="flex-1 min-w-0 bg-black/50 border border-white/40 rounded-lg md:rounded-xl px-2.5 md:px-3 py-1.5 md:py-2.5 text-white font-mono text-[10px] md:text-xs focus:border-cyan-500 outline-none"
             />
             <button
               type="button"
               onClick={handleTestWifi}
               disabled={testingWifi}
-              className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs active:scale-95 cursor-pointer disabled:opacity-50"
+              className="px-2.5 md:px-4 py-1.5 md:py-2.5 rounded-lg md:rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-[10px] md:text-xs active:scale-95 cursor-pointer disabled:opacity-50 shrink-0"
             >
               {testingWifi ? "Testing..." : "Test Link"}
             </button>
@@ -341,97 +354,86 @@ export default function SettingsPanel({
               href={`http://${hostInput}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-cyan-300 font-extrabold text-xs flex items-center gap-1 active:scale-95"
+              className="px-2.5 md:px-4 py-1.5 md:py-2.5 rounded-lg md:rounded-xl bg-white/5 hover:bg-white/10 border border-white/40 text-white font-bold text-[10px] md:text-xs flex items-center gap-1 active:scale-95 shrink-0"
             >
               Portal ↗
             </a>
           </div>
+          
           {testStatus && (
-            <div className={`text-[11px] font-mono p-1.5 rounded ${testStatus.startsWith("Connected") ? "text-emerald-300 bg-emerald-950/40 border border-emerald-800" : "text-rose-300 bg-rose-950/40 border border-rose-800"}`}>
+            <div className={`text-[9px] md:text-[11px] font-mono p-1.5 md:p-2 rounded-lg mt-1 break-words whitespace-normal ${testStatus.startsWith("Connected") ? "text-emerald-300 bg-emerald-500/10 border border-emerald-500/20" : "text-rose-300 bg-rose-500/10 border border-rose-500/20"}`}>
               {testStatus}
             </div>
           )}
-
-          {/* Dedicated Campus Wi-Fi & Hotspot Manager Modal Button */}
-          <button
-            type="button"
-            onClick={() => setShowWifiModal(true)}
-            className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs transition-all active:scale-95 shadow-md shadow-cyan-500/20 cursor-pointer flex items-center justify-center gap-2 mt-2"
-          >
-            <span>📶</span>
-            <span>Configure Campus Wi-Fi, Fortinet Credentials &amp; Hotspot</span>
-          </button>
         </div>
 
+        {/* Dedicated Campus Wi-Fi Modal Button */}
+        <button
+          type="button"
+          onClick={() => setShowWifiModal(true)}
+          className="w-full py-2.5 md:py-3.5 rounded-lg md:rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-[10px] md:text-xs transition-all active:scale-95 shadow-[0_0_15px_rgba(6,182,212,0.2)] cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span className="text-sm">📶</span>
+          <span className="truncate">Configure Campus Wi-Fi &amp; Hotspot</span>
+        </button>
+
         {/* Wi-Fi on Away Only Toggle */}
-        <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
-          <div>
-            <span className="text-xs text-zinc-200 font-extrabold block">Wi-Fi on Away Only (Power Saver):</span>
-            <span className="text-[10px] text-zinc-400">Keeps Wi-Fi off at desk, connects automatically when you walk away</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 md:pt-4 border-t border-white/50">
+          <div className="flex-1 min-w-0">
+            <span className="text-[10px] md:text-xs text-white font-bold block truncate">Wi-Fi on Away Only (Power Saver):</span>
+            <span className="text-[8px] md:text-[10px] text-white/40 break-words whitespace-normal leading-tight mt-0.5 block">Keeps Wi-Fi off at desk, connects when you walk away</span>
           </div>
           <button
             type="button"
             onClick={() => onToggleWifiOnAwayOnly?.(!wifiOnAwayOnly)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-extrabold border-2 transition-all active:scale-95 cursor-pointer ${
-              wifiOnAwayOnly ? "bg-amber-600 text-white border-amber-500" : "bg-zinc-800 text-zinc-400 border-zinc-700"
+            className={`px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-[9px] md:text-xs font-bold transition-all active:scale-95 cursor-pointer self-start sm:self-auto shrink-0 ${
+              wifiOnAwayOnly ? "bg-amber-500/20 text-amber-400 border border-amber-500/40" : "bg-white/5 text-white/40 border border-white/40"
             }`}
           >
             {wifiOnAwayOnly ? "AWAY ONLY (ON)" : "ALWAYS ON"}
           </button>
         </div>
-
-        {/* Portal Information / Features Notice */}
-        <div className="bg-black/60 p-3 rounded-lg border border-zinc-800 text-[11px] text-zinc-400 space-y-1">
-          <div className="font-bold text-zinc-300">💡 Multi-Network &amp; College Wi-Fi Features:</div>
-          <div>• Connect to default hotspot <span className="text-cyan-300 font-mono">AnandSmartDesk</span> (password: <span className="text-cyan-300 font-mono">Anandsmartdesk</span>).</div>
-          <div>• Save multiple Wi-Fi networks with automatic priority scan &amp; seamless failover.</div>
-          <div>• Supports College Wi-Fi / Restricted Captive Portals with auto-login credentials.</div>
-          <div>• Real-time NTP clock sync keeps schedules accurate without phone connection.</div>
-        </div>
       </div>
 
-      {/* ── WORLDWIDE CLOUD REMOTE CREDENTIALS (NVS & PWA CACHE) ── */}
-      <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 space-y-3 shrink-0">
-        <div className="flex items-center justify-between">
+      {/* ── WORLDWIDE CLOUD REMOTE CREDENTIALS ── */}
+      <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 space-y-3 md:space-y-4 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-base">☁️</span>
-            <span className="text-xs text-white font-extrabold uppercase">Cloud Remote Credentials (NVS &amp; PWA Cache)</span>
+            <span className="text-sm md:text-base">☁️</span>
+            <span className="text-[10px] md:text-xs text-white font-bold uppercase tracking-widest break-words whitespace-normal leading-tight">
+              Cloud Remote Credentials
+            </span>
           </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${inputCloudPass ? "bg-amber-950 text-amber-300 border-amber-800" : "bg-emerald-950 text-emerald-300 border-emerald-800"}`}>
-            {inputCloudPass ? "Password Protected" : "No Password (Initial Setup)"}
+          <span className={`text-[8px] md:text-[10px] font-bold px-2 py-0.5 md:py-1 rounded self-start sm:self-auto uppercase tracking-wider ${inputCloudPass ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"}`}>
+            {inputCloudPass ? "Password Protected" : "No Password"}
           </span>
         </div>
 
-        <p className="text-[11px] text-zinc-400">
-          Set a unique Device Username and optional Password. When connecting over the cloud WebSocket, the PWA and ESP32 authenticate with these credentials.
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
           <div>
-            <label className="text-[10px] text-zinc-300 font-bold block mb-1">Device Username / ID:</label>
+            <label className="text-[9px] md:text-[10px] text-white/50 font-bold block mb-1">Device Username / ID:</label>
             <input
               type="text"
               value={inputCloudUser}
               onChange={(e) => setInputCloudUser(e.target.value)}
               placeholder="user_anand_primary"
-              className="w-full bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+              className="w-full bg-black/50 border border-white/40 rounded-lg px-2.5 md:px-3 py-1.5 md:py-2.5 text-white font-mono text-[10px] md:text-xs focus:border-cyan-500 outline-none"
             />
           </div>
           <div>
-            <label className="text-[10px] text-zinc-300 font-bold block mb-1">Device Password (Optional):</label>
+            <label className="text-[9px] md:text-[10px] text-white/50 font-bold block mb-1">Device Password (Optional):</label>
             <div className="relative">
               <input
                 type={showCloudPass ? "text" : "password"}
                 value={inputCloudPass}
                 onChange={(e) => setInputCloudPass(e.target.value)}
                 placeholder="Leave blank for open access"
-                className="w-full bg-black border border-zinc-700 rounded-lg px-3 py-2 pr-9 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                className="w-full bg-black/50 border border-white/40 rounded-lg px-2.5 md:px-3 py-1.5 md:py-2.5 pr-8 text-white font-mono text-[10px] md:text-xs focus:border-cyan-500 outline-none"
               />
               <button
                 type="button"
                 onClick={() => setShowCloudPass(!showCloudPass)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-1 text-xs cursor-pointer select-none"
-                title={showCloudPass ? "Hide password" : "Show password"}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white p-1 text-[10px] cursor-pointer"
               >
                 {showCloudPass ? "👁️" : "🙈"}
               </button>
@@ -442,27 +444,33 @@ export default function SettingsPanel({
         <button
           type="button"
           onClick={handleSaveCredentials}
-          className="w-full py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs transition-all active:scale-95 shadow cursor-pointer flex items-center justify-center gap-2 mt-1"
+          className={`w-full py-2.5 md:py-3.5 rounded-lg md:rounded-xl font-bold text-[10px] md:text-xs transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 md:gap-2 ${
+            credSavedMsg ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+          }`}
         >
-          <span>💾</span>
-          <span>{credSavedMsg ? "✓ Credentials Saved & Cached in PWA!" : "Save Credentials to PWA Cache"}</span>
+          <span className="text-sm">💾</span>
+          <span className="truncate">{credSavedMsg ? "Saved & Cached in PWA!" : "Save Credentials to PWA"}</span>
         </button>
       </div>
 
       {/* ── HARDWARE LIGHTING & 2D MATRIX CONFIG ── */}
-      <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 space-y-4 shrink-0">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-white font-extrabold uppercase">Hardware Strip &amp; 2D Matrix Setup</span>
-          <span className="text-[10px] text-cyan-400 font-bold">Dynamic NVS Memory</span>
+      <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 space-y-3 md:space-y-4 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 md:gap-2">
+          <span className="text-[10px] md:text-xs text-white font-bold uppercase tracking-widest break-words whitespace-normal leading-tight">
+            Hardware Lighting &amp; Matrix
+          </span>
+          <span className="text-[8px] md:text-[10px] text-cyan-400/80 font-bold self-start sm:self-auto">
+            Dynamic NVS Memory
+          </span>
         </div>
 
         {/* Strip Length */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 md:space-y-2 bg-black/30 p-2 md:p-3.5 rounded-lg md:rounded-xl border border-white/50">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-zinc-400 font-bold uppercase">Primary LED Strip (GPIO 8):</span>
-            <span className="text-[10px] text-zinc-300 font-bold">Current: {stripLength} LEDs</span>
+            <span className="text-[9px] md:text-[10px] text-white/40 font-bold uppercase tracking-wider">Primary Strip (GPIO 8):</span>
+            <span className="text-[9px] md:text-[10px] text-white/70 font-bold">Current: {stripLength} LEDs</span>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 md:gap-2">
             <input
               type="number"
               min="1"
@@ -470,12 +478,12 @@ export default function SettingsPanel({
               value={stripLenInput}
               onChange={(e) => setStripLenInput(e.target.value === "" ? "" : Number(e.target.value))}
               onFocus={(e) => e.target.select()}
-              className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-2 text-white font-bold text-xs"
+              className="flex-1 min-w-0 bg-black/50 border border-white/40 rounded-lg px-2.5 md:px-3 py-1.5 md:py-2.5 text-white font-bold text-[10px] md:text-xs focus:border-cyan-500 outline-none text-center"
             />
             <button
               type="button"
               onClick={() => onSaveStripLength?.(Math.max(1, Math.min(800, Number(stripLenInput) || 8)))}
-              className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs cursor-pointer active:scale-95"
+              className="px-3 md:px-5 py-1.5 md:py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white font-bold text-[9px] md:text-xs border border-white/40 active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
             >
               Set Strip (0xF3)
             </button>
@@ -483,180 +491,152 @@ export default function SettingsPanel({
         </div>
 
         {/* Matrix Configuration */}
-        <div className="space-y-2 pt-2 border-t border-zinc-800">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] text-cyan-400 font-bold uppercase">2D Matrix Display (GPIO {mPin}):</span>
-            <span className="text-[10px] text-zinc-400">{mCols}x{mRows} Grid ({Number(mCols) * Number(mRows)} LEDs)</span>
+        <div className="space-y-2 md:space-y-3 pt-2 md:pt-3 border-t border-white/50">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span className="text-[9px] md:text-[10px] text-cyan-400 font-bold uppercase tracking-wider">2D Matrix Display (GPIO {mPin}):</span>
+            <span className="text-[9px] md:text-[10px] text-white/40 font-mono self-start sm:self-auto">{mCols}x{mRows} Grid ({Number(mCols) * Number(mRows)} LEDs)</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
             <div>
-              <label className="text-[9px] text-zinc-500 font-bold block mb-0.5">ROWS:</label>
-              <input
-                type="number"
-                min="1"
-                max="64"
-                value={mRows}
-                onChange={(e) => setMRows(e.target.value === "" ? "" : Number(e.target.value))}
-                onFocus={(e) => e.target.select()}
-                className="w-full bg-black border border-zinc-700 rounded-lg p-1.5 text-white text-xs font-bold"
-              />
+              <label className="text-[8px] md:text-[9px] text-white/40 font-bold block mb-1">ROWS:</label>
+              <input type="number" min="1" max="64" value={mRows} onChange={(e) => setMRows(e.target.value === "" ? "" : Number(e.target.value))} onFocus={(e) => e.target.select()} className="w-full bg-black/50 border border-white/40 rounded-lg p-1.5 md:p-2 text-white text-[10px] md:text-xs font-bold text-center outline-none focus:border-cyan-500" />
             </div>
             <div>
-              <label className="text-[9px] text-zinc-500 font-bold block mb-0.5">COLS:</label>
-              <input
-                type="number"
-                min="1"
-                max="128"
-                value={mCols}
-                onChange={(e) => setMCols(e.target.value === "" ? "" : Number(e.target.value))}
-                onFocus={(e) => e.target.select()}
-                className="w-full bg-black border border-zinc-700 rounded-lg p-1.5 text-white text-xs font-bold"
-              />
+              <label className="text-[8px] md:text-[9px] text-white/40 font-bold block mb-1">COLS:</label>
+              <input type="number" min="1" max="128" value={mCols} onChange={(e) => setMCols(e.target.value === "" ? "" : Number(e.target.value))} onFocus={(e) => e.target.select()} className="w-full bg-black/50 border border-white/40 rounded-lg p-1.5 md:p-2 text-white text-[10px] md:text-xs font-bold text-center outline-none focus:border-cyan-500" />
             </div>
             <div>
-              <label className="text-[9px] text-zinc-500 font-bold block mb-0.5">DATA GPIO PIN:</label>
-              <select
-                value={mPin}
-                onChange={(e) => setMPin(Number(e.target.value))}
-                className="w-full bg-black border border-zinc-700 rounded-lg p-1.5 text-white text-xs font-bold focus:border-cyan-500 outline-none cursor-pointer"
-              >
+              <label className="text-[8px] md:text-[9px] text-white/40 font-bold block mb-1">DATA PIN:</label>
+              <select value={mPin} onChange={(e) => setMPin(Number(e.target.value))} className="w-full bg-black/50 border border-white/40 rounded-lg p-1.5 md:p-2 text-white text-[10px] md:text-xs font-bold outline-none focus:border-cyan-500 cursor-pointer">
                 {MATRIX_SAFE_GPIO_PINS.map((item) => (
-                  <option key={item.pin} value={item.pin}>
-                    {item.label}
-                  </option>
+                  <option key={item.pin} value={item.pin}>{item.label}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-[9px] text-zinc-500 font-bold block mb-0.5">WIRING:</label>
-              <button
-                type="button"
-                onClick={() => setMWiring(mWiring === 1 ? 0 : 1)}
-                className="w-full py-1.5 rounded-lg bg-zinc-800 border border-zinc-600 text-[10px] font-extrabold text-white cursor-pointer"
-              >
+              <label className="text-[8px] md:text-[9px] text-white/40 font-bold block mb-1">WIRING:</label>
+              <button type="button" onClick={() => setMWiring(mWiring === 1 ? 0 : 1)} className="w-full py-1.5 md:py-2 rounded-lg bg-black/50 hover:bg-black/70 border border-white/40 text-[9px] md:text-[10px] font-bold text-white cursor-pointer active:scale-95">
                 {mWiring === 1 ? "Zig-Zag" : "Normal"}
               </button>
             </div>
           </div>
+          
           <button
             type="button"
             onClick={() => onSaveMatrixConfig?.(Math.max(1, Math.min(64, Number(mRows) || 8)), Math.max(1, Math.min(128, Number(mCols) || 32)), mWiring, mPin, matrixConfig?.enabled ?? true)}
-            className="w-full py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-white font-extrabold text-xs cursor-pointer active:scale-95"
+            className="w-full py-2.5 md:py-3 rounded-lg md:rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-[10px] md:text-xs cursor-pointer active:scale-95 mt-1"
           >
             Save Matrix Hardware (0xF2)
           </button>
+        </div>
 
-          {/* Marquee Custom Text Field */}
-          <div className="pt-2 border-t border-zinc-800 space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-cyan-400 font-bold uppercase">Custom Marquee Text:</span>
-              <span className="text-[10px] text-zinc-500">{mText.length}/60 chars</span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                maxLength={60}
-                value={mText}
-                onChange={(e) => setMText(e.target.value)}
-                placeholder="Enter marquee text..."
-                className="flex-1 bg-black border border-zinc-700 rounded-lg px-3 py-1.5 text-white text-xs font-bold focus:border-cyan-500 outline-none"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onSetMatrixDisplay?.(
-                    18,
-                    matrixConfig?.speed ?? 5,
-                    matrixConfig?.bri ?? 70,
-                    matrixConfig?.colorR ?? 0,
-                    matrixConfig?.colorG ?? 240,
-                    matrixConfig?.colorB ?? 255,
-                    mText
-                  )
-                }
-                className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-xs cursor-pointer whitespace-nowrap active:scale-95"
-              >
-                Send Text (0xF1)
-              </button>
-            </div>
+        {/* Marquee Custom Text Field */}
+        <div className="pt-2 md:pt-3 border-t border-white/50 space-y-1.5 md:space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-[9px] md:text-[10px] text-cyan-400/80 font-bold uppercase tracking-wider">Custom Marquee Text:</span>
+            <span className="text-[8px] md:text-[9px] text-white/30">{mText.length}/60</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-1.5 md:gap-2">
+            <input
+              type="text"
+              maxLength={60}
+              value={mText}
+              onChange={(e) => setMText(e.target.value)}
+              placeholder="Enter marquee text..."
+              className="flex-1 min-w-0 bg-black/50 border border-white/40 rounded-lg px-2.5 md:px-3 py-1.5 md:py-2.5 text-white text-[10px] md:text-xs font-bold focus:border-cyan-500 outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => onSetMatrixDisplay?.(18, matrixConfig?.speed ?? 5, matrixConfig?.bri ?? 70, matrixConfig?.colorR ?? 0, matrixConfig?.colorG ?? 240, matrixConfig?.colorB ?? 255, mText)}
+              className="px-3 md:px-5 py-2 md:py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-[10px] md:text-xs cursor-pointer active:scale-95 shrink-0"
+            >
+              Send (0xF1)
+            </button>
           </div>
         </div>
       </div>
 
-      {/* ── DEVICE IDENTITY & PREFERENCES ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 shrink-0">
-        <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 space-y-3">
+      {/* ── DEVICE IDENTITY & LOGS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 shrink-0">
+        
+        {/* Device Identity Box */}
+        <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 space-y-3 md:space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-zinc-400 font-extrabold uppercase">Device Identity</span>
+            <span className="text-[10px] md:text-xs text-white/50 font-bold uppercase tracking-widest">Device Identity</span>
             <button
               onClick={() => setShowRenameModal(true)}
-              className="px-4 py-2 rounded-lg bg-zinc-800 border-2 border-zinc-600 text-white text-xs font-bold active:scale-95 cursor-pointer"
+              className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/40 text-white text-[9px] md:text-xs font-bold active:scale-95 cursor-pointer"
             >
               Rename ✏️
             </button>
           </div>
-          <div className="text-xl text-white font-extrabold bg-black p-3 rounded-lg border-2 border-zinc-700">
+          <div className="text-base md:text-xl text-white font-bold bg-black/40 px-3 py-2 md:p-3 rounded-lg border border-white/50 truncate">
             {deviceName}
           </div>
+          
           <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-zinc-400 font-bold">Accept All Bluetooth:</span>
+            <span className="text-[10px] md:text-xs text-white/70 font-bold">Accept All Bluetooth:</span>
             <button
               onClick={() => setShowAllDevices(!showAllDevices)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 cursor-pointer ${
-                showAllDevices ? "bg-amber-600 border-amber-500 text-white" : "bg-black border-zinc-600 text-zinc-500"
+              className={`px-3 py-1.5 rounded-lg text-[9px] md:text-xs font-bold transition-all cursor-pointer ${
+                showAllDevices ? "bg-amber-500/20 border border-amber-500/40 text-amber-400" : "bg-white/5 border border-white/40 text-white/40"
               }`}
             >
               {showAllDevices ? "YES" : "FILTERED"}
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
-            <div>
-              <span className="text-xs text-zinc-300 font-extrabold block">Time Format:</span>
-              <span className="text-[10px] text-zinc-500">12-Hour AM/PM vs 24-Hour Military format</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 md:pt-3 border-t border-white/50">
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] md:text-xs text-white/70 font-bold block truncate">Time Format:</span>
+              <span className="text-[8px] md:text-[10px] text-white/40 block truncate mt-0.5">12Hr vs 24Hr</span>
             </div>
             <button
               type="button"
               onClick={toggle12HrMode}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition-all active:scale-95 cursor-pointer ${
-                is12Hr ? "bg-cyan-500 text-black border-cyan-400" : "bg-zinc-800 text-zinc-300 border-zinc-700"
+              className={`px-3 py-1.5 rounded-lg text-[9px] md:text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0 self-start sm:self-auto ${
+                is12Hr ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/40" : "bg-white/5 text-white/40 border border-white/40"
               }`}
             >
-              {is12Hr ? "12-HOUR (AM/PM)" : "24-HOUR (DEFAULT)"}
+              {is12Hr ? "12-HOUR (AM/PM)" : "24-HOUR"}
             </button>
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-zinc-900 border-2 border-zinc-700 flex flex-col flex-1 max-h-[300px]">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-zinc-400 font-extrabold uppercase">Live BLE Logs</span>
-            <div className="flex gap-3">
-              <button onClick={handleCopyLogs} className="text-xs font-bold text-cyan-400 cursor-pointer">
+        {/* Live BLE Logs Box */}
+        <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 flex flex-col min-h-[250px] max-h-[350px]">
+          <div className="flex items-center justify-between mb-2 md:mb-3">
+            <span className="text-[10px] md:text-xs text-white/50 font-bold uppercase tracking-widest">Live BLE Logs</span>
+            <div className="flex gap-2 md:gap-3">
+              <button onClick={handleCopyLogs} className="text-[9px] md:text-[10px] font-bold text-cyan-400/80 hover:text-cyan-400 cursor-pointer">
                 {copiedLogs ? "Copied! ✓" : "Copy"}
               </button>
-              <button onClick={onClearLogs} className="text-xs font-bold text-rose-400 cursor-pointer">
+              <button onClick={onClearLogs} className="text-[9px] md:text-[10px] font-bold text-rose-400/80 hover:text-rose-400 cursor-pointer">
                 Clear
               </button>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto space-y-1 font-mono text-[11px] p-2 bg-black rounded-lg border border-zinc-800 scrollbar-hide">
+          <div className="flex-1 overflow-y-auto space-y-1 md:space-y-1.5 font-mono text-[8px] md:text-[10px] p-2 bg-black/60 rounded-lg border border-white/50 custom-scrollbar break-all">
             {logs.length === 0 ? (
-              <div className="text-zinc-600 italic">No logs yet.</div>
+              <div className="text-white/20 italic">No logs yet.</div>
             ) : (
               logs.map((log) => (
-                <div key={log.id} className="flex gap-2">
-                  <span className="text-zinc-500 shrink-0">{log.time}</span>
-                  <span className={`shrink-0 font-bold ${log.type === "err" ? "text-rose-400" : log.type === "warn" ? "text-amber-400" : log.type === "tx" ? "text-cyan-400" : log.type === "rx" ? "text-emerald-400" : "text-zinc-400"}`}>
+                <div key={log.id} className="flex gap-1.5 md:gap-2 items-start">
+                  <span className="text-white/30 shrink-0">{log.time}</span>
+                  <span className={`shrink-0 font-bold ${log.type === "err" ? "text-rose-400" : log.type === "warn" ? "text-amber-400" : log.type === "tx" ? "text-cyan-400" : log.type === "rx" ? "text-emerald-400" : "text-white/40"}`}>
                     [{log.type.toUpperCase()}]
                   </span>
-                  <span className="text-zinc-300 break-all">{log.text}</span>
+                  <span className="text-white/70 leading-tight">{log.text}</span>
                 </div>
               ))
             )}
           </div>
         </div>
+
       </div>
 
+      {/* ── MODALS ── */}
       <RenameModal
         isOpen={showRenameModal}
         currentName={deviceName}

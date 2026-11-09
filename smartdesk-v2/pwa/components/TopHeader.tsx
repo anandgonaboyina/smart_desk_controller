@@ -124,12 +124,12 @@ export default function TopHeader({
 
       {/* ── MOBILE COMPACT SINGLE-LINE STATUS BAR (Only shown when NOT expanded to save space) ── */}
       {!isMobileExpanded && (
-        <div className="md:hidden flex items-center justify-between gap-1 w-full bg-white/[0.03] border border-white/10 rounded-xl px-2 py-1 transition-all">
+        <div className="md:hidden flex items-center justify-evenly gap-1 w-full bg-white/[0.03] border border-white/10 rounded-xl px-2 py-1 transition-all">
           {/* 1. Wi-Fi compact pill */}
           <button
             type="button"
             onClick={onOpenWifiModal}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
+            className={`flex items-center gap-1.5 px-1 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
               wifiConnected
                 ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
                 : wifiState === 2
@@ -140,7 +140,6 @@ export default function TopHeader({
             }`}
             title={wifiLabel}
           >
-            <span className="text-xs">📶</span>
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                 wifiConnected
@@ -159,7 +158,7 @@ export default function TopHeader({
           <button
             type="button"
             onClick={onOpenHandshake}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 min-w-0 flex-1 justify-center ${
+            className={`flex items-center gap-1.5 px-1 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 min-w-0 flex-1 justify-center ${
               isCloudOnline
                 ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
                 : isWsConnected
@@ -168,7 +167,7 @@ export default function TopHeader({
             }`}
             title="Cloud Online Status"
           >
-            <span className="text-xs shrink-0">☁️</span>
+          
             <span className="truncate">
               {isCloudOnline ? "Cloud Online" : isWsConnected ? "Connecting..." : "Cloud Offline"}
             </span>
@@ -187,18 +186,18 @@ export default function TopHeader({
           <button
             type="button"
             onClick={onOpenHandshake}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-[11px] font-bold transition-all active:scale-95 shrink-0"
+            className="flex items-center gap-1 px-1 py-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-[11px] font-bold transition-all active:scale-95 shrink-0"
             title="Handshake & Diagnostics"
           >
-            <span className="text-xs">🌐</span>
-            <span>Setup</span>
+            <span className="text-xs">📳</span>
+            <span>Handshake</span>
           </button>
 
           {/* 4. Small Bluetooth Icon with Green/Red status dot */}
           <button
             type="button"
             onClick={bleConnected ? onDisconnectBle : onConnectBle}
-            className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
+            className={`flex items-center gap-1 px-1 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 shrink-0 ${
               bleConnected
                 ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300"
                 : bleConnecting
@@ -207,7 +206,7 @@ export default function TopHeader({
             }`}
             title={bleConnected ? "BLE Connected (Tap to Disconnect)" : "BLE Disconnected (Tap to Link)"}
           >
-            <span className="text-xs">🔗</span>
+            <span className="text-xs">BLE</span>
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                 bleConnected
@@ -240,7 +239,7 @@ export default function TopHeader({
                 : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
             }`}
           >
-            <span className="text-sm shrink-0">☁️</span>
+            <span className="text-sm shrink-0">💻</span>
             <span className="text-[11px] sm:text-xs font-bold text-left leading-tight break-words whitespace-normal flex-1">
               {cloudLabel}
             </span>
@@ -261,7 +260,7 @@ export default function TopHeader({
             onClick={onOpenHandshake}
             className="min-h-[42px] sm:min-h-[46px] px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition-all cursor-pointer active:scale-95 flex items-center gap-2"
           >
-            <span className="text-sm shrink-0">🌐</span>
+            <span className="text-sm shrink-0">📳</span>
             <span className="text-[11px] sm:text-xs font-bold text-left leading-tight break-words whitespace-normal flex-1">
               Handshake &amp; Credentials
             </span>
@@ -284,7 +283,7 @@ export default function TopHeader({
                 : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white"
             }`}
           >
-            <span className="text-sm shrink-0">📶</span>
+            <span className="text-sm shrink-0">🛜</span>
             <span className="text-[11px] sm:text-xs font-bold text-left leading-tight break-words whitespace-normal flex-1">
               {wifiLabel}
             </span>
