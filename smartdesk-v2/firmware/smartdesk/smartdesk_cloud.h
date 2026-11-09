@@ -829,13 +829,21 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 /* ── Cloud Client Lifecycle ──────────────────────────────────────────────── */
 static void startCloudClient() {
+    if (s_cloudConnected) return; // Prevent duplicate initialization if already active
+
     bool isSsl = (s_cloudPort == 443 || strstr(s_cloudHost, ".onrender.com") != NULL || strstr(s_cloudHost, ".vercel.app") != NULL);
     Serial.printf(">>> [CLOUD WS] Initializing WebSocket client -> %s://%s:%d%s\n",
                   isSsl ? "wss" : "ws", s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+
+    // Set standard HTTP Host header for Cloudflare/Render reverse proxy compatibility
+    char hostHeader[80];
+    snprintf(hostHeader, sizeof(hostHeader), "Host: %s", s_cloudHost);
+    s_cloudWs.setExtraHeaders(hostHeader);
+
     if (isSsl) {
-        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH, "");
     } else {
-        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH, "");
     }
     s_cloudWs.onEvent(onCloudWsEvent);
     s_cloudWs.setReconnectInterval(5000);
@@ -866,21 +874,24 @@ static inline void applyAndRestartCloudCredentials(const char* newDevId, const c
         char oldDevId[36] = {0};
         strncpy(oldDevId, s_cloudDeviceId, sizeof(oldDevId) - 1);
 
-        // If connected and deviceId is changing, notify server to remove old device registration
-        if (s_cloudConnected && newDevId && strlen(oldDevId) > 0 && strcmp(newDevId, oldDevId) != 0) {
-            char unregMsg[128];
-            snprintf(unregMsg, sizeof(unregMsg), "{\"type\":\"device_unregister\",\"deviceId\":\"%s\"}", oldDevId);
-            s_cloudWs.sendTXT(unregMsg);
-            delay(50);
-        }
-
         saveCloudConfigToNVS(NULL, 0, newDevId, NULL, newUser, newPass);
         Serial.printf(">>> [CLOUD CREDENTIALS] Assigned via BLE (DevId: %s, User: %s, Desk: %s)\n",
                       s_cloudDeviceId, s_cloudUser, s_deviceName);
 
-        // Disconnect existing socket and force immediate restart with new credentials
-        stopCloudClient();
-        startCloudClient();
+        // If WebSocket is already connected, re-authenticate immediately over the active connection (zero downtime / no socket tear-down)
+        if (s_cloudConnected) {
+            char authMsg[256];
+            snprintf(authMsg, sizeof(authMsg),
+                "{\"type\":\"auth\",\"role\":\"device\",\"deviceId\":\"%s\",\"oldDeviceId\":\"%s\",\"deviceKey\":\"%s\",\"userId\":\"%s\",\"password\":\"%s\"}",
+                s_cloudDeviceId, oldDevId, s_cloudDeviceKey, s_cloudUser, s_cloudPassword
+            );
+            s_cloudWs.sendTXT(authMsg);
+            Serial.printf(">>> [CLOUD WS] Sent live re-authentication handshake for '%s' (replacing '%s')\n",
+                          s_cloudDeviceId, oldDevId);
+            broadcastCloudState();
+        } else if (s_wifiConnected) {
+            startCloudClient();
+        }
     }
 }
 
