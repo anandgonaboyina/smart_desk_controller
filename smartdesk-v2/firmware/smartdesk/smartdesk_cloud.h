@@ -647,6 +647,146 @@ static void handleCloudMessage(const char* payload, size_t length) {
         }
         return;
     }
+
+    // 17. Schedule Set / Save Command over Cloud WS
+    if (strcmp(cmd, "schedule_set") == 0 || strcmp(cmd, "set_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            s_schedules[id].enabled      = getJsonBool(payload, "enabled", true);
+            s_schedules[id].daysMask     = (uint8_t)getJsonInt(payload, "daysMask", 0x7F);
+            s_schedules[id].startHour    = (uint8_t)getJsonInt(payload, "startHour", 9);
+            s_schedules[id].startMin     = (uint8_t)getJsonInt(payload, "startMin", 0);
+            s_schedules[id].stopType     = (uint8_t)getJsonInt(payload, "stopType", 0);
+            s_schedules[id].durationMin  = (uint16_t)getJsonInt(payload, "durationMin", 60);
+            s_schedules[id].stopHour     = (uint8_t)getJsonInt(payload, "stopHour", 10);
+            s_schedules[id].stopMin      = (uint8_t)getJsonInt(payload, "stopMin", 0);
+            s_schedules[id].targetType   = (uint8_t)getJsonInt(payload, "targetType", 6);
+            s_schedules[id].targetAction = (uint8_t)getJsonInt(payload, "targetAction", 1);
+            s_schedules[id].rgbR         = (uint8_t)getJsonInt(payload, "rgbR", 0);
+            s_schedules[id].rgbG         = (uint8_t)getJsonInt(payload, "rgbG", 180);
+            s_schedules[id].rgbB         = (uint8_t)getJsonInt(payload, "rgbB", 255);
+            s_schedules[id].rgbBri       = (uint8_t)getJsonInt(payload, "rgbBri", 100);
+            s_schedules[id].relayMask    = (uint8_t)getJsonInt(payload, "relayMask", 0x0F);
+            s_schedules[id].ledTarget    = getJsonBool(payload, "ledTarget", false) ? 1 : 0;
+            s_schedules[id].lastFiredDayMinute = 0xFFFF;
+
+            Preferences prefs;
+            prefs.begin("desk_sched", false);
+            char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16], kRM[16], kLT[16];
+            snprintf(kEn, sizeof(kEn), "en_%d", id);
+            snprintf(kDays, sizeof(kDays), "dy_%d", id);
+            snprintf(kSH, sizeof(kSH), "sh_%d", id);
+            snprintf(kSM, sizeof(kSM), "sm_%d", id);
+            snprintf(kST, sizeof(kST), "st_%d", id);
+            snprintf(kDur, sizeof(kDur), "du_%d", id);
+            snprintf(kEH, sizeof(kEH), "eh_%d", id);
+            snprintf(kEM, sizeof(kEM), "em_%d", id);
+            snprintf(kTT, sizeof(kTT), "tt_%d", id);
+            snprintf(kTA, sizeof(kTA), "ta_%d", id);
+            snprintf(kR, sizeof(kR), "r_%d", id);
+            snprintf(kG, sizeof(kG), "g_%d", id);
+            snprintf(kB, sizeof(kB), "b_%d", id);
+            snprintf(kBri, sizeof(kBri), "br_%d", id);
+            snprintf(kRM, sizeof(kRM), "rm_%d", id);
+            snprintf(kLT, sizeof(kLT), "lt_%d", id);
+
+            prefs.putBool(kEn, s_schedules[id].enabled);
+            prefs.putUChar(kDays, s_schedules[id].daysMask);
+            prefs.putUChar(kSH, s_schedules[id].startHour);
+            prefs.putUChar(kSM, s_schedules[id].startMin);
+            prefs.putUChar(kST, s_schedules[id].stopType);
+            prefs.putUShort(kDur, s_schedules[id].durationMin);
+            prefs.putUChar(kEH, s_schedules[id].stopHour);
+            prefs.putUChar(kEM, s_schedules[id].stopMin);
+            prefs.putUChar(kTT, s_schedules[id].targetType);
+            prefs.putUChar(kTA, s_schedules[id].targetAction);
+            prefs.putUChar(kR, s_schedules[id].rgbR);
+            prefs.putUChar(kG, s_schedules[id].rgbG);
+            prefs.putUChar(kB, s_schedules[id].rgbB);
+            prefs.putUChar(kBri, s_schedules[id].rgbBri);
+            prefs.putUChar(kRM, s_schedules[id].relayMask);
+            prefs.putUChar(kLT, s_schedules[id].ledTarget);
+            prefs.end();
+
+            Serial.printf(">>> [SCHEDULE] Saved Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Target=%d, Act=%d)\n",
+                          id, s_schedules[id].enabled, s_schedules[id].daysMask,
+                          s_schedules[id].startHour, s_schedules[id].startMin,
+                          s_schedules[id].targetType, s_schedules[id].targetAction);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_set\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+            broadcastCloudState();
+        }
+        return;
+    }
+
+    // 18. Schedule Delete / Disable Command over Cloud WS
+    if (strcmp(cmd, "schedule_delete") == 0 || strcmp(cmd, "delete_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            s_schedules[id].enabled = false;
+            Preferences prefs;
+            prefs.begin("desk_sched", false);
+            char kEn[16];
+            snprintf(kEn, sizeof(kEn), "en_%d", id);
+            prefs.putBool(kEn, false);
+            prefs.end();
+
+            Serial.printf(">>> [SCHEDULE] Disabled Rule %d\n", id);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_delete\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+            broadcastCloudState();
+        }
+        return;
+    }
+
+    // 19. Schedule Test Command over Cloud WS
+    if (strcmp(cmd, "schedule_test") == 0 || strcmp(cmd, "test_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        bool isStart = getJsonBool(payload, "isStart", true);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            uint8_t action = isStart ? s_schedules[id].targetAction : ((s_schedules[id].targetAction == 1) ? 0 : 1);
+            executeScheduleAction((uint8_t)id, action);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_test\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 20. Time Sync over Cloud WS
+    if (strcmp(cmd, "time_sync") == 0 || strcmp(cmd, "sync_time") == 0) {
+        int dow = getJsonInt(payload, "dow", -1);
+        int h = getJsonInt(payload, "h", -1);
+        if (h < 0) h = getJsonInt(payload, "hour", -1);
+        int m = getJsonInt(payload, "m", -1);
+        if (m < 0) m = getJsonInt(payload, "min", -1);
+        int s = getJsonInt(payload, "s", -1);
+        if (s < 0) s = getJsonInt(payload, "sec", 0);
+
+        if (dow >= 0 && h >= 0 && m >= 0) {
+            s_timeSync.baseLocalSec = ((uint32_t)dow * 86400UL) + ((uint32_t)h * 3600UL) + ((uint32_t)m * 60UL) + (uint32_t)s;
+            s_timeSync.syncMillis = millis();
+            s_timeSync.synced = true;
+            saveTimeBaseToNVS();
+            notifyEnvState();
+            Serial.printf(">>> [CLOUD WS] Clock synchronized: %02d:%02d:%02d (DOW=%d)\n", h, m, s, dow);
+        }
+        return;
+    }
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */

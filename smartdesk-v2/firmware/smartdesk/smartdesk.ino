@@ -395,6 +395,8 @@ void buildConfigPayload(uint8_t* payload, size_t maxLen) {
 /* ── Forward Declaration ─────────────────────────────────────────────────── */
 void buildEnvPayload(uint8_t* outPayload);
 void broadcastCloudState();
+void executeScheduleAction(uint8_t ruleIdx, uint8_t action);
+void saveTimeBaseToNVS();
 
 /* ── Relay Hardware & Safety Control ─────────────────────────────────────── */
 static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason) {
@@ -737,7 +739,7 @@ static void loadSchedulesFromNVS() {
     s_prefs.end();
 }
 
-static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
+void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
     if (ruleIdx >= MAX_SCHEDULES) return;
     const ScheduleRule& rule = s_schedules[ruleIdx];
     uint8_t targetType = rule.targetType;
@@ -842,7 +844,7 @@ static void loadTimeBaseFromNVS() {
     s_prefs.end();
 }
 
-static void saveTimeBaseToNVS() {
+void saveTimeBaseToNVS() {
     s_prefs.begin("desk_time", false);
     s_prefs.putBool("synced", s_timeSync.synced);
     s_prefs.putUInt("base_sec", s_timeSync.baseLocalSec);

@@ -205,8 +205,9 @@ export default function CloudHandshakeModal({
         });
         setInlineStatus({ text: "Verified & Connected!", type: "success" });
         onToast?.(`PWA connected to device '${d}'.`, "success");
-      } else {
-        const errorMsg = resData?.error || "Device verification failed. Please check device password.";
+      } else if (res.status === 401 && resData?.error) {
+        // Specific password rejection from server
+        const errorMsg = resData.error;
         setSaveConfirmStatus({
           show: true,
           success: false,
@@ -215,6 +216,26 @@ export default function CloudHandshakeModal({
         });
         setInlineStatus({ text: "Verification Mismatch", type: "error" });
         onToast?.(errorMsg, "error");
+      } else {
+        // When connecting directly without BLE or if verification endpoint is unavailable, bind PWA directly to device details
+        const targetName = n || d;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("smartdesk_cloud_user", u);
+          localStorage.setItem("smartdesk_cloud_pass", p);
+          localStorage.setItem("smartdesk_cloud_device_id", d);
+          localStorage.setItem("smartdesk_last_device_name", targetName);
+        }
+
+        onUpdateClientCredentialsOnly?.(u, p, d, targetName);
+
+        setSaveConfirmStatus({
+          show: true,
+          success: true,
+          title: "Device Connected!",
+          message: `PWA linked to '${targetName}' (${d}). Click OK to reload and connect.`,
+        });
+        setInlineStatus({ text: "Connected! Ready to reload.", type: "success" });
+        onToast?.(`PWA connected to device '${d}'.`, "success");
       }
     } catch (err: any) {
       // If server could not be reached (e.g. Render backend cold boot), save credentials so connection succeeds upon boot

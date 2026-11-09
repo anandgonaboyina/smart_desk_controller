@@ -97,6 +97,40 @@ app.get("/api/device/:deviceId/status", (req, res) => {
   });
 });
 
+// Device verification endpoint for PWA handshake verification (supports both POST and GET)
+function handleDeviceVerify(req, res) {
+  const { deviceId } = req.params;
+  const body = req.body || {};
+  const query = req.query || {};
+  const password = body.password || query.password;
+  const deviceName = body.deviceName || query.deviceName;
+
+  const dev = getOrCreateDevice(deviceId);
+
+  // If password is configured on hardware, verify it
+  if (dev.password && dev.password.length > 0) {
+    if (!password || password !== dev.password) {
+      return res.status(401).json({
+        ok: false,
+        error: "Verification failed: Invalid device password.",
+      });
+    }
+  }
+
+  const actualDevName = dev.state?.deviceName || dev.name || deviceName || deviceId;
+
+  res.json({
+    ok: true,
+    deviceId: dev.deviceId || deviceId,
+    deviceOnline: Boolean(dev.isOnline && dev.ws !== null),
+    deviceName: actualDevName,
+    remoteModeEnabled: dev.remoteModeEnabled,
+  });
+}
+
+app.post("/api/device/:deviceId/verify", handleDeviceVerify);
+app.get("/api/device/:deviceId/verify", handleDeviceVerify);
+
 // Toggle Remote Mode ("User Away" Mode) via REST
 app.post("/api/device/:deviceId/remote-mode", (req, res) => {
   const { deviceId } = req.params;
@@ -364,7 +398,15 @@ wss.on("connection", (ws, req) => {
         msg.type === "request_state" ||
         msg.type === "get_state" ||
         msg.type === "ping" ||
-        msg.type === "set_credentials"
+        msg.type === "set_credentials" ||
+        msg.type === "schedule_set" ||
+        msg.type === "set_schedule" ||
+        msg.type === "schedule_delete" ||
+        msg.type === "delete_schedule" ||
+        msg.type === "schedule_test" ||
+        msg.type === "test_schedule" ||
+        msg.type === "time_sync" ||
+        msg.type === "sync_time"
       ) {
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
           return ws.send(
