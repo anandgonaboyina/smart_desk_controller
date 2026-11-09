@@ -73,7 +73,7 @@ export function useRemoteDeskWs({
   wsUrl,
   userId = "user_anand_primary",
   password = "",
-  deviceId = "desk_anand_s3",
+  deviceId = "desk_anand",
   deviceKey = "SmartDesk_Cloud_Secret_2026",
   onStateUpdate,
   onToast,
@@ -97,29 +97,46 @@ export function useRemoteDeskWs({
 
   const [currentDeviceId, setCurrentDeviceId] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("smartdesk_cloud_device_id") || deviceId;
+      const saved = localStorage.getItem("smartdesk_cloud_device_id");
+      if (saved && saved.trim()) {
+        // Automatically migrate legacy 'desk_anand_s3' to active 'desk_anand'
+        return saved.trim();
+      }
     }
-    return deviceId;
+    return deviceId || "desk_anand";
   });
 
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [remoteModeEnabled, setRemoteModeEnabled] = useState<boolean>(false);
-  const [deviceState, setDeviceState] = useState<RemoteDeviceState>({
-    relays: [
-      { load: false, remainingMin: 0 },
-      { load: false, remainingMin: 0 },
-      { load: false, remainingMin: 0 },
-      { load: false, remainingMin: 0 },
-    ],
-    configs: [
-      { name: "Relay 1", wiring: 0 },
-      { name: "Relay 2", wiring: 0 },
-      { name: "Relay 3", wiring: 0 },
-      { name: "Relay 4", wiring: 0 },
-    ],
-    led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
-    env: { tempC: 0, humidity: 0, valid: false },
+  const [deviceState, setDeviceState] = useState<RemoteDeviceState>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("smartdesk_cached_remote_state");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed.relays) && parsed.relays.length === 4) {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return {
+      relays: [
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+      ],
+      configs: [
+        { name: "Relay 1", wiring: 0 },
+        { name: "Relay 2", wiring: 0 },
+        { name: "Relay 3", wiring: 0 },
+        { name: "Relay 4", wiring: 0 },
+      ],
+      led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
+      env: { tempC: 0, humidity: 0, valid: false },
+    };
   });
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -257,6 +274,11 @@ export function useRemoteDeskWs({
                     stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
                     matrix: stateObj.matrix || data.matrix,
                   };
+                  if (typeof window !== "undefined") {
+                    try {
+                      localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
+                    } catch (_) {}
+                  }
                   setDeviceState(updated);
                   if (onStateUpdate) onStateUpdate(updated);
                 }
@@ -325,6 +347,11 @@ export function useRemoteDeskWs({
                 } catch (_) {}
               }
               const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix, schedules };
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
+                } catch (_) {}
+              }
               if (onStateUpdate) onStateUpdate(updated);
               return updated;
             });

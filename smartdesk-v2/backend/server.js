@@ -29,34 +29,6 @@ const devices = new Map();
 const connections = new Map();
 
 /**
- * Helper: Find or initialize a device record in the registry
- */
-function getOrCreateDevice(deviceId) {
-  if (!devices.has(deviceId)) {
-    devices.set(deviceId, {
-      ws: null,
-      deviceKey: DEFAULT_AUTH_KEY,
-      isOnline: false,
-      remoteModeEnabled: false, // Default: Remote WebSocket connection idle to save power
-      lastSeen: 0,
-      name: `SmartDesk-${deviceId.slice(-4)}`,
-      state: {
-        relays: [
-          { load: false, remainingMin: 0 },
-          { load: false, remainingMin: 0 },
-          { load: false, remainingMin: 0 },
-          { load: false, remainingMin: 0 },
-        ],
-        led: { mode: 1, r: 0, g: 180, b: 255, bri: 100, spd: 5 },
-        env: { tempC: 0, humidity: 0, valid: false },
-        presence: { state: 0, distanceM: 0, remainingMin: 0 },
-      },
-    });
-  }
-  return devices.get(deviceId);
-}
-
-/**
  * Helper: Tolerant device name matching for verification & client auth
  */
 function isMatchingDeviceName(inputName, devId, actualName, defaultName) {
@@ -89,13 +61,80 @@ function isMatchingDeviceName(inputName, devId, actualName, defaultName) {
 }
 
 /**
- * Broadcast message strictly to all authenticated PWA clients linked to a specific deviceId
+ * Helper: Find or resolve a device record by ID or alias
+ */
+function resolveDevice(deviceId) {
+  if (!deviceId) return null;
+  const clean = deviceId.trim();
+
+  // 1. Exact match in Map
+  if (devices.has(clean)) {
+    return devices.get(clean);
+  }
+
+  // 2. Case-insensitive match
+  for (const [id, dev] of devices.entries()) {
+    if (id.toLowerCase() === clean.toLowerCase()) {
+      return dev;
+    }
+  }
+
+  // 3. Alias / tolerant match (e.g. desk_anand <-> desk_anand_s3)
+  for (const [id, dev] of devices.entries()) {
+    if (isMatchingDeviceName(clean, id, dev.state?.deviceName, dev.name)) {
+      return dev;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Helper: Find or initialize a device record in the registry
+ */
+function getOrCreateDevice(deviceId) {
+  const cleanId = (deviceId || "desk_anand").trim();
+
+  const existing = resolveDevice(cleanId);
+  if (existing) {
+    return existing;
+  }
+
+  const newDev = {
+    deviceId: cleanId,
+    ws: null,
+    deviceKey: DEFAULT_AUTH_KEY,
+    isOnline: false,
+    remoteModeEnabled: false, // Default: Remote WebSocket connection idle to save power
+    lastSeen: 0,
+    name: `SmartDesk-${cleanId.slice(-4)}`,
+    state: {
+      relays: [
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+      ],
+      led: { mode: 1, r: 0, g: 180, b: 255, bri: 100, spd: 5 },
+      env: { tempC: 0, humidity: 0, valid: false },
+      presence: { state: 0, distanceM: 0, remainingMin: 0 },
+    },
+  };
+  devices.set(cleanId, newDev);
+  return newDev;
+}
+
+/**
+ * Broadcast message strictly to all authenticated PWA clients linked to a specific deviceId (or alias)
  */
 function broadcastToDeviceClients(deviceId, payload) {
   const messageStr = JSON.stringify(payload);
   for (const [ws, meta] of connections.entries()) {
-    if (meta.role === "client" && meta.authenticated && meta.deviceId === deviceId) {
-      if (ws.readyState === WebSocket.OPEN) {
+    if (meta.role === "client" && meta.authenticated) {
+      const match =
+        meta.deviceId === deviceId ||
+        (meta.deviceId && deviceId && isMatchingDeviceName(meta.deviceId, deviceId));
+      if (match && ws.readyState === WebSocket.OPEN) {
         ws.send(messageStr);
       }
     }
@@ -403,15 +442,24 @@ wss.on("connection", (ws, req) => {
 
       // Device State Telemetry Update
       if (msg.type === "state_update") {
-        if (msg.relays) dev.state.relays = msg.relays;
-        if (msg.configs) dev.state.configs = msg.configs;
-        if (msg.led) dev.state.led = msg.led;
-        if (msg.env) dev.state.env = msg.env;
-        if (msg.presence) dev.state.presence = msg.presence;
-        if (msg.deviceName) dev.state.deviceName = msg.deviceName;
-        if (msg.stripLen !== undefined) dev.state.stripLen = msg.stripLen;
-        if (msg.matrix) dev.state.matrix = msg.matrix;
-        if (msg.schedules) dev.state.schedules = msg.schedules;
+        const rawRelays = msg.relays || msg.state?.relays;
+        if (rawRelays && Array.isArray(rawRelays)) dev.state.relays = rawRelays;
+        const rawConfigs = msg.configs || msg.state?.configs;
+        if (rawConfigs && Array.isArray(rawConfigs)) dev.state.configs = rawConfigs;
+        const rawLed = msg.led || msg.state?.led;
+        if (rawLed) dev.state.led = rawLed;
+        const rawEnv = msg.env || msg.state?.env;
+        if (rawEnv) dev.state.env = rawEnv;
+        const rawPresence = msg.presence || msg.state?.presence;
+        if (rawPresence) dev.state.presence = rawPresence;
+        const rawName = msg.deviceName || msg.state?.deviceName;
+        if (rawName) dev.state.deviceName = rawName;
+        const rawStripLen = msg.stripLen !== undefined ? msg.stripLen : msg.state?.stripLen;
+        if (rawStripLen !== undefined) dev.state.stripLen = rawStripLen;
+        const rawMatrix = msg.matrix || msg.state?.matrix;
+        if (rawMatrix) dev.state.matrix = rawMatrix;
+        const rawSchedules = msg.schedules || msg.state?.schedules;
+        if (rawSchedules) dev.state.schedules = rawSchedules;
 
         // Broadcast directly to authorized clients watching this device
         broadcastToDeviceClients(meta.deviceId, {

@@ -62,23 +62,44 @@ export default function SmartDeskApp() {
     onMusicFrame: remote.sendMusicFrame,
   });
 
-  const isDeskConnected = ble.connected || ble.wifiConnected || (remote.isWsConnected && remote.isDeviceOnline);
+  const isDeskConnected =
+    ble.connected ||
+    ble.wifiConnected ||
+    (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load)));
   
+  // Automatically synchronize remote cloud credentials whenever BLE loads hardware config
+  useEffect(() => {
+    if (ble.hardwareCloudConfig?.devId && ble.hardwareCloudConfig.devId !== remote.deviceId) {
+      remote.updateCredentials(
+        ble.hardwareCloudConfig.user || undefined,
+        undefined,
+        ble.hardwareCloudConfig.devId,
+        ble.hardwareCloudConfig.name || undefined
+      );
+    }
+  }, [ble.hardwareCloudConfig?.devId, ble.hardwareCloudConfig?.user, ble.hardwareCloudConfig?.name, remote]);
+
   const currentDeskName = useMemo(() => {
     if (ble.connected) return ble.deviceName;
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.deviceName) {
+    if (remote.isWsConnected && remote.deviceState.deviceName) {
       return remote.deviceState.deviceName;
     }
     if (ble.wifiConnected) return `SmartDesk (Wi-Fi ${ble.wifiIp || ble.wifiHost})`;
-    if (remote.isWsConnected && remote.isDeviceOnline) return `SmartDesk (Cloud Remote)`;
+    if (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load))) return `SmartDesk (Cloud Remote)`;
     return ble.deviceName;
-  }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName]);
+  }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName, remote.deviceState.relays]);
 
   const effectiveRelays = useMemo(() => {
     if (ble.connected) {
       return ble.relays;
     }
     if (remote.isWsConnected && remote.isDeviceOnline) {
+      return remote.deviceState.relays.map((r) => ({
+        load: Boolean(r.load),
+        remainingMin: r.remainingMin || 0,
+      }));
+    }
+    if (remote.deviceState?.relays && (remote.isWsConnected || remote.deviceState.relays.some((r) => r.load))) {
       return remote.deviceState.relays.map((r) => ({
         load: Boolean(r.load),
         remainingMin: r.remainingMin || 0,
@@ -91,7 +112,7 @@ export default function SmartDeskApp() {
     if (ble.connected) {
       return ble.configs;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.configs) {
+    if (remote.deviceState?.configs && (remote.isWsConnected || remote.deviceState.configs.some((c) => c.name))) {
       return ble.configs.map((c, i) => {
         const remCfg = remote.deviceState.configs?.[i];
         return remCfg
@@ -106,7 +127,7 @@ export default function SmartDeskApp() {
     if (ble.connected) {
       return ble.led;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led) {
+    if (remote.deviceState?.led && (remote.isWsConnected || remote.deviceState.led.mode !== 0)) {
       return remote.deviceState.led;
     }
     return ble.led;
@@ -116,7 +137,7 @@ export default function SmartDeskApp() {
     if (ble.connected) {
       return ble.envData;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.env?.valid) {
+    if (remote.deviceState?.env?.valid && remote.isWsConnected) {
       return remote.deviceState.env;
     }
     return ble.envData;
@@ -126,7 +147,7 @@ export default function SmartDeskApp() {
     if (ble.connected) {
       return ble.stripLength;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.stripLength) {
+    if (remote.deviceState?.stripLength && remote.isWsConnected) {
       return remote.deviceState.stripLength;
     }
     return ble.stripLength;

@@ -926,6 +926,13 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
           }
           setHardwareCloudConfig({ devId: qDevId, user: qUser, name: qName });
           addLog(`[BLE RX] Hardware Identity Loaded: DevId="${qDevId}", User="${qUser}"`, "rx");
+          if (typeof window !== "undefined") {
+            try {
+              if (qDevId) localStorage.setItem("smartdesk_cloud_device_id", qDevId);
+              if (qUser) localStorage.setItem("smartdesk_cloud_user", qUser);
+              if (qName) localStorage.setItem("smartdesk_last_device_name", qName);
+            } catch (_) {}
+          }
         }
       }
     },
