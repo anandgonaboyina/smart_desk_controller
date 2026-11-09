@@ -22,7 +22,9 @@ import TopHeader from "../components/TopHeader";
 import CustomAlertModal, { ModalAlertProps } from "../components/CustomAlertModal";
 import ToastNotification, { ToastProps } from "../components/ToastNotification";
 import { useRemoteDeskWs } from "../hooks/useRemoteDeskWs";
-import { PresenceConfig, PresenceData } from "../types/smartdesk";
+import { PresenceConfig, PresenceData, ScheduleRule } from "../types/smartdesk";
+import InstallButton from "../components/InstallButton";
+
 
 export default function SmartDeskApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("aod");
@@ -53,39 +55,101 @@ export default function SmartDeskApp() {
     setAlertCallback(null);
   }, [alertCallback]);
 
-  const ble = useSmartDeskBle({ onAlert: showAlert, onToast: showToast });
   const remote = useRemoteDeskWs({ onToast: showToast });
+  const ble = useSmartDeskBle({
+    onAlert: showAlert,
+    onToast: showToast,
+    onMusicFrame: remote.sendMusicFrame,
+  });
 
-  const isDeskConnected = ble.connected || ble.wifiConnected || (remote.isWsConnected && remote.isDeviceOnline);
+  const isDeskConnected =
+    ble.connected ||
+    ble.wifiConnected ||
+    (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load)));
   
+  // Automatically synchronize remote cloud credentials whenever BLE loads hardware config
+  const prevEffectDepsRef = useRef<{
+    devId?: string;
+    user?: string;
+    name?: string;
+    remoteDevId?: string;
+    mounted?: boolean;
+  }>({});
+
+  const updateRemoteCredentialsRef = useRef(remote.updateCredentials);
+  updateRemoteCredentialsRef.current = remote.updateCredentials;
+
+  useEffect(() => {
+    const prev = prevEffectDepsRef.current;
+    const currentDevId = ble.hardwareCloudConfig?.devId;
+    const currentUser = ble.hardwareCloudConfig?.user;
+    const currentName = ble.hardwareCloudConfig?.name;
+    const currentRemoteDevId = remote.deviceId;
+
+    const changes: string[] = [];
+    if (!prev.mounted) {
+      changes.push("initial component mount");
+    } else {
+      if (prev.devId !== currentDevId) changes.push(`ble.hardwareCloudConfig.devId ("${prev.devId}" -> "${currentDevId}")`);
+      if (prev.user !== currentUser) changes.push(`ble.hardwareCloudConfig.user ("${prev.user}" -> "${currentUser}")`);
+      if (prev.name !== currentName) changes.push(`ble.hardwareCloudConfig.name ("${prev.name}" -> "${currentName}")`);
+      if (prev.remoteDevId !== currentRemoteDevId) changes.push(`remote.deviceId ("${prev.remoteDevId}" -> "${currentRemoteDevId}")`);
+    }
+
+    if (changes.length > 0) {
+      console.log(`[EFFECT TRIGGER] app/page.tsx line 72 triggered. Causes: ${changes.join(", ")}`);
+    }
+
+    prevEffectDepsRef.current = {
+      devId: currentDevId,
+      user: currentUser,
+      name: currentName,
+      remoteDevId: currentRemoteDevId,
+      mounted: true,
+    };
+
+    if (ble.hardwareCloudConfig?.devId && ble.hardwareCloudConfig.devId !== remote.deviceId) {
+      console.log(`[EFFECT TRIGGER] Invoking updateCredentials(devId="${ble.hardwareCloudConfig.devId}", user="${ble.hardwareCloudConfig.user}")`);
+      updateRemoteCredentialsRef.current(
+        ble.hardwareCloudConfig.user || undefined,
+        undefined,
+        ble.hardwareCloudConfig.devId,
+        ble.hardwareCloudConfig.name || undefined
+      );
+    }
+  }, [ble.hardwareCloudConfig?.devId, ble.hardwareCloudConfig?.user, ble.hardwareCloudConfig?.name, remote.deviceId]);
+
   const currentDeskName = useMemo(() => {
     if (ble.connected) return ble.deviceName;
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.deviceName) {
+    if (remote.isWsConnected && remote.deviceState.deviceName) {
       return remote.deviceState.deviceName;
     }
     if (ble.wifiConnected) return `SmartDesk (Wi-Fi ${ble.wifiIp || ble.wifiHost})`;
-    if (remote.isWsConnected && remote.isDeviceOnline) return `SmartDesk (Cloud Remote)`;
+    if (remote.isWsConnected && (remote.isDeviceOnline || remote.deviceState.relays.some((r) => r.load))) return `SmartDesk (Cloud Remote)`;
     return ble.deviceName;
-  }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName]);
+  }, [ble.connected, ble.deviceName, ble.wifiConnected, ble.wifiIp, ble.wifiHost, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.deviceName, remote.deviceState.relays]);
 
   const effectiveRelays = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.relays;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline) {
+    if (remote.isWsConnected && remote.deviceState?.relays && remote.deviceState.relays.length === 4) {
       return remote.deviceState.relays.map((r) => ({
-        load: r.load,
+        load: Boolean(r.load),
         remainingMin: r.remainingMin || 0,
       }));
     }
+    if (ble.wifiConnected) {
+      return ble.relays;
+    }
     return ble.relays;
-  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
+  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.deviceState.relays]);
 
   const effectiveConfigs = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.configs;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.configs) {
+    if (remote.isWsConnected && remote.deviceState?.configs && remote.deviceState.configs.length === 4) {
       return ble.configs.map((c, i) => {
         const remCfg = remote.deviceState.configs?.[i];
         return remCfg
@@ -93,41 +157,50 @@ export default function SmartDeskApp() {
           : c;
       });
     }
+    if (ble.wifiConnected) {
+      return ble.configs;
+    }
     return ble.configs;
-  }, [ble.connected, ble.wifiConnected, ble.configs, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.configs]);
+  }, [ble.connected, ble.wifiConnected, ble.configs, remote.isWsConnected, remote.deviceState.configs]);
 
   const effectiveLed = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.led;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.led) {
+    if (remote.isWsConnected && remote.deviceState?.led) {
       return remote.deviceState.led;
     }
+    if (ble.wifiConnected) {
+      return ble.led;
+    }
     return ble.led;
-  }, [ble.connected, ble.wifiConnected, ble.led, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.led]);
+  }, [ble.connected, ble.wifiConnected, ble.led, remote.isWsConnected, remote.deviceState.led]);
 
   const effectiveEnvData = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.envData;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.env?.valid) {
+    if (remote.isWsConnected && remote.deviceState?.env) {
       return remote.deviceState.env;
     }
+    if (ble.wifiConnected) {
+      return ble.envData;
+    }
     return ble.envData;
-  }, [ble.connected, ble.wifiConnected, ble.envData, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.env]);
+  }, [ble.connected, ble.wifiConnected, ble.envData, remote.isWsConnected, remote.deviceState.env]);
 
   const effectiveStripLength = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.stripLength;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.stripLength) {
+    if (remote.deviceState?.stripLength && remote.isWsConnected) {
       return remote.deviceState.stripLength;
     }
     return ble.stripLength;
-  }, [ble.connected, ble.wifiConnected, ble.stripLength, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.stripLength]);
+  }, [ble.connected, ble.stripLength, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.stripLength]);
 
   const effectiveMatrixConfig = useMemo(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       return ble.matrixConfig;
     }
     if (remote.isWsConnected && remote.isDeviceOnline && remote.deviceState.matrix) {
@@ -143,7 +216,7 @@ export default function SmartDeskApp() {
       };
     }
     return ble.matrixConfig;
-  }, [ble.connected, ble.wifiConnected, ble.matrixConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.matrix]);
+  }, [ble.connected, ble.matrixConfig, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.matrix]);
 
   const effectivePresenceConfig = useMemo((): PresenceConfig => {
     if (ble.connected) {
@@ -188,8 +261,90 @@ export default function SmartDeskApp() {
     return remote.deviceState.presence?.masterDevice || "";
   }, [remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.presence?.masterDevice, ble.designatedPresenceDevice]);
 
+  const effectiveSchedules = useMemo(() => {
+    if (ble.connected) {
+      return ble.schedules;
+    }
+    if (remote.isWsConnected && remote.deviceState.schedules && remote.deviceState.schedules.length > 0) {
+      return remote.deviceState.schedules;
+    }
+    return ble.schedules;
+  }, [ble.connected, ble.schedules, remote.isWsConnected, remote.deviceState.schedules]);
+
+  const handleSaveRule = useCallback(
+    (rule: ScheduleRule) => {
+      // 1. Update local hook state & send BLE if connected
+      ble.saveScheduleRule(rule);
+
+      // 2. If Cloud WebSocket is connected, send over Cloud
+      if (remote.isWsConnected) {
+        remote.sendScheduleSave(rule);
+      }
+
+      // 3. If local Wi-Fi IP is active, post to local REST
+      if (ble.wifiIp && ble.wifiConnected) {
+        fetch(`http://${ble.wifiIp}/api/schedules/save`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rule),
+        }).catch((e) => console.log("Local Wi-Fi schedule sync:", e));
+      }
+    },
+    [ble, remote]
+  );
+
+  const handleDeleteRule = useCallback(
+    (ruleId: number) => {
+      ble.deleteScheduleRule(ruleId);
+
+      if (remote.isWsConnected) {
+        remote.sendScheduleDelete(ruleId);
+      }
+
+      if (ble.wifiIp && ble.wifiConnected) {
+        fetch(`http://${ble.wifiIp}/api/schedules/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ruleId }),
+        }).catch((e) => console.log("Local Wi-Fi schedule delete:", e));
+      }
+    },
+    [ble, remote]
+  );
+
+  const handleTestRule = useCallback(
+    (ruleId: number, isStart: boolean) => {
+      if (ble.connected) {
+        ble.handleTestScheduleRule(ruleId, isStart);
+      } else if (remote.isWsConnected) {
+        remote.sendScheduleTest(ruleId, isStart);
+      } else if (ble.wifiIp && ble.wifiConnected) {
+        fetch(`http://${ble.wifiIp}/api/schedules/test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ruleId, isStart }),
+        }).catch((e) => console.log("Local Wi-Fi schedule test:", e));
+      } else {
+        showToast("Connect via BLE or Cloud to test schedule rules!", "warn");
+      }
+    },
+    [ble, remote, showToast]
+  );
+
+  const handleSyncClock = useCallback(() => {
+    if (ble.connected) {
+      ble.syncRealTime();
+    }
+    if (remote.isWsConnected && remote.isDeviceOnline) {
+      remote.sendTimeSync();
+      showToast("[Cloud Remote] Hardware clock synced with browser time");
+    } else if (!ble.connected) {
+      showToast("Cannot sync clock: Neither BLE nor Cloud WebSocket connected", "warn");
+    }
+  }, [ble, remote, showToast]);
+
   const handleToggleRelay = useCallback((idx: number, explicitTarget?: boolean) => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.toggleRelay(idx, explicitTarget);
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       const current = remote.deviceState.relays[idx]?.load ?? false;
@@ -202,7 +357,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleSetRelayTimer = useCallback((idx: number, minutes: number) => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.setRelayTimer(idx, minutes);
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       remote.sendRelayTimerCommand(idx, minutes);
@@ -234,7 +389,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleAllRelaysOff = useCallback(() => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.allRelaysOff();
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       remote.sendAllOff();
@@ -245,7 +400,7 @@ export default function SmartDeskApp() {
   }, [ble, remote, showToast]);
 
   const handleSendLed = useCallback((mode: number, r: number, g: number, b: number, bri: number, spd: number) => {
-    if (ble.connected || ble.wifiConnected) {
+    if (ble.connected) {
       ble.sendLedCommand(mode, r, g, b, bri, spd);
     } else if (remote.isWsConnected && remote.isDeviceOnline) {
       remote.sendLedCommand(mode, r, g, b, bri, spd);
@@ -254,6 +409,23 @@ export default function SmartDeskApp() {
       ble.sendLedCommand(mode, r, g, b, bri, spd);
     }
   }, [ble, remote, showToast]);
+
+  const handleStartMusic = useCallback(() => {
+    if (!ble.connected && remote.isWsConnected && remote.isDeviceOnline) {
+      showAlert(
+        "Network Latency Warning",
+        "Music sync responds best via BLE or local hotspot. Cloud WiFi may cause slow response times. Continue anyway?",
+        () => {
+          ble.setSoloColor({ r: effectiveLed.r, g: effectiveLed.g, b: effectiveLed.b });
+          ble.startMusicSync();
+        },
+        true
+      );
+    } else {
+      ble.setSoloColor({ r: effectiveLed.r, g: effectiveLed.g, b: effectiveLed.b });
+      ble.startMusicSync();
+    }
+  }, [ble, remote, showAlert, effectiveLed]);
 
   const handleRename = useCallback((newName: string) => {
     if (ble.connected) {
@@ -405,6 +577,7 @@ export default function SmartDeskApp() {
       
       {/* ── 1. TOP HEADER (FIXED TO TOP) ── */}
       <div className="w-full shrink-0 z-50 bg-black">
+       { <InstallButton/>}
         <TopHeader
           currentDeskName={currentDeskName}
           isDeskConnected={isDeskConnected}
@@ -443,16 +616,22 @@ export default function SmartDeskApp() {
             onOpenHandshakeModal={() => setShowHandshakeModal(true)}
             relays={effectiveRelays}
             relayConfigs={effectiveConfigs}
+            led={effectiveLed}
+            matrixConfig={effectiveMatrixConfig}
             envData={effectiveEnvData}
             presenceData={effectivePresenceData}
             rgbTimerRemainingMin={effectiveRgbTimerRemainingMin}
             onConnect={ble.handleConnect}
             onOpenRemote={() => setActiveTab("remote")}
+            onOpenSettings={() => setActiveTab("settings")}
             onToggleRelay={handleToggleRelay}
+            onSetRelayTimer={handleSetRelayTimer}
             onAllRelaysOff={handleAllRelaysOff}
             onSendLed={handleSendLed}
+            onSetRgbTimer={handleSetRgbTimer}
             onSetMatrixMode={(mode, text) => handleSetMatrixDisplay(mode, undefined, undefined, undefined, undefined, undefined, text)}
-            onStartMusic={ble.startMusicSync}
+            onSetMatrixDisplay={handleSetMatrixDisplay}
+            onStartMusic={handleStartMusic}
             onStopMusic={ble.stopMusicSync}
           />
         ) : (
@@ -478,7 +657,7 @@ export default function SmartDeskApp() {
                 onSendLed={handleSendLed}
                 onSetRgbTimer={handleSetRgbTimer}
                 onSetMatrixDisplay={handleSetMatrixDisplay}
-                onStartMusic={ble.startMusicSync}
+                onStartMusic={handleStartMusic}
                 onStopMusic={ble.stopMusicSync}
                 onNavigateTab={(tab) => setActiveTab(tab)}
               />
@@ -518,19 +697,19 @@ export default function SmartDeskApp() {
                 micVolume={ble.micVolume}
                 beatPulse={ble.beatPulse}
                 onSendLed={handleSendLed}
-                onStartMusic={ble.startMusicSync}
+                onStartMusic={handleStartMusic}
                 onStopMusic={ble.stopMusicSync}
               />
             )}
             
             {activeTab === "schedule" && (
               <SchedulePanel 
-                schedules={ble.schedules} 
+                schedules={effectiveSchedules} 
                 espClock={ble.espClock} 
-                onSaveRule={ble.saveScheduleRule} 
-                onDeleteRule={ble.deleteScheduleRule} 
-                onTestRule={ble.handleTestScheduleRule} 
-                onSyncClock={ble.syncRealTime} 
+                onSaveRule={handleSaveRule} 
+                onDeleteRule={handleDeleteRule} 
+                onTestRule={handleTestRule} 
+                onSyncClock={handleSyncClock} 
               />
             )}
             
@@ -586,14 +765,17 @@ export default function SmartDeskApp() {
                 onConfigureOverBle={ble.configureWifiOverBle}
                 cloudUser={remote.userId}
                 cloudPassword={remote.password}
-                onUpdateCloudCredentials={remote.updateCredentials}
+                onUpdateCloudCredentials={async (user, pass) => {
+                  remote.updateCredentials(user, pass);
+                  await ble.saveCloudCredentialsOverBle(user, pass);
+                }}
                 onSetTempOffset={handleSetTempOffset}
               />
             )}
           </div>
         )}
       </div>
-
+  
       {/* ── 3. BOTTOM NAVBAR (FIXED TO BOTTOM) ── */}
       {activeTab !== "aod" && (
         <div className="absolute bottom-0 left-0 w-full z-40 bg-black/80 backdrop-blur-md">
@@ -658,14 +840,24 @@ export default function SmartDeskApp() {
         wsUrl={remote.wsUrl}
         isWsConnected={remote.isWsConnected}
         isDeviceOnline={remote.isDeviceOnline}
+        deviceId={remote.deviceId}
         onSendCloudRelayCommand={remote.sendRelayCommand}
-        onUpdateCloudCredentials={(user, pass, newDevId, newDevName) => {
-          remote.updateCredentials(user, pass, newDevId);
-          remote.sendCloudCredentialsCommand(user, pass, newDevId, newDevName);
+        onUpdateCloudCredentials={async (user, pass, newDevId, newDevName) => {
+          const res = await ble.saveCloudCredentialsOverBle(user, pass, newDevId, newDevName);
+          remote.updateCredentials(user, pass, newDevId, newDevName);
+          if (newDevName && newDevName !== currentDeskName) {
+            handleRename(newDevName);
+          }
+          return res;
+        }}
+        onUpdateClientCredentialsOnly={(user, pass, newDevId, newDevName) => {
+          remote.updateCredentials(user, pass, newDevId, newDevName);
           if (newDevName && newDevName !== currentDeskName) {
             handleRename(newDevName);
           }
         }}
+        onReconnectCloud={remote.reconnect}
+        hardwareCloudConfig={ble.hardwareCloudConfig}
         onToast={showToast}
         recentLogs={ble.logs}
       />

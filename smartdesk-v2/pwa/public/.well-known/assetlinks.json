@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.smart_desk_controller.twa",
+        "sha256_cert_fingerprints": ["B3:C6:9B:24:D4:DD:7A:FC:3B:ED:82:B4:42:38:15:1A:48:2B:D9:74:BD:91:75:CB:63:66:35:4D:A3:5A:EC:34"]
+      }
+    }]

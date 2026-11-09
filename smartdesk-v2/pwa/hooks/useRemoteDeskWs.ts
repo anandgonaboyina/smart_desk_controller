@@ -11,6 +11,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { ScheduleRule } from "../types/smartdesk";
 
 export interface RemoteRelayState {
   load: boolean;
@@ -40,6 +41,7 @@ export interface RemoteDeviceState {
     arrivalRgbOn?: boolean;
     arrivalRgbMode?: number;
   };
+  schedules?: ScheduleRule[];
   deviceName?: string;
   stripLength?: number;
   matrix?: { mode: number; speed?: number; bri?: number; r?: number; g?: number; b?: number; text?: string };
@@ -67,11 +69,21 @@ const resolveDefaultWsUrl = () => {
   return "ws://localhost:3001/ws";
 };
 
+const formatReadyState = (state: number): string => {
+  switch (state) {
+    case 0: return "0 (CONNECTING)";
+    case 1: return "1 (OPEN)";
+    case 2: return "2 (CLOSING)";
+    case 3: return "3 (CLOSED)";
+    default: return String(state);
+  }
+};
+
 export function useRemoteDeskWs({
   wsUrl,
   userId = "user_anand_primary",
   password = "",
-  deviceId = "desk_anand_s3",
+  deviceId = "desk_anandkumar",
   deviceKey = "SmartDesk_Cloud_Secret_2026",
   onStateUpdate,
   onToast,
@@ -95,94 +107,221 @@ export function useRemoteDeskWs({
 
   const [currentDeviceId, setCurrentDeviceId] = useState<string>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("smartdesk_cloud_device_id") || deviceId;
+      const saved = localStorage.getItem("smartdesk_cloud_device_id");
+      if (saved && saved.trim()) {
+        const trimmed = saved.trim();
+        // Automatically migrate legacy 'desk_anand' or 'desk_anand_s3' to active 'desk_anandkumar'
+        if (trimmed === "desk_anand" || trimmed === "desk_anand_s3") {
+          localStorage.setItem("smartdesk_cloud_device_id", "desk_anandkumar");
+          return "desk_anandkumar";
+        }
+        return trimmed;
+      }
     }
-    return deviceId;
+    return deviceId || "desk_anandkumar";
   });
 
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [remoteModeEnabled, setRemoteModeEnabled] = useState<boolean>(false);
-  const [deviceState, setDeviceState] = useState<RemoteDeviceState>({
-    relays: [
-      { load: false, remainingMin: 0 },
-      { load: false, remainingMin: 0 },
-      { load: false, remainingMin: 0 },
-      { load: false, remainingMin: 0 },
-    ],
-    configs: [
-      { name: "Relay 1", wiring: 0 },
-      { name: "Relay 2", wiring: 0 },
-      { name: "Relay 3", wiring: 0 },
-      { name: "Relay 4", wiring: 0 },
-    ],
-    led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
-    env: { tempC: 0, humidity: 0, valid: false },
+  const [deviceState, setDeviceState] = useState<RemoteDeviceState>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("smartdesk_cached_remote_state");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed.relays) && parsed.relays.length === 4) {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return {
+      relays: [
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+        { load: false, remainingMin: 0 },
+      ],
+      configs: [
+        { name: "Relay 1", wiring: 0 },
+        { name: "Relay 2", wiring: 0 },
+        { name: "Relay 3", wiring: 0 },
+        { name: "Relay 4", wiring: 0 },
+      ],
+      led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
+      env: { tempC: 0, humidity: 0, valid: false },
+    };
   });
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const updateCredentials = useCallback((newUser: string, newPass?: string, newDevId?: string) => {
-    if (typeof window !== "undefined") {
-      if (newUser !== undefined) {
-        localStorage.setItem("smartdesk_cloud_user", newUser);
-        setCurrentUserId(newUser);
-      }
-      if (newPass !== undefined) {
-        localStorage.setItem("smartdesk_cloud_pass", newPass);
-        setCurrentPassword(newPass);
-      }
-      if (newDevId !== undefined) {
-        localStorage.setItem("smartdesk_cloud_device_id", newDevId);
-        setCurrentDeviceId(newDevId);
-      }
+  // Synchronous ref to prevent stale credentials closure across async socket reconnects:
+  const credsRef = useRef<{ user: string; pass: string; devId: string; name: string }>({
+    user: currentUserId,
+    pass: currentPassword,
+    devId: currentDeviceId,
+    name: typeof window !== "undefined" ? localStorage.getItem("smartdesk_last_device_name") || "" : "",
+  });
+
+  const forceReconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
-    // Force reconnect with new credentials
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
     if (wsRef.current) {
-      wsRef.current.close();
+      try {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+      } catch (_) {}
+      wsRef.current = null;
     }
+    setIsWsConnected(false);
+    setIsDeviceOnline(false);
+    setTimeout(() => {
+      connect();
+    }, 50);
   }, []);
+
+  const updateCredentials = useCallback((newUser?: string, newPass?: string, newDevId?: string, newDevName?: string) => {
+    const nextUser = newUser !== undefined ? newUser : credsRef.current.user;
+    const nextPass = newPass !== undefined ? newPass : credsRef.current.pass;
+    const nextDevId = newDevId !== undefined ? newDevId : credsRef.current.devId;
+    const nextName = newDevName !== undefined ? newDevName : credsRef.current.name;
+
+    if (typeof window !== "undefined") {
+      if (newUser !== undefined) localStorage.setItem("smartdesk_cloud_user", newUser);
+      if (newPass !== undefined) localStorage.setItem("smartdesk_cloud_pass", newPass);
+      if (newDevId !== undefined) localStorage.setItem("smartdesk_cloud_device_id", newDevId);
+      if (newDevName !== undefined) localStorage.setItem("smartdesk_last_device_name", newDevName);
+    }
+    credsRef.current = { user: nextUser, pass: nextPass, devId: nextDevId, name: nextName };
+    if (newUser !== undefined) setCurrentUserId(nextUser);
+    if (newPass !== undefined) setCurrentPassword(nextPass);
+    if (newDevId !== undefined) setCurrentDeviceId(nextDevId);
+
+    // Force immediate live socket reconnect with new IDs (avoids page refresh):
+    forceReconnect();
+  }, [forceReconnect]);
 
   const connect = useCallback(() => {
     if (typeof window === "undefined") return;
+    const isWss = effectiveWsUrl.startsWith("wss://");
+    const scheme = isWss ? "wss://" : "ws://";
+    console.log(
+      `[CLOUD WS LIFECYCLE] connect() called. Target URL: "${effectiveWsUrl}" (${scheme}) | Existing readyState: ${
+        wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"
+      }`
+    );
+
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      console.log(`[CLOUD WS LIFECYCLE] connect() skipped: socket already active with readyState: ${formatReadyState(wsRef.current.readyState)}`);
       return;
     }
 
     try {
+      console.log(`[CLOUD WS LIFECYCLE] Instantiating new WebSocket("${effectiveWsUrl}")...`);
       const socket = new WebSocket(effectiveWsUrl);
       wsRef.current = socket;
+      console.log(`[CLOUD WS LIFECYCLE] WebSocket instantiated. url="${socket.url || effectiveWsUrl}" initial readyState: ${formatReadyState(socket.readyState)}`);
+
+      // Watchdog: If stuck in CONNECTING for > 7s (Render wake-up or network stall), auto-reset
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = setTimeout(() => {
+        if (socket.readyState === WebSocket.CONNECTING) {
+          console.warn(`[CLOUD WS] Connection attempt timed out in CONNECTING (readyState: ${formatReadyState(socket.readyState)}). Forcing instant retry...`);
+          try {
+            socket.onclose = null;
+            socket.onerror = null;
+            socket.close();
+          } catch (_) {}
+          wsRef.current = null;
+          setIsWsConnected(false);
+          setIsDeviceOnline(false);
+          forceReconnect();
+        }
+      }, 7000);
 
       socket.onopen = () => {
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
         setIsWsConnected(true);
-        console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl}`);
+        console.log(`[CLOUD WS] Connected to relay server at ${effectiveWsUrl} | socket.url: "${socket.url}" | readyState: ${formatReadyState(socket.readyState)}`);
 
         // Send Multi-User Authentication Handshake with Device Username & Password
-        const authPayload = {
+        const authPayload: Record<string, any> = {
           type: "auth",
           role: "client",
-          userId: currentUserId,
-          password: currentPassword,
-          deviceId: currentDeviceId,
+          userId: credsRef.current.user,
+          password: credsRef.current.pass,
+          deviceId: credsRef.current.devId,
           deviceKey,
           timestamp: Date.now(),
         };
+        console.log("[CLOUD WS TX AUTH] Outgoing auth handshake payload:", JSON.stringify(authPayload));
         socket.send(JSON.stringify(authPayload));
+
+        // State-sync handshake: Immediately request live hardware state upon WebSocket connect
+        const getStatePayload = {
+          cmd: "get_state",
+          type: "get_state",
+          deviceId: credsRef.current.devId,
+          timestamp: Date.now(),
+        };
+        console.log("[CLOUD WS TX] Requesting live hardware state:", JSON.stringify(getStatePayload));
+        socket.send(JSON.stringify(getStatePayload));
       };
 
       socket.onmessage = (event) => {
+        console.log(
+          `[CLOUD WS RX] readyState: ${formatReadyState(socket.readyState)} | raw data length: ${
+            typeof event.data === "string" ? event.data.length : "non-string"
+          } | payload preview:`,
+          typeof event.data === "string" && event.data.length > 300 ? event.data.substring(0, 300) + "..." : event.data
+        );
         try {
           const data = JSON.parse(event.data);
+          console.log(`[CLOUD WS RX PARSED] type="${data.type || data.cmd || data.action || "(none)"}"`, data);
 
           if (data.type === "auth_res") {
             if (data.ok) {
               setIsDeviceOnline(Boolean(data.deviceOnline));
               setRemoteModeEnabled(Boolean(data.remoteModeEnabled));
+
+              // If server confirmed canonical device ID (e.g. desk_anandkumar), synchronize it immediately
+              if (data.deviceId && data.deviceId !== credsRef.current.devId) {
+                console.log(`[CLOUD WS] Syncing canonical deviceId from server: "${data.deviceId}" (was "${credsRef.current.devId}")`);
+                credsRef.current.devId = data.deviceId;
+                setCurrentDeviceId(data.deviceId);
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.setItem("smartdesk_cloud_device_id", data.deviceId);
+                  } catch (_) {}
+                }
+              }
+
+              const targetDevId = data.deviceId || credsRef.current.devId;
               const stateObj = data.currentState || data.cachedState || data.state;
               if (stateObj) {
-                const relays = stateObj.relays || data.relays;
-                if (Array.isArray(relays) && relays.length > 0) {
+                const rawRelays = stateObj.relays || data.relays;
+                if (Array.isArray(rawRelays) && rawRelays.length > 0) {
+                  const relays = rawRelays.map((r: any) => {
+                    if (typeof r === "boolean") return { load: r, remainingMin: 0 };
+                    if (typeof r === "number") return { load: Boolean(r), remainingMin: 0 };
+                    return {
+                      load: Boolean(r?.load),
+                      remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
+                    };
+                  });
                   const updated: RemoteDeviceState = {
                     relays,
                     configs: stateObj.configs || data.configs,
@@ -192,11 +331,41 @@ export function useRemoteDeskWs({
                     deviceName: stateObj.deviceName || data.deviceName,
                     stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
                     matrix: stateObj.matrix || data.matrix,
+                    schedules: stateObj.schedules || data.schedules,
                   };
+                  if (typeof window !== "undefined") {
+                    try {
+                      localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
+                    } catch (_) {}
+                  }
                   setDeviceState(updated);
                   if (onStateUpdate) onStateUpdate(updated);
                 }
               }
+
+              // State-sync handshake: Send { cmd: 'get_state' } right after auth confirmation
+              const getStatePayload = {
+                cmd: "get_state",
+                type: "get_state",
+                deviceId: targetDevId,
+                timestamp: Date.now(),
+              };
+              console.log("[CLOUD WS TX] Requesting live hardware state after auth_res:", JSON.stringify(getStatePayload));
+              socket.send(JSON.stringify(getStatePayload));
+
+              // Automatically synchronize device hardware clock with browser's local time upon connection
+              const now = new Date();
+              socket.send(
+                JSON.stringify({
+                  type: "time_sync",
+                  deviceId: targetDevId,
+                  h: now.getHours(),
+                  m: now.getMinutes(),
+                  s: now.getSeconds(),
+                  dow: now.getDay(),
+                  timestamp: Date.now(),
+                })
+              );
             } else {
               console.error("[CLOUD WS] Authentication failed:", data.error);
               if (onToast) onToast(`Cloud Auth Failed: ${data.error || "Unauthorized"}`, "error");
@@ -214,17 +383,65 @@ export function useRemoteDeskWs({
             setRemoteModeEnabled(Boolean(data.enabled));
           }
 
-          if (data.type === "state_update") {
+          if (
+            data.type === "state_update" ||
+            data.cmd === "get_state" ||
+            data.type === "get_state" ||
+            data.action === "get_state" ||
+            Boolean(data.relays) ||
+            Boolean(data.state?.relays)
+          ) {
+            setIsDeviceOnline(true);
             setDeviceState((prev) => {
-              const relays = data.relays || data.state?.relays || prev.relays;
+              const rawRelays = data.relays || data.state?.relays;
+              let relays = prev.relays;
+              if (Array.isArray(rawRelays) && rawRelays.length > 0) {
+                relays = rawRelays.map((r: any) => {
+                  if (typeof r === "boolean") return { load: r, remainingMin: 0 };
+                  if (typeof r === "number") return { load: Boolean(r), remainingMin: 0 };
+                  return {
+                    load: Boolean(r?.load),
+                    remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
+                  };
+                });
+              }
               const configs = data.configs || data.state?.configs || prev.configs;
-              const led = data.led || data.state?.led || prev.led;
-              const env = data.env || data.state?.env || prev.env;
+              const rawLed = data.led || data.state?.led;
+              const led = rawLed
+                ? {
+                    mode: typeof rawLed.mode === "number" ? rawLed.mode : prev.led.mode,
+                    r: typeof rawLed.r === "number" ? rawLed.r : prev.led.r,
+                    g: typeof rawLed.g === "number" ? rawLed.g : prev.led.g,
+                    b: typeof rawLed.b === "number" ? rawLed.b : prev.led.b,
+                    bri: typeof rawLed.bri === "number" ? rawLed.bri : prev.led.bri,
+                    spd: typeof rawLed.spd === "number" ? rawLed.spd : prev.led.spd,
+                    remainingMin: typeof rawLed.remainingMin === "number" ? rawLed.remainingMin : prev.led.remainingMin,
+                  }
+                : prev.led;
+              const rawEnv = data.env || data.state?.env;
+              const env = rawEnv
+                ? {
+                    tempC: typeof rawEnv.tempC === "number" ? rawEnv.tempC : prev.env.tempC,
+                    humidity: typeof rawEnv.humidity === "number" ? rawEnv.humidity : prev.env.humidity,
+                    valid: typeof rawEnv.valid === "boolean" ? rawEnv.valid : prev.env.valid,
+                  }
+                : prev.env;
               const presence = data.presence || data.state?.presence || prev.presence;
               const deviceName = data.deviceName || data.state?.deviceName || prev.deviceName;
               const stripLength = data.stripLen || data.state?.stripLen || data.stripLength || data.state?.stripLength || prev.stripLength;
               const matrix = data.matrix || data.state?.matrix || prev.matrix;
-              const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix };
+              const schedules = data.schedules || data.state?.schedules || prev.schedules;
+              if (schedules && typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("smartdesk_schedules", JSON.stringify(schedules));
+                } catch (_) {}
+              }
+              const updated: RemoteDeviceState = { relays, configs, led, env, presence, deviceName, stripLength, matrix, schedules };
+              if (typeof window !== "undefined") {
+                try {
+                  localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
+                } catch (_) {}
+              }
               if (onStateUpdate) onStateUpdate(updated);
               return updated;
             });
@@ -242,41 +459,61 @@ export function useRemoteDeskWs({
         }
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
+        if (connectTimeoutRef.current) {
+          clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
         setIsWsConnected(false);
         setIsDeviceOnline(false);
         wsRef.current = null;
-        console.log("[CLOUD WS] Connection closed. Retrying in 5 seconds...");
-        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+        console.warn(
+          `[CLOUD WS] Connection closed. code=${event.code}, reason="${event.reason || "(none)"}", wasClean=${event.wasClean}, readyState: ${formatReadyState(socket.readyState)}. Retrying in 2 seconds...`
+        );
+        reconnectTimeoutRef.current = setTimeout(connect, 2000);
       };
 
       socket.onerror = (err) => {
-        console.warn("[CLOUD WS] Socket encountered error:", err);
+        const errorDetails = {
+          type: (err as any)?.type || "error",
+          readyState: formatReadyState(socket.readyState),
+          targetUrl: socket.url || effectiveWsUrl,
+          timeStamp: (err as any)?.timeStamp,
+          isTrusted: (err as any)?.isTrusted,
+          message: (err as any)?.message || null,
+        };
+        console.warn("[CLOUD WS] Socket encountered error:", JSON.stringify(errorDetails), err);
       };
     } catch (err) {
       console.error("[CLOUD WS] Connection attempt error", err);
-      reconnectTimeoutRef.current = setTimeout(connect, 5000);
+      reconnectTimeoutRef.current = setTimeout(connect, 2000);
     }
-  }, [effectiveWsUrl, currentUserId, currentPassword, currentDeviceId, deviceKey, onStateUpdate, onToast]);
+  }, [effectiveWsUrl, deviceKey, onStateUpdate, onToast]);
 
   useEffect(() => {
+    console.log(`[CLOUD WS LIFECYCLE] Hook mount / connect trigger. wsUrl: "${effectiveWsUrl}"`);
     connect();
     return () => {
+      console.log(`[CLOUD WS LIFECYCLE] Hook cleanup. Current readyState: ${wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"}`);
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [connect]);
+  }, [connect, effectiveWsUrl]);
 
   // Request State from Hardware ESP32
   const requestState = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: "request_state",
-          deviceId: currentDeviceId,
-          timestamp: Date.now(),
-        })
-      );
+      const payload = {
+        cmd: "get_state",
+        type: "get_state",
+        deviceId: currentDeviceId,
+        timestamp: Date.now(),
+      };
+      console.log("[CLOUD WS TX] requestState() sent:", JSON.stringify(payload));
+      wsRef.current.send(JSON.stringify(payload));
+    } else {
+      console.warn(`[CLOUD WS TX] requestState() skipped: socket not OPEN (readyState: ${wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"})`);
     }
   }, [currentDeviceId]);
 
@@ -419,6 +656,31 @@ export function useRemoteDeskWs({
       );
     },
     [currentDeviceId, onStateUpdate]
+  );
+
+  // Send Live Music Sync Frame
+  const sendMusicFrame = useCallback(
+    (sub: number, beat: number, r: number, g: number, b: number, bri: number, bands?: number[]) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      const payload: Record<string, unknown> = {
+        type: "music_frame",
+        deviceId: currentDeviceId,
+        sub,
+        beat,
+        r,
+        g,
+        b,
+        bri,
+        timestamp: Date.now(),
+      };
+      if (bands && bands.length >= 8) {
+        for (let i = 0; i < 8; i++) {
+          payload[`b${i}`] = bands[i];
+        }
+      }
+      wsRef.current.send(JSON.stringify(payload));
+    },
+    [currentDeviceId]
   );
 
   // Rename Controller over Cloud
@@ -678,24 +940,128 @@ export function useRemoteDeskWs({
     );
   }, [currentDeviceId]);
 
-  // Send Cloud Credentials & Device Name Mapping Command
-  const sendCloudCredentialsCommand = useCallback(
-    (userId: string, password?: string, newDeviceId?: string, deviceName?: string) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+  // Send Save / Update Schedule Rule Command over Cloud WS
+  const sendScheduleSave = useCallback(
+    (rule: ScheduleRule) => {
+      const relayMask = rule.relayMask !== undefined
+        ? rule.relayMask
+        : (rule.targetType === 4 ? 0x0F : rule.targetType < 4 ? (1 << rule.targetType) : 0);
+      const ledTarget = rule.ledTarget !== undefined
+        ? rule.ledTarget
+        : (rule.targetType === 5);
+
+      const normalizedRule: ScheduleRule = { ...rule, relayMask, ledTarget };
+
+      // Optimistically update deviceState.schedules
+      setDeviceState((prev) => {
+        const curSchedules = prev.schedules || [];
+        const next = curSchedules.some((s) => s.id === rule.id)
+          ? curSchedules.map((s) => (s.id === rule.id ? normalizedRule : s))
+          : [...curSchedules, normalizedRule];
+        return { ...prev, schedules: next };
+      });
+
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot save schedule: Cloud WebSocket offline", "warn");
+        return;
+      }
+
       wsRef.current.send(
         JSON.stringify({
-          type: "set_credentials",
+          type: "schedule_set",
           deviceId: currentDeviceId,
-          userId,
-          password: password || "",
-          newDeviceId: newDeviceId || currentDeviceId,
-          deviceName: deviceName || "",
+          id: rule.id,
+          enabled: rule.enabled,
+          daysMask: rule.daysMask,
+          startHour: rule.startHour,
+          startMin: rule.startMin,
+          stopType: rule.stopType,
+          durationMin: rule.durationMin,
+          stopHour: rule.stopHour,
+          stopMin: rule.stopMin,
+          targetType: rule.targetType ?? 6,
+          targetAction: rule.targetAction,
+          relayMask,
+          ledTarget,
+          rgbR: rule.rgbR ?? 0,
+          rgbG: rule.rgbG ?? 180,
+          rgbB: rule.rgbB ?? 255,
+          rgbBri: rule.rgbBri ?? 50,
+          name: rule.name,
           timestamp: Date.now(),
         })
       );
+      if (onToast) onToast(`Schedule rule #${rule.id + 1} synced over Cloud!`, "success");
     },
-    [currentDeviceId]
+    [currentDeviceId, onToast]
   );
+
+  // Send Delete / Disable Schedule Rule Command over Cloud WS
+  const sendScheduleDelete = useCallback(
+    (ruleId: number) => {
+      setDeviceState((prev) => {
+        const curSchedules = prev.schedules || [];
+        const next = curSchedules.filter((s) => s.id !== ruleId);
+        return { ...prev, schedules: next };
+      });
+
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot delete: Cloud WebSocket offline", "warn");
+        return;
+      }
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "schedule_delete",
+          deviceId: currentDeviceId,
+          id: ruleId,
+          timestamp: Date.now(),
+        })
+      );
+      if (onToast) onToast(`Disabled rule #${ruleId + 1} over Cloud`, "info");
+    },
+    [currentDeviceId, onToast]
+  );
+
+  // Send Test Schedule Rule Command over Cloud WS
+  const sendScheduleTest = useCallback(
+    (ruleId: number, isStart: boolean = true) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (onToast) onToast("Cannot test: Cloud WebSocket offline", "warn");
+        return;
+      }
+
+      wsRef.current.send(
+        JSON.stringify({
+          type: "schedule_test",
+          deviceId: currentDeviceId,
+          id: ruleId,
+          isStart,
+          timestamp: Date.now(),
+        })
+      );
+      if (onToast) onToast(`Tested schedule #${ruleId + 1} (${isStart ? "Start" : "Stop"})`, "info");
+    },
+    [currentDeviceId, onToast]
+  );
+
+  // Send Time Sync Command over Cloud WS
+  const sendTimeSync = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const now = new Date();
+    wsRef.current.send(
+      JSON.stringify({
+        type: "time_sync",
+        deviceId: currentDeviceId,
+        h: now.getHours(),
+        m: now.getMinutes(),
+        s: now.getSeconds(),
+        dow: now.getDay(),
+        timestamp: Date.now(),
+      })
+    );
+    if (onToast) onToast("Synchronized hardware clock with browser time", "info");
+  }, [currentDeviceId, onToast]);
 
   return {
     wsUrl: effectiveWsUrl,
@@ -703,6 +1069,7 @@ export function useRemoteDeskWs({
     password: currentPassword,
     deviceId: currentDeviceId,
     updateCredentials,
+    reconnect: forceReconnect,
     requestState,
     isWsConnected,
     isDeviceOnline,
@@ -713,6 +1080,7 @@ export function useRemoteDeskWs({
     sendRelayTimerCommand,
     sendRelayConfigCommand,
     sendLedCommand,
+    sendMusicFrame,
     sendRenameCommand,
     sendStripLengthCommand,
     sendMatrixCommand,
@@ -723,7 +1091,10 @@ export function useRemoteDeskWs({
     sendRgbTimerCommand,
     sendBuzzerCommand,
     sendBuzzerBeepCommand,
-    sendCloudCredentialsCommand,
+    sendScheduleSave,
+    sendScheduleDelete,
+    sendScheduleTest,
+    sendTimeSync,
     sendAllOff,
   };
 }

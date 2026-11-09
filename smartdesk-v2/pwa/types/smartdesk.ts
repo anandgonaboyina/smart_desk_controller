@@ -52,8 +52,10 @@ export interface ScheduleRule {
   durationMin: number;  // 1..1440
   stopHour: number;     // 0..23
   stopMin: number;      // 0..59
-  targetType: number;   // 0=CH1, 1=CH2, 2=CH3, 3=CH4, 4=All Relays, 5=RGB Strip
-  targetAction: number; // For Relay: 1=ON, 0=OFF; For RGB: Mode 0..15
+  targetType: number;   // 0=CH1, 1=CH2, 2=CH3, 3=CH4, 4=All Relays, 5=RGB Strip, 6=Multi-Target
+  targetAction: number; // 1=ON, 0=OFF
+  relayMask?: number;   // Bits 0..3: Relays 1..4 (0x01=CH1, 0x0F=All 4, etc.)
+  ledTarget?: boolean;  // true = include RGB LED strip in this schedule
   rgbR: number;
   rgbG: number;
   rgbB: number;
@@ -136,32 +138,9 @@ export const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export const LED_MODES = [
   { id: 0, label: "Off", desc: "All LEDs Dark", icon: "🌑" },
-  { id: 1, label: "Solid", desc: "Static Color", icon: "💡" },
-  { id: 2, label: "Breathe", desc: "Fade In & Out", icon: "🌊" },
-  { id: 3, label: "Rainbow Wave", desc: "Full Spectrum Wave", icon: "🌈" },
-  { id: 4, label: "Pulse Blink", desc: "Clean Pulse (<3Hz)", icon: "✨" },
-  { id: 5, label: "Chase L→R", desc: "Left to Right Trail", icon: "➡️" },
-  { id: 6, label: "Chase R→L", desc: "Right to Left Trail", icon: "⬅️" },
-  { id: 7, label: "Color Cycle", desc: "Synchronized Spectrum", icon: "🔄" },
-  { id: 8, label: "Scanner", desc: "Knight Rider Ping-Pong", icon: "↔️" },
-  { id: 9, label: "Sparkle", desc: "Twinkling Pixels", icon: "⭐" },
-  { id: 10, label: "Center Pulse", desc: "Middle Outward Expansion", icon: "🎯" },
-  { id: 11, label: "Dual Chase", desc: "Crossing Light Beams", icon: "⚡" },
-  { id: 12, label: "Wipe L→R", desc: "Progressive Fill Left", icon: "▶️" },
-  { id: 13, label: "Wipe R→L", desc: "Progressive Fill Right", icon: "◀️" },
-  { id: 14, label: "Fireplace", desc: "Organic Flame Flicker", icon: "🔥" },
-  { id: 15, label: "Aurora", desc: "Two-Tone Ambient Shift", icon: "🌌" },
-  // 10 Crazy New Ambient Modes
-  { id: 17, label: "Cyberpunk", desc: "Hot Magenta & Neon Cyan", icon: "🌆" },
-  { id: 18, label: "Plasma Wave", desc: "Harmonic Multi-Sine Wave", icon: "🔮" },
-  { id: 19, label: "Matrix Glitch", desc: "Digital Matrix Code Runner", icon: "👾" },
-  { id: 20, label: "Hyperdrive", desc: "Lightspeed Warp Jump", icon: "🚀" },
-  { id: 21, label: "Lava Lamp", desc: "Viscous Crimson & Gold", icon: "🌋" },
-  { id: 22, label: "Police Pursuit", desc: "Red & Blue Double Strobe", icon: "🚨" },
-  { id: 23, label: "Ocean Tide", desc: "Aquamarine Deep Swell", icon: "🌊" },
-  { id: 24, label: "Toxic Hazmat", desc: "Radioactive Lime Glow", icon: "☢️" },
-  { id: 25, label: "Heartbeat EKG", desc: "Cardiovascular Pulse", icon: "💓" },
-  { id: 26, label: "Meteor Shower", desc: "Prismatic Bursting Embers", icon: "☄️" },
+  { id: 1, label: "Solid", desc: "Static Theme Color", icon: "💡" },
+  { id: 2, label: "Breathe", desc: "Smooth Fade In & Out", icon: "🌊" },
+  { id: 3, label: "Smooth Fade", desc: "Full Spectrum Smooth Transition", icon: "🔄" },
 ];
 
 export const RELAY_ANIM_OPTIONS = [
@@ -178,16 +157,9 @@ export const RELAY_ANIM_OPTIONS = [
 ];
 
 export const MUSIC_DISCO_MODES = [
-  { id: 0, label: "Disco Party", desc: "Rotating club lights & beat jumps", icon: "🕺" },
-  { id: 1, label: "Bass Burst", desc: "Center-outward explosion on kicks", icon: "💥" },
-  { id: 2, label: "Neon Strobe", desc: "High-contrast nightclub beat flashes", icon: "⚡" },
-  { id: 3, label: "Rhythm Ripple", desc: "Flowing light wave driven by tempo", icon: "🌊" },
-  { id: 4, label: "Disco Sparkle", desc: "Shimmering random starbursts on beats", icon: "✨" },
-  { id: 5, label: "Beat Pump", desc: "Color wheel pumping brightness with bass", icon: "🌈" },
-  { id: 6, label: "Dual Clash", desc: "Beams colliding at center on beat", icon: "⚔️" },
-  { id: 7, label: "Cyber Spectrum", desc: "8-band dancing cyberpunk equalizer", icon: "🎵" },
-  { id: 8, label: "Fire Dance", desc: "Flaring flames on heavy bass/drums", icon: "🔥" },
-  { id: 9, label: "Solo Beat Sync", desc: "Custom color pulsing to the song", icon: "🎯" },
+  { id: 0, label: "Bass Pulse", desc: "Whole strip pulses with bass kicks", icon: "💥" },
+  { id: 1, label: "Volume Energy", desc: "Whole strip brightness tracks volume", icon: "⚡" },
+  { id: 2, label: "Theme Match", desc: "Theme color glow reacts to music rhythm", icon: "🎨" },
 ];
 
 export const MATRIX_MODES = [

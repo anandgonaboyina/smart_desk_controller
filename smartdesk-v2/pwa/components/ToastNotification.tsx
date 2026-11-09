@@ -21,7 +21,7 @@ export default function ToastNotification({
   message,
   type = "info",
   onClose,
-  duration = 3000,
+  duration = 1200,
 }: ToastProps) {
   const onCloseRef = React.useRef(onClose);
   onCloseRef.current = onClose;
