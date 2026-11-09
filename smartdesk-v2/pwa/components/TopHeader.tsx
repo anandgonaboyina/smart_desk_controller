@@ -67,7 +67,8 @@ export default function TopHeader({
     : "Wi-Fi: Offline / Standby";
 
   // Cloud status label
-  const cloudLabel = isCloudOnline
+  const effectiveCloudOnline = isCloudOnline || (isWsConnected && (wifiConnected || isDeskConnected));
+  const cloudLabel = effectiveCloudOnline
     ? "Cloud: Worldwide Online"
     : isWsConnected
     ? "Cloud: Standby (Connecting...)"
@@ -159,7 +160,7 @@ export default function TopHeader({
             type="button"
             onClick={onOpenHandshake}
             className={`flex items-center gap-1.5 px-1 py-1 rounded-lg border text-[11px] font-bold transition-all active:scale-95 min-w-0 flex-1 justify-center ${
-              isCloudOnline
+              effectiveCloudOnline
                 ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]"
                 : isWsConnected
                 ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
@@ -169,11 +170,11 @@ export default function TopHeader({
           >
           
             <span className="truncate">
-              {isCloudOnline ? "Cloud Online" : isWsConnected ? "Connecting..." : "Cloud Offline"}
+              {effectiveCloudOnline ? "Cloud Online" : isWsConnected ? "Connecting..." : "Cloud Offline"}
             </span>
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                isCloudOnline
+                effectiveCloudOnline
                   ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
                   : isWsConnected
                   ? "bg-amber-400 animate-pulse"
@@ -232,7 +233,7 @@ export default function TopHeader({
             type="button"
             onClick={onOpenHandshake}
             className={`min-h-[42px] sm:min-h-[46px] px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl border flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-              isCloudOnline
+              effectiveCloudOnline
                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
                 : isWsConnected
                 ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
@@ -245,7 +246,7 @@ export default function TopHeader({
             </span>
             <span
               className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0 ml-auto ${
-                isCloudOnline
+                effectiveCloudOnline
                   ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
                   : isWsConnected
                   ? "bg-amber-400 animate-pulse"

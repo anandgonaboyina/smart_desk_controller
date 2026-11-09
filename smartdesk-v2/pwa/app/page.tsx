@@ -586,7 +586,7 @@ export default function SmartDeskApp() {
           onConnectBle={ble.handleConnect}
           onDisconnectBle={ble.handleDisconnected}
           isWsConnected={remote.isWsConnected}
-          isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
+          isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || ble.wifiConnected || isDeskConnected)}
           onOpenHandshake={() => setShowHandshakeModal(true)}
           wifiConnected={ble.wifiConnected}
           wifiState={ble.wifiState}
@@ -610,7 +610,7 @@ export default function SmartDeskApp() {
             wifiState={ble.wifiState}
             wifiSsid={ble.wifiSsid}
             wifiIp={ble.wifiIp}
-            isCloudOnline={remote.isWsConnected && remote.isDeviceOnline}
+            isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || ble.wifiConnected || isDeskConnected)}
             isWsConnected={remote.isWsConnected}
             onOpenWifiModal={() => setShowWifiModal(true)}
             onOpenHandshakeModal={() => setShowHandshakeModal(true)}
