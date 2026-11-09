@@ -93,7 +93,7 @@ export default function SmartDeskApp() {
     if (ble.connected) {
       return ble.relays;
     }
-    if (remote.isWsConnected && remote.isDeviceOnline) {
+    if (remote.isWsConnected && remote.deviceState?.relays && remote.deviceState.relays.length === 4) {
       return remote.deviceState.relays.map((r) => ({
         load: Boolean(r.load),
         remainingMin: r.remainingMin || 0,
@@ -102,20 +102,14 @@ export default function SmartDeskApp() {
     if (ble.wifiConnected) {
       return ble.relays;
     }
-    if (remote.deviceState?.relays && (remote.isWsConnected || remote.deviceState.relays.some((r) => r.load))) {
-      return remote.deviceState.relays.map((r) => ({
-        load: Boolean(r.load),
-        remainingMin: r.remainingMin || 0,
-      }));
-    }
     return ble.relays;
-  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.relays]);
+  }, [ble.connected, ble.wifiConnected, ble.relays, remote.isWsConnected, remote.deviceState.relays]);
 
   const effectiveConfigs = useMemo(() => {
     if (ble.connected) {
       return ble.configs;
     }
-    if (remote.deviceState?.configs && (remote.isWsConnected || remote.deviceState.configs.some((c) => c.name))) {
+    if (remote.isWsConnected && remote.deviceState?.configs && remote.deviceState.configs.length === 4) {
       return ble.configs.map((c, i) => {
         const remCfg = remote.deviceState.configs?.[i];
         return remCfg
@@ -123,28 +117,37 @@ export default function SmartDeskApp() {
           : c;
       });
     }
+    if (ble.wifiConnected) {
+      return ble.configs;
+    }
     return ble.configs;
-  }, [ble.connected, ble.configs, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.configs]);
+  }, [ble.connected, ble.wifiConnected, ble.configs, remote.isWsConnected, remote.deviceState.configs]);
 
   const effectiveLed = useMemo(() => {
     if (ble.connected) {
       return ble.led;
     }
-    if (remote.deviceState?.led && (remote.isWsConnected || remote.deviceState.led.mode !== 0)) {
+    if (remote.isWsConnected && remote.deviceState?.led) {
       return remote.deviceState.led;
     }
+    if (ble.wifiConnected) {
+      return ble.led;
+    }
     return ble.led;
-  }, [ble.connected, ble.led, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.led]);
+  }, [ble.connected, ble.wifiConnected, ble.led, remote.isWsConnected, remote.deviceState.led]);
 
   const effectiveEnvData = useMemo(() => {
     if (ble.connected) {
       return ble.envData;
     }
-    if (remote.deviceState?.env?.valid && remote.isWsConnected) {
+    if (remote.isWsConnected && remote.deviceState?.env) {
       return remote.deviceState.env;
     }
+    if (ble.wifiConnected) {
+      return ble.envData;
+    }
     return ble.envData;
-  }, [ble.connected, ble.envData, remote.isWsConnected, remote.isDeviceOnline, remote.deviceState.env]);
+  }, [ble.connected, ble.wifiConnected, ble.envData, remote.isWsConnected, remote.deviceState.env]);
 
   const effectiveStripLength = useMemo(() => {
     if (ble.connected) {

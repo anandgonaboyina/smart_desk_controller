@@ -469,45 +469,46 @@ wss.on("connection", (ws, req) => {
       }
 
       // Device Control Commands (Relay, Countdown Timers, Configurations, LED, Rename, Strip Length, Matrix, All-Off, State Request, Credentials)
+      const cmd = msg.cmd || msg.type || msg.action;
       if (
-        msg.type === "relay_set" ||
-        msg.type === "relay_timer" ||
-        msg.type === "timer_set" ||
-        msg.type === "relay_config" ||
-        msg.type === "config_set" ||
-        msg.type === "led_set" ||
-        msg.type === "device_rename" ||
-        msg.type === "rename" ||
-        msg.type === "strip_length" ||
-        msg.type === "strip" ||
-        msg.type === "matrix_set" ||
-        msg.type === "matrix" ||
-        msg.type === "temp_offset" ||
-        msg.type === "cal_offset" ||
-        msg.type === "presence_set" ||
-        msg.type === "presence_config" ||
-        msg.type === "set_master_device" ||
-        msg.type === "rgb_timer" ||
-        msg.type === "set_rgb_timer" ||
-        msg.type === "matrix_config" ||
-        msg.type === "buzzer_set" ||
-        msg.type === "set_buzzer" ||
-        msg.type === "buzzer_beep" ||
-        msg.type === "test_buzzer" ||
-        msg.type === "schedule_set" ||
-        msg.type === "set_schedule" ||
-        msg.type === "schedule_delete" ||
-        msg.type === "delete_schedule" ||
-        msg.type === "schedule_test" ||
-        msg.type === "test_schedule" ||
-        msg.type === "time_sync" ||
-        msg.type === "sync_time" ||
-        msg.type === "music_frame" ||
-        msg.type === "music_sync" ||
-        msg.type === "all_off" ||
-        msg.type === "request_state" ||
-        msg.type === "get_state" ||
-        msg.type === "ping"
+        cmd === "relay_set" ||
+        cmd === "relay_timer" ||
+        cmd === "timer_set" ||
+        cmd === "relay_config" ||
+        cmd === "config_set" ||
+        cmd === "led_set" ||
+        cmd === "device_rename" ||
+        cmd === "rename" ||
+        cmd === "strip_length" ||
+        cmd === "strip" ||
+        cmd === "matrix_set" ||
+        cmd === "matrix" ||
+        cmd === "temp_offset" ||
+        cmd === "cal_offset" ||
+        cmd === "presence_set" ||
+        cmd === "presence_config" ||
+        cmd === "set_master_device" ||
+        cmd === "rgb_timer" ||
+        cmd === "set_rgb_timer" ||
+        cmd === "matrix_config" ||
+        cmd === "buzzer_set" ||
+        cmd === "set_buzzer" ||
+        cmd === "buzzer_beep" ||
+        cmd === "test_buzzer" ||
+        cmd === "schedule_set" ||
+        cmd === "set_schedule" ||
+        cmd === "schedule_delete" ||
+        cmd === "delete_schedule" ||
+        cmd === "schedule_test" ||
+        cmd === "test_schedule" ||
+        cmd === "time_sync" ||
+        cmd === "sync_time" ||
+        cmd === "music_frame" ||
+        cmd === "music_sync" ||
+        cmd === "all_off" ||
+        cmd === "request_state" ||
+        cmd === "get_state" ||
+        cmd === "ping"
       ) {
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
           return ws.send(
@@ -523,7 +524,8 @@ wss.on("connection", (ws, req) => {
         // Forward strictly to that user's hardware device
         const forwardPayload = {
           type: "command",
-          action: msg.type,
+          cmd: cmd,
+          action: cmd,
           ...msg,
           sourceUser: meta.userId,
           timestamp: Date.now(),
@@ -531,11 +533,12 @@ wss.on("connection", (ws, req) => {
 
         targetDev.ws.send(JSON.stringify(forwardPayload));
 
-        // If client requested state and server has received live hardware telemetry, respond with cached state
-        if ((msg.type === "request_state" || msg.type === "get_state") && targetDev.hasReceivedState && targetDev.state) {
+        // If client requested state and server has received live hardware telemetry, respond immediately with cached state
+        if ((cmd === "request_state" || cmd === "get_state") && targetDev.hasReceivedState && targetDev.state) {
           ws.send(
             JSON.stringify({
               type: "state_update",
+              cmd: "get_state",
               deviceId: targetDev.deviceId || meta.deviceId,
               ...targetDev.state,
               timestamp: Date.now(),

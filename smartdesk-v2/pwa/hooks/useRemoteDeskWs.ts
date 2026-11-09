@@ -242,6 +242,16 @@ export function useRemoteDeskWs({
           timestamp: Date.now(),
         };
         socket.send(JSON.stringify(authPayload));
+
+        // State-sync handshake: Immediately request live hardware state upon WebSocket connect
+        socket.send(
+          JSON.stringify({
+            cmd: "get_state",
+            type: "get_state",
+            deviceId: credsRef.current.devId,
+            timestamp: Date.now(),
+          })
+        );
       };
 
       socket.onmessage = (event) => {
@@ -285,10 +295,11 @@ export function useRemoteDeskWs({
                 }
               }
 
-              // Request live hardware state broadcast from the board
+              // State-sync handshake: Send { cmd: 'get_state' } right after auth confirmation
               socket.send(
                 JSON.stringify({
-                  type: "request_state",
+                  cmd: "get_state",
+                  type: "get_state",
                   deviceId: credsRef.current.devId,
                   timestamp: Date.now(),
                 })
@@ -324,7 +335,14 @@ export function useRemoteDeskWs({
             setRemoteModeEnabled(Boolean(data.enabled));
           }
 
-          if (data.type === "state_update") {
+          if (
+            data.type === "state_update" ||
+            data.cmd === "get_state" ||
+            data.type === "get_state" ||
+            data.action === "get_state" ||
+            Boolean(data.relays) ||
+            Boolean(data.state?.relays)
+          ) {
             setIsDeviceOnline(true);
             setDeviceState((prev) => {
               const rawRelays = data.relays || data.state?.relays;
@@ -340,8 +358,26 @@ export function useRemoteDeskWs({
                 });
               }
               const configs = data.configs || data.state?.configs || prev.configs;
-              const led = data.led || data.state?.led || prev.led;
-              const env = data.env || data.state?.env || prev.env;
+              const rawLed = data.led || data.state?.led;
+              const led = rawLed
+                ? {
+                    mode: typeof rawLed.mode === "number" ? rawLed.mode : prev.led.mode,
+                    r: typeof rawLed.r === "number" ? rawLed.r : prev.led.r,
+                    g: typeof rawLed.g === "number" ? rawLed.g : prev.led.g,
+                    b: typeof rawLed.b === "number" ? rawLed.b : prev.led.b,
+                    bri: typeof rawLed.bri === "number" ? rawLed.bri : prev.led.bri,
+                    spd: typeof rawLed.spd === "number" ? rawLed.spd : prev.led.spd,
+                    remainingMin: typeof rawLed.remainingMin === "number" ? rawLed.remainingMin : prev.led.remainingMin,
+                  }
+                : prev.led;
+              const rawEnv = data.env || data.state?.env;
+              const env = rawEnv
+                ? {
+                    tempC: typeof rawEnv.tempC === "number" ? rawEnv.tempC : prev.env.tempC,
+                    humidity: typeof rawEnv.humidity === "number" ? rawEnv.humidity : prev.env.humidity,
+                    valid: typeof rawEnv.valid === "boolean" ? rawEnv.valid : prev.env.valid,
+                  }
+                : prev.env;
               const presence = data.presence || data.state?.presence || prev.presence;
               const deviceName = data.deviceName || data.state?.deviceName || prev.deviceName;
               const stripLength = data.stripLen || data.state?.stripLen || data.stripLength || data.state?.stripLength || prev.stripLength;
@@ -410,7 +446,8 @@ export function useRemoteDeskWs({
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
-          type: "request_state",
+          cmd: "get_state",
+          type: "get_state",
           deviceId: currentDeviceId,
           timestamp: Date.now(),
         })

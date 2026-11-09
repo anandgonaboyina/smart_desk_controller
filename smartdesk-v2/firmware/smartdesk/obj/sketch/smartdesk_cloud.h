@@ -312,12 +312,16 @@ static void handleCloudMessage(const char* payload, size_t length) {
     char action[32] = {0};
     getJsonStr(payload, "action", action, sizeof(action));
 
-    // Normalize command: If type is "command" and action is provided, action is the command;
-    // otherwise msgType itself is the command (e.g. "relay_set", "all_off", "led_set", "ping")
-    const char* cmd = (strcmp(msgType, "command") == 0 && strlen(action) > 0) ? action : msgType;
+    char cmdField[32] = {0};
+    getJsonStr(payload, "cmd", cmdField, sizeof(cmdField));
+
+    // Normalize command: Support cmd: "get_state", type: "get_state", or action: "get_state"
+    const char* cmd = (strlen(cmdField) > 0) ? cmdField :
+                      ((strcmp(msgType, "command") == 0 && strlen(action) > 0) ? action :
+                      (strlen(action) > 0 ? action : msgType));
 
     // 1. Authentication response from server
-    if (strcmp(msgType, "auth_res") == 0) {
+    if (strcmp(msgType, "auth_res") == 0 || strcmp(cmd, "auth_res") == 0) {
         bool ok = getJsonBool(payload, "ok", false);
         if (ok) {
             s_cloudAuthenticated    = true;
@@ -353,6 +357,14 @@ static void handleCloudMessage(const char* payload, size_t length) {
     // Diagnostics: Check connection state
     if (!s_cloudConnected) {
         Serial.println(">>> [CLOUD WS WARN] Inbound message dropped: Cloud WebSocket is offline.");
+        return;
+    }
+
+    // 2. State-sync Handshake: Client requested hardware states (cmd: 'get_state' or 'request_state')
+    if (strcmp(cmd, "get_state") == 0 || strcmp(cmd, "request_state") == 0 || strcmp(cmd, "ping") == 0 ||
+        strcmp(msgType, "get_state") == 0 || strcmp(msgType, "request_state") == 0) {
+        Serial.println(">>> [CLOUD WS] Client requested hardware state (cmd: 'get_state') -> broadcasting live state...");
+        broadcastCloudState();
         return;
     }
 
@@ -797,6 +809,13 @@ static void handleCloudMessage(const char* payload, size_t length) {
             snprintf(bKey, sizeof(bKey), "b%d", i);
             s_musicLevels[i] = (uint8_t)getJsonInt(payload, bKey, s_musicBeatVal);
         }
+        return;
+    }
+
+    // 21. Live Hardware State Request from Cloud Web Client
+    if (strcmp(cmd, "request_state") == 0 || strcmp(cmd, "get_state") == 0 || strcmp(cmd, "ping") == 0) {
+        Serial.println(">>> [CLOUD WS] Client requested hardware state -> broadcasting live state...");
+        broadcastCloudState();
         return;
     }
 }
