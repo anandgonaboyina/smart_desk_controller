@@ -12,6 +12,7 @@
 #define SMARTDESK_CLOUD_H
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <WebSocketsClient.h>
 
 /* ── Default Cloud Relay Settings (Configurable in NVS) ─────────────────── */
@@ -889,7 +890,7 @@ static inline void applyAndRestartCloudCredentials(const char* newDevId, const c
             Serial.printf(">>> [CLOUD WS] Sent live re-authentication handshake for '%s' (replacing '%s')\n",
                           s_cloudDeviceId, oldDevId);
             broadcastCloudState();
-        } else if (s_wifiConnected) {
+        } else if (WiFi.status() == WL_CONNECTED) {
             startCloudClient();
         }
     }
