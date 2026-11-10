@@ -13,6 +13,7 @@
 #define SMARTDESK_CLOUD_H
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <WebSocketsClient.h>
 
 /* ── Default Cloud Relay Settings (Configurable in NVS) ─────────────────── */
@@ -150,10 +151,15 @@ inline void broadcastCloudState() {
     uint16_t rgbRemMin = (s_rgbTimerEndMs > 0 && millis() < s_rgbTimerEndMs)
         ? (uint16_t)(((s_rgbTimerEndMs - millis()) + 59999UL) / 60000UL) : 0;
 
+    bool wifiIsConn = (WiFi.status() == WL_CONNECTED);
+    String curSsid = wifiIsConn ? WiFi.SSID() : "";
+    String curIp   = wifiIsConn ? WiFi.localIP().toString() : "";
+
     // Send payload matching both top-level keys expected by server.js AND nested state for PWA clients
     char msg[2000];
     int len = snprintf(msg, sizeof(msg),
         "{\"type\":\"state_update\",\"deviceId\":\"%s\",\"deviceName\":\"%s\",\"stripLen\":%u,"
+        "\"wifi\":{\"connected\":%s,\"ssid\":\"%s\",\"ip\":\"%s\"},"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
         "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
@@ -169,6 +175,7 @@ inline void broadcastCloudState() {
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s},"
         "\"state\":{\"deviceName\":\"%s\",\"stripLen\":%u,"
+        "\"wifi\":{\"connected\":%s,\"ssid\":\"%s\",\"ip\":\"%s\"},"
         "\"matrix\":{\"mode\":%u,\"speed\":%u,\"bri\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"text\":\"%s\"},"
         "\"presence\":{\"enabled\":%s,\"awayDelayMin\":%u,\"masterDevice\":\"%s\",\"state\":%u,\"remainingMin\":%u,\"awayRelayMask\":%u,\"awayRgbOff\":%s},"
         "\"relays\":["
@@ -184,6 +191,7 @@ inline void broadcastCloudState() {
         "\"led\":{\"mode\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"bri\":%u,\"spd\":%u,\"remainingMin\":%u},"
         "\"env\":{\"tempC\":%.1f,\"humidity\":%.1f,\"valid\":%s}}}",
         s_cloudDeviceId, s_deviceName, s_stripLen,
+        wifiIsConn ? "true" : "false", curSsid.c_str(), curIp.c_str(),
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
@@ -197,6 +205,7 @@ inline void broadcastCloudState() {
         s_ledMode, s_ledR, s_ledG, s_ledB, s_ledBri, s_ledSpd, rgbRemMin,
         s_tempC, s_humidity, s_sensorValid ? "true" : "false",
         s_deviceName, s_stripLen,
+        wifiIsConn ? "true" : "false", curSsid.c_str(), curIp.c_str(),
         s_matrixConfig.mode, s_matrixConfig.speed, s_matrixConfig.bri, s_matrixConfig.colorR, s_matrixConfig.colorG, s_matrixConfig.colorB, s_matrixConfig.text,
         s_presenceConfig.enabled ? "true" : "false", s_presenceConfig.awayDelayMin, s_masterDeviceName, presState, presRemMin, s_presenceConfig.awayRelayMask, s_presenceConfig.awayRgbOff ? "true" : "false",
         s_relayLoads[0] ? "true" : "false", (s_timerEndMs[0] > 0 && millis() < s_timerEndMs[0]) ? (uint16_t)(((s_timerEndMs[0] - millis()) + 59999UL) / 60000UL) : 0,
@@ -648,6 +657,146 @@ static void handleCloudMessage(const char* payload, size_t length) {
         }
         return;
     }
+
+    // 17. Schedule Set / Save Command over Cloud WS
+    if (strcmp(cmd, "schedule_set") == 0 || strcmp(cmd, "set_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            s_schedules[id].enabled      = getJsonBool(payload, "enabled", true);
+            s_schedules[id].daysMask     = (uint8_t)getJsonInt(payload, "daysMask", 0x7F);
+            s_schedules[id].startHour    = (uint8_t)getJsonInt(payload, "startHour", 9);
+            s_schedules[id].startMin     = (uint8_t)getJsonInt(payload, "startMin", 0);
+            s_schedules[id].stopType     = (uint8_t)getJsonInt(payload, "stopType", 0);
+            s_schedules[id].durationMin  = (uint16_t)getJsonInt(payload, "durationMin", 60);
+            s_schedules[id].stopHour     = (uint8_t)getJsonInt(payload, "stopHour", 10);
+            s_schedules[id].stopMin      = (uint8_t)getJsonInt(payload, "stopMin", 0);
+            s_schedules[id].targetType   = (uint8_t)getJsonInt(payload, "targetType", 6);
+            s_schedules[id].targetAction = (uint8_t)getJsonInt(payload, "targetAction", 1);
+            s_schedules[id].rgbR         = (uint8_t)getJsonInt(payload, "rgbR", 0);
+            s_schedules[id].rgbG         = (uint8_t)getJsonInt(payload, "rgbG", 180);
+            s_schedules[id].rgbB         = (uint8_t)getJsonInt(payload, "rgbB", 255);
+            s_schedules[id].rgbBri       = (uint8_t)getJsonInt(payload, "rgbBri", 100);
+            s_schedules[id].relayMask    = (uint8_t)getJsonInt(payload, "relayMask", 0x0F);
+            s_schedules[id].ledTarget    = getJsonBool(payload, "ledTarget", false) ? 1 : 0;
+            s_schedules[id].lastFiredDayMinute = 0xFFFF;
+
+            Preferences prefs;
+            prefs.begin("desk_sched", false);
+            char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16], kRM[16], kLT[16];
+            snprintf(kEn, sizeof(kEn), "en_%d", id);
+            snprintf(kDays, sizeof(kDays), "dy_%d", id);
+            snprintf(kSH, sizeof(kSH), "sh_%d", id);
+            snprintf(kSM, sizeof(kSM), "sm_%d", id);
+            snprintf(kST, sizeof(kST), "st_%d", id);
+            snprintf(kDur, sizeof(kDur), "du_%d", id);
+            snprintf(kEH, sizeof(kEH), "eh_%d", id);
+            snprintf(kEM, sizeof(kEM), "em_%d", id);
+            snprintf(kTT, sizeof(kTT), "tt_%d", id);
+            snprintf(kTA, sizeof(kTA), "ta_%d", id);
+            snprintf(kR, sizeof(kR), "r_%d", id);
+            snprintf(kG, sizeof(kG), "g_%d", id);
+            snprintf(kB, sizeof(kB), "b_%d", id);
+            snprintf(kBri, sizeof(kBri), "br_%d", id);
+            snprintf(kRM, sizeof(kRM), "rm_%d", id);
+            snprintf(kLT, sizeof(kLT), "lt_%d", id);
+
+            prefs.putBool(kEn, s_schedules[id].enabled);
+            prefs.putUChar(kDays, s_schedules[id].daysMask);
+            prefs.putUChar(kSH, s_schedules[id].startHour);
+            prefs.putUChar(kSM, s_schedules[id].startMin);
+            prefs.putUChar(kST, s_schedules[id].stopType);
+            prefs.putUShort(kDur, s_schedules[id].durationMin);
+            prefs.putUChar(kEH, s_schedules[id].stopHour);
+            prefs.putUChar(kEM, s_schedules[id].stopMin);
+            prefs.putUChar(kTT, s_schedules[id].targetType);
+            prefs.putUChar(kTA, s_schedules[id].targetAction);
+            prefs.putUChar(kR, s_schedules[id].rgbR);
+            prefs.putUChar(kG, s_schedules[id].rgbG);
+            prefs.putUChar(kB, s_schedules[id].rgbB);
+            prefs.putUChar(kBri, s_schedules[id].rgbBri);
+            prefs.putUChar(kRM, s_schedules[id].relayMask);
+            prefs.putUChar(kLT, s_schedules[id].ledTarget);
+            prefs.end();
+
+            Serial.printf(">>> [SCHEDULE] Saved Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Target=%d, Act=%d)\n",
+                          id, s_schedules[id].enabled, s_schedules[id].daysMask,
+                          s_schedules[id].startHour, s_schedules[id].startMin,
+                          s_schedules[id].targetType, s_schedules[id].targetAction);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_set\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+            broadcastCloudState();
+        }
+        return;
+    }
+
+    // 18. Schedule Delete / Disable Command over Cloud WS
+    if (strcmp(cmd, "schedule_delete") == 0 || strcmp(cmd, "delete_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            s_schedules[id].enabled = false;
+            Preferences prefs;
+            prefs.begin("desk_sched", false);
+            char kEn[16];
+            snprintf(kEn, sizeof(kEn), "en_%d", id);
+            prefs.putBool(kEn, false);
+            prefs.end();
+
+            Serial.printf(">>> [SCHEDULE] Disabled Rule %d\n", id);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_delete\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+            broadcastCloudState();
+        }
+        return;
+    }
+
+    // 19. Schedule Test Command over Cloud WS
+    if (strcmp(cmd, "schedule_test") == 0 || strcmp(cmd, "test_schedule") == 0) {
+        int id = getJsonInt(payload, "id", -1);
+        bool isStart = getJsonBool(payload, "isStart", true);
+        if (id >= 0 && id < MAX_SCHEDULES) {
+            uint8_t action = isStart ? s_schedules[id].targetAction : ((s_schedules[id].targetAction == 1) ? 0 : 1);
+            executeScheduleAction((uint8_t)id, action);
+
+            char ackMsg[128];
+            snprintf(ackMsg, sizeof(ackMsg),
+                "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"schedule_test\",\"id\":%d,\"success\":true}",
+                s_cloudDeviceId, id
+            );
+            s_cloudWs.sendTXT(ackMsg);
+        }
+        return;
+    }
+
+    // 20. Time Sync over Cloud WS
+    if (strcmp(cmd, "time_sync") == 0 || strcmp(cmd, "sync_time") == 0) {
+        int dow = getJsonInt(payload, "dow", -1);
+        int h = getJsonInt(payload, "h", -1);
+        if (h < 0) h = getJsonInt(payload, "hour", -1);
+        int m = getJsonInt(payload, "m", -1);
+        if (m < 0) m = getJsonInt(payload, "min", -1);
+        int s = getJsonInt(payload, "s", -1);
+        if (s < 0) s = getJsonInt(payload, "sec", 0);
+
+        if (dow >= 0 && h >= 0 && m >= 0) {
+            s_timeSync.baseLocalSec = ((uint32_t)dow * 86400UL) + ((uint32_t)h * 3600UL) + ((uint32_t)m * 60UL) + (uint32_t)s;
+            s_timeSync.syncMillis = millis();
+            s_timeSync.synced = true;
+            saveTimeBaseToNVS();
+            notifyEnvState();
+            Serial.printf(">>> [CLOUD WS] Clock synchronized: %02d:%02d:%02d (DOW=%d)\n", h, m, s, dow);
+        }
+        return;
+    }
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */
@@ -690,13 +839,21 @@ static void onCloudWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 /* ── Cloud Client Lifecycle ──────────────────────────────────────────────── */
 static void startCloudClient() {
+    if (s_cloudConnected) return; // Prevent duplicate initialization if already active
+
     bool isSsl = (s_cloudPort == 443 || strstr(s_cloudHost, ".onrender.com") != NULL || strstr(s_cloudHost, ".vercel.app") != NULL);
     Serial.printf(">>> [CLOUD WS] Initializing WebSocket client -> %s://%s:%d%s\n",
                   isSsl ? "wss" : "ws", s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+
+    // Set standard HTTP Host header for Cloudflare/Render reverse proxy compatibility
+    char hostHeader[80];
+    snprintf(hostHeader, sizeof(hostHeader), "Host: %s", s_cloudHost);
+    s_cloudWs.setExtraHeaders(hostHeader);
+
     if (isSsl) {
-        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+        s_cloudWs.beginSSL(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH, "");
     } else {
-        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH);
+        s_cloudWs.begin(s_cloudHost, s_cloudPort, DEFAULT_CLOUD_PATH, "");
     }
     s_cloudWs.onEvent(onCloudWsEvent);
     s_cloudWs.setReconnectInterval(5000);
@@ -704,10 +861,45 @@ static void startCloudClient() {
 }
 
 static void stopCloudClient() {
-    if (s_cloudConnected) {
         s_cloudWs.disconnect();
         s_cloudConnected     = false;
         s_cloudAuthenticated = false;
+}
+
+/* ── Local Cloud Credential Application & Live Re-Authentication ─────────── */
+static inline void applyAndRestartCloudCredentials(const char* newDevId, const char* newUser, const char* newPass, const char* newDevName) {
+    if (newDevName && strlen(newDevName) > 0) {
+        strncpy(s_deviceName, newDevName, sizeof(s_deviceName) - 1);
+        s_deviceName[sizeof(s_deviceName) - 1] = '\0';
+        Preferences prefs;
+        prefs.begin("desk_cfg", false);
+        prefs.putString("dev_name", s_deviceName);
+        prefs.end();
+        // Do NOT call initBleServer() here as reinitializing BLE wipes active GATT client sessions
+    }
+
+    if (newDevId || newUser || newPass) {
+        char oldDevId[36] = {0};
+        strncpy(oldDevId, s_cloudDeviceId, sizeof(oldDevId) - 1);
+
+        saveCloudConfigToNVS(NULL, 0, newDevId, NULL, newUser, newPass);
+        Serial.printf(">>> [CLOUD CREDENTIALS] Assigned via BLE (DevId: %s, User: %s, Desk: %s)\n",
+                      s_cloudDeviceId, s_cloudUser, s_deviceName);
+
+        // If WebSocket is already connected, re-authenticate immediately over the active connection (zero downtime / no socket tear-down)
+        if (s_cloudConnected) {
+            char authMsg[256];
+            snprintf(authMsg, sizeof(authMsg),
+                "{\"type\":\"auth\",\"role\":\"device\",\"deviceId\":\"%s\",\"oldDeviceId\":\"%s\",\"deviceKey\":\"%s\",\"userId\":\"%s\",\"password\":\"%s\"}",
+                s_cloudDeviceId, oldDevId, s_cloudDeviceKey, s_cloudUser, s_cloudPassword
+            );
+            s_cloudWs.sendTXT(authMsg);
+            Serial.printf(">>> [CLOUD WS] Sent live re-authentication handshake for '%s' (replacing '%s')\n",
+                          s_cloudDeviceId, oldDevId);
+            broadcastCloudState();
+        } else if (WiFi.status() == WL_CONNECTED) {
+            startCloudClient();
+        }
     }
 }
 

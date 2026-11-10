@@ -860,11 +860,9 @@ static void startCloudClient() {
 }
 
 static void stopCloudClient() {
-    if (s_cloudConnected) {
         s_cloudWs.disconnect();
         s_cloudConnected     = false;
         s_cloudAuthenticated = false;
-    }
 }
 
 /* ── Local Cloud Credential Application & Live Re-Authentication ─────────── */

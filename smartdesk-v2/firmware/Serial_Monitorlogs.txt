@@ -1,0 +1,234 @@
+>>> [MATRIX] Initialized 32x8 (256 LEDs) on GPIO 11 [Wiring: Zig-Zag Serpentine]
+[DHT11] Loaded Temperature Offset: 0.0 C
+>>> [RELAY 1] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 4) [Boot Init Restore]
+>>> [RELAY 2] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 5) [Boot Init Restore]
+>>> [RELAY 3] Load=1 Wiring=NO -> Coil=1 Pin=LOW (GPIO 6) [Boot Init Restore]
+>>> [RELAY 4] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 7) [Boot Init Restore]
+>>> [BLE] Advertising started as "sd controller". Ready for connections.
+>>> [WIFI EVENT] STA Started
+>>> [HTTP SERVER] Web Server listening on port 80.
+>>> SMARTDESK V2 FIRMWARE READY <<<
+Strip Length: 8 LEDs on GPIO 8
+Matrix Display: 32x8 on GPIO 11 [Wiring: 1, Mode: 0]
+>>> [WIFI] Iterating through 1 saved networks...
+>>> [WIFI LOG] Iterating through 1 saved networks...
+-------------------------------------------------------
+Target SSID: [National Institute of Technology]
+Pass length: 11
+CP User:     [24eee1017]
+-------------------------------------------------------
+>>> [WIFI] Scanning airwaves for strongest AP matching: [National Institute of Technology]
+>>> [WIFI] Best AP found! RSSI: -74 dBm, Channel: 11
+>>> [WIFI LOG] Target SSID: [National Institute of Technology]
+>>> [WIFI BEGIN] Initiated WiFi.begin, immediate return: 6
+>>> [WIFI EVENT] STA Connected to AP (L2 802.11 OK)
+>>> [WIFI CONNECTING] status=0 (199 ms elapsed)
+>>> [WIFI EVENT] STA Got IP: 192.168.80.244
+>>> [WIFI CONNECTING] status=3 (1799 ms elapsed)
+>>> [WIFI CONNECTED] IP: 192.168.80.244 (RSSI: -74 dBm)
+>>> [WIFI LOG] Associated with 'National Institute of Technology', IP 192.168.80.244
+>>> [WIFI] Associated! Brief 3s pause for DHCP to settle...
+>>> [WIFI] Gateway reachable. Testing internet connection...
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [WIFI] Network fully active! Skipping remaining delay.
+>>> [WIFI SUCCESS] Internet connection confirmed!
+>>> [WIFI LOG] Internet active & verified
+>>> [NTP] Initializing SNTP time sync via internet...
+>>> [NTP WARN] Could not acquire NTP time yet.
+>>> [CLOUD] Pinging Render health endpoint to wake up server...
+>>> [CLOUD] Render wake-up ping HTTP code: 200
+>>> [WIFI] Connected to 'National Institute of Technology' with confirmed internet!
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Connected to smart-desk-controller.onrender.com:443! Sending auth handshake...
+>>> [CLOUD WS] Device authenticated successfully as 'desk_anandkumar' (User: user_anand_primary)!
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=0 R3=1 R4=0
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [BLE] onDisconnect: reason=531, connectedCount=0
+>>> [PRESENCE] Client disconnected. Config: enabled=1, awayDelay=1 min
+>>> [PRESENCE] Away timer started: countdown 1 min (ends at 184935 ms)
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=0 R3=1 R4=0
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=0 R3=1 R4=0
+>>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=0 R3=1 R4=0
+>>> [CLOUD WS] Clock synchronized: 12:16:08 (DOW=2)
+>>> [CLOUD WS] Relay 1 -> ON (Source: Cloud Remote)
+>>> [RELAY 1] Load=1 Wiring=NO -> Coil=1 Pin=LOW (GPIO 4) [Cloud Remote]
+>>> [CLOUD WS] State broadcast sent (1560 bytes): R1=1 R2=0 R3=1 R4=0
+>>> [CLOUD WS] State broadcast sent (1560 bytes): R1=1 R2=0 R3=1 R4=0
+>>> [CLOUD WS] Relay 1 -> OFF (Source: Cloud Remote)
+>>> [RELAY 1] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 4) [Cloud Remote]
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=0 R3=1 R4=0
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=0 R3=1 R4=0
+>>> [PRESENCE TIMEOUT] Away countdown expired! Turning OFF away-configured loads & RGB...
+>>> [RELAY 2] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 5) [Away Timeout]
+>>> [RELAY 3] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 6) [Away Timeout]
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [RELAY 4] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 7) [Away Timeout]
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Connected to smart-desk-controller.onrender.com:443! Sending auth handshake...
+>>> [CLOUD WS] Device authenticated successfully as 'desk_anandkumar' (User: user_anand_primary)!
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [CLOUD WS] Clock synchronized: 12:30:26 (DOW=2)
+>>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [CLOUD WS] State request/ping received from remote client. Broadcasting telemetry...
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [CLOUD WS] Clock synchronized: 12:30:53 (DOW=2)
+>>> [CLOUD WS] Relay 1 -> OFF (Source: Cloud Remote)
+>>> [RELAY 1] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 4) [Cloud Remote]
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] Relay 1 -> ON (Source: Cloud Remote)
+>>> [RELAY 1] Load=1 Wiring=NO -> Coil=1 Pin=LOW (GPIO 4) [Cloud Remote]
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=1 R2=0 R3=0 R4=0
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=1 R2=0 R3=0 R4=0
+>>> [CLOUD WS] Relay 1 -> OFF (Source: Cloud Remote)
+>>> [RELAY 1] Load=0 Wiring=NO -> Coil=0 Pin=HIGH (GPIO 4) [Cloud Remote]
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [CLOUD WS] State broadcast sent (1564 bytes): R1=0 R2=0 R3=0 R4=0
+>>> [CLOUD WS] Relay 2 -> ON (Source: Cloud Remote)
+>>> [RELAY 2] Load=1 Wiring=NO -> Coil=1 Pin=LOW (GPIO 5) [Cloud Remote]
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=1 R3=0 R4=0
+>>> [CLOUD WS] State broadcast sent (1562 bytes): R1=0 R2=1 R3=0 R4=0
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [PROBE] Pinging http://captive.apple.com/hotspot-detect.html ...
+>>> [PROBE RESULT] Internet is ACTIVE! (HTTP 200 'Success')
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Disconnected from cloud relay.
+>>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...
+>>> [CLOUD WS] Initializing WebSocket client -> wss://smart-desk-controller.onrender.com:443/ws

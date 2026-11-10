@@ -135,61 +135,57 @@ void loadEnvConfigFromNVS();
 void setTempOffset(float offset);
 #line 290 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void getLocalTime(uint8_t* outH, uint8_t* outM, uint8_t* outS, uint8_t* outDOW);
-#line 329 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 331 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void buildRelayPayload(uint8_t* out12);
-#line 344 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 346 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void buildConfigPayload(uint8_t* payload, size_t maxLen);
-#line 398 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 402 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason);
-#line 410 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 414 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void triggerRelayAnimation(uint8_t idx, bool turningOn, uint8_t mode, uint8_t durationSec);
-#line 419 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 423 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void setRelayLoad(uint8_t idx, uint8_t load, const char* source);
-#line 443 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 447 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setRelayTimer(uint8_t idx, uint16_t mins);
-#line 455 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 459 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void allRelaysOff(const char* source);
-#line 463 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 467 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setRgbTimer(uint16_t mins);
-#line 476 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 480 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadConfigsFromNVS();
-#line 512 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 516 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadPresenceFromNVS();
-#line 551 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 555 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void savePresenceConfigToNVS();
-#line 567 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 571 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadRelayLoadsFromNVS();
-#line 577 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 581 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void saveRelayLoadsToNVS();
-#line 588 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 592 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadLedStateFromNVS();
-#line 601 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 605 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void saveLedStateToNVS();
-#line 695 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 699 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadSchedulesFromNVS();
-#line 733 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
-static void executeScheduleAction(uint8_t ruleIdx, uint8_t action);
-#line 761 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
-static void checkSchedules();
 #line 800 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+static void checkSchedules();
+#line 839 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void loadTimeBaseFromNVS();
-#line 808 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
-static void saveTimeBaseToNVS();
-#line 816 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 855 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void registerClientDevice(const char* macAddr, const char* friendlyName);
-#line 848 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 887 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void handleClientConnected(const char* macAddr);
-#line 880 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 919 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void handleClientDisconnected();
-#line 891 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 930 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static uint8_t scaleBri(uint8_t userPercent);
-#line 896 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 935 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static uint32_t gammaCorrect(uint8_t r, uint8_t g, uint8_t b, uint8_t bri);
-#line 908 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 947 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static void renderLeds();
-#line 1299 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 1338 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void setup();
-#line 1369 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
+#line 1408 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 void loop();
 #line 117 "D:\\Organized files\\webDev files\\deployed Websites\\smart_desk_controller\\smartdesk-v2\\firmware\\smartdesk\\smartdesk.ino"
 static inline void triggerBuzzerPattern(uint16_t onMs, uint16_t offMs, uint8_t repeats) {
@@ -396,6 +392,8 @@ struct ScheduleRule {
     uint8_t  rgbG;
     uint8_t  rgbB;
     uint8_t  rgbBri;
+    uint8_t  relayMask;
+    uint8_t  ledTarget;
     uint16_t lastFiredDayMinute;
 };
 static ScheduleRule s_schedules[MAX_SCHEDULES];
@@ -471,6 +469,8 @@ void buildConfigPayload(uint8_t* payload, size_t maxLen) {
 /* ── Forward Declaration ─────────────────────────────────────────────────── */
 void buildEnvPayload(uint8_t* outPayload);
 void broadcastCloudState();
+void executeScheduleAction(uint8_t ruleIdx, uint8_t action);
+void saveTimeBaseToNVS();
 
 /* ── Relay Hardware & Safety Control ─────────────────────────────────────── */
 static void applyRelayPin(uint8_t idx, uint8_t load, const char* reason) {
@@ -788,6 +788,9 @@ static void loadSchedulesFromNVS() {
         snprintf(kG, sizeof(kG), "g_%d", i);
         snprintf(kB, sizeof(kB), "b_%d", i);
         snprintf(kBri, sizeof(kBri), "br_%d", i);
+        char kRM[16], kLT[16];
+        snprintf(kRM, sizeof(kRM), "rm_%d", i);
+        snprintf(kLT, sizeof(kLT), "lt_%d", i);
 
         s_schedules[i].enabled            = s_prefs.getBool(kEn, false);
         s_schedules[i].daysMask           = s_prefs.getUChar(kDays, 0x7F);
@@ -803,12 +806,14 @@ static void loadSchedulesFromNVS() {
         s_schedules[i].rgbG               = s_prefs.getUChar(kG, 240);
         s_schedules[i].rgbB               = s_prefs.getUChar(kB, 255);
         s_schedules[i].rgbBri             = s_prefs.getUChar(kBri, 100);
+        s_schedules[i].relayMask          = s_prefs.getUChar(kRM, (s_schedules[i].targetType < 4) ? (1 << s_schedules[i].targetType) : ((s_schedules[i].targetType == 4) ? 0x0F : 0));
+        s_schedules[i].ledTarget          = s_prefs.getUChar(kLT, (s_schedules[i].targetType == 5) ? 1 : 0);
         s_schedules[i].lastFiredDayMinute = 0xFFFF;
     }
     s_prefs.end();
 }
 
-static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
+void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
     if (ruleIdx >= MAX_SCHEDULES) return;
     const ScheduleRule& rule = s_schedules[ruleIdx];
     uint8_t targetType = rule.targetType;
@@ -833,7 +838,37 @@ static void executeScheduleAction(uint8_t ruleIdx, uint8_t action) {
         }
         saveLedStateToNVS();
         notifyLedState();
+    } else if (targetType == 6) { // Multi-Target (Relays by bitmask + RGB strip)
+        uint8_t rMask = rule.relayMask;
+        if (rMask == 0 && !rule.ledTarget) {
+            rMask = 0x0F; // Fallback to all relays if both were zero
+        }
+        bool anyRelay = false;
+        for (int r = 0; r < RELAY_COUNT; r++) {
+            if (rMask & (1 << r)) {
+                setRelayLoad(r, action, "Schedule Multi");
+                anyRelay = true;
+            }
+        }
+        if (anyRelay) {
+            notifyRelayState();
+        }
+
+        if (rule.ledTarget) {
+            if (action == 1) {
+                s_ledMode = 1; // Solid
+                s_ledR   = rule.rgbR;
+                s_ledG   = rule.rgbG;
+                s_ledB   = rule.rgbB;
+                s_ledBri = (rule.rgbBri > 0) ? rule.rgbBri : 100;
+            } else {
+                s_ledMode = 0; // Off
+            }
+            saveLedStateToNVS();
+            notifyLedState();
+        }
     }
+    broadcastCloudState();
 }
 
 static void checkSchedules() {
@@ -883,7 +918,7 @@ static void loadTimeBaseFromNVS() {
     s_prefs.end();
 }
 
-static void saveTimeBaseToNVS() {
+void saveTimeBaseToNVS() {
     s_prefs.begin("desk_time", false);
     s_prefs.putBool("synced", s_timeSync.synced);
     s_prefs.putUInt("base_sec", s_timeSync.baseLocalSec);
@@ -1600,10 +1635,20 @@ void loop() {
                         s_schedules[id].rgbB   = cmd.data[14];
                         s_schedules[id].rgbBri = cmd.data[15];
                     }
+                    if (cmd.len >= 17) {
+                        s_schedules[id].relayMask = cmd.data[16];
+                    } else {
+                        s_schedules[id].relayMask = (s_schedules[id].targetType < 4) ? (1 << s_schedules[id].targetType) : 0x0F;
+                    }
+                    if (cmd.len >= 18) {
+                        s_schedules[id].ledTarget = cmd.data[17];
+                    } else {
+                        s_schedules[id].ledTarget = (s_schedules[id].targetType == 5) ? 1 : 0;
+                    }
                     s_schedules[id].lastFiredDayMinute = 0xFFFF;
 
                     s_prefs.begin("desk_sched", false);
-                    char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16];
+                    char kEn[16], kDays[16], kSH[16], kSM[16], kST[16], kDur[16], kEH[16], kEM[16], kTT[16], kTA[16], kR[16], kG[16], kB[16], kBri[16], kRM[16], kLT[16];
                     snprintf(kEn, sizeof(kEn), "en_%d", id);
                     snprintf(kDays, sizeof(kDays), "dy_%d", id);
                     snprintf(kSH, sizeof(kSH), "sh_%d", id);
@@ -1618,6 +1663,8 @@ void loop() {
                     snprintf(kG, sizeof(kG), "g_%d", id);
                     snprintf(kB, sizeof(kB), "b_%d", id);
                     snprintf(kBri, sizeof(kBri), "br_%d", id);
+                    snprintf(kRM, sizeof(kRM), "rm_%d", id);
+                    snprintf(kLT, sizeof(kLT), "lt_%d", id);
 
                     s_prefs.putBool(kEn, s_schedules[id].enabled);
                     s_prefs.putUChar(kDays, s_schedules[id].daysMask);
@@ -1633,6 +1680,8 @@ void loop() {
                     s_prefs.putUChar(kG, s_schedules[id].rgbG);
                     s_prefs.putUChar(kB, s_schedules[id].rgbB);
                     s_prefs.putUChar(kBri, s_schedules[id].rgbBri);
+                    s_prefs.putUChar(kRM, s_schedules[id].relayMask);
+                    s_prefs.putUChar(kLT, s_schedules[id].ledTarget);
                     s_prefs.end();
 
                     Serial.printf(">>> [SCHEDULE] Saved Rule %d (En=%d, Days=0x%02X, Start=%02d:%02d, Target=%d, Act=%d)\n",
@@ -1788,6 +1837,94 @@ void loop() {
                     bool connectNow = (flags & 0x01) != 0;
                     saveWifiNetworkOverBle(bleSsid, blePass, bleUser, bleCpPass, connectNow);
                     notifyEnvState();
+                }
+            } else if (cmd.data[0] == 0xEA) { // 0xEA: Cloud Credentials via BLE
+                if (cmd.len >= 2 && cmd.data[1] == 0xFF) {
+                    // Query current cloud credentials over BLE
+                    const char* curDevId = getCloudDeviceId();
+                    const char* curUser  = getCloudUser();
+                    uint8_t dL = (uint8_t)strlen(curDevId);
+                    uint8_t uL = (uint8_t)strlen(curUser);
+                    uint8_t nL = (uint8_t)strlen(s_deviceName);
+                    uint8_t resp[120];
+                    resp[0] = 0xEA;
+                    resp[1] = 0x02; // Query response
+                    resp[2] = dL;
+                    resp[3] = uL;
+                    resp[4] = nL;
+                    size_t o = 5;
+                    if (dL > 0 && dL <= 36) { memcpy(&resp[o], curDevId, dL); o += dL; }
+                    if (uL > 0 && uL <= 36) { memcpy(&resp[o], curUser, uL); o += uL; }
+                    if (nL > 0 && nL <= 28) { memcpy(&resp[o], s_deviceName, nL); o += nL; }
+                    if (s_pConfigChar && s_connected) {
+                        s_pConfigChar->setValue(resp, o);
+                        s_pConfigChar->notify();
+                    }
+                } else if (cmd.len >= 5) {
+                    // Flash new credentials via BLE [0xEA, dLen, uLen, pLen, nLen, ...d, ...u, ...p, ...n]
+                    uint8_t dLen = cmd.data[1];
+                    uint8_t uLen = cmd.data[2];
+                    uint8_t pLen = cmd.data[3];
+                    uint8_t nLen = cmd.data[4];
+
+                    size_t exp = 5 + dLen + uLen + pLen + nLen;
+                    if (cmd.len >= exp) {
+                        char bDevId[36] = {0};
+                        char bUser[36]  = {0};
+                        char bPass[36]  = {0};
+                        char bName[28]  = {0};
+
+                        size_t cur = 5;
+                        if (dLen > 0 && dLen < sizeof(bDevId)) {
+                            memcpy(bDevId, &cmd.data[cur], dLen);
+                            bDevId[dLen] = '\0';
+                        }
+                        cur += dLen;
+
+                        if (uLen > 0 && uLen < sizeof(bUser)) {
+                            memcpy(bUser, &cmd.data[cur], uLen);
+                            bUser[uLen] = '\0';
+                        }
+                        cur += uLen;
+
+                        if (pLen > 0 && pLen < sizeof(bPass)) {
+                            memcpy(bPass, &cmd.data[cur], pLen);
+                            bPass[pLen] = '\0';
+                        }
+                        cur += pLen;
+
+                        if (nLen > 0 && nLen < sizeof(bName)) {
+                            memcpy(bName, &cmd.data[cur], nLen);
+                            bName[nLen] = '\0';
+                        }
+
+                        // 1. Send IMMEDIATE ACK Notification back to BLE client FIRST before cloud restart:
+                        // [0xEA, 0x01 (SUCCESS), devIdLen, userLen, ...devId, ...user]
+                        if (s_pConfigChar && s_connected) {
+                            uint8_t sDevLen  = (uint8_t)strlen(bDevId);
+                            uint8_t sUserLen = (uint8_t)strlen(bUser);
+                            uint8_t ackBuf[80];
+                            ackBuf[0] = 0xEA;
+                            ackBuf[1] = 0x01; // Success ACK
+                            ackBuf[2] = sDevLen;
+                            ackBuf[3] = sUserLen;
+                            size_t off = 4;
+                            if (sDevLen > 0 && sDevLen <= 36) { memcpy(&ackBuf[off], bDevId, sDevLen); off += sDevLen; }
+                            if (sUserLen > 0 && sUserLen <= 36) { memcpy(&ackBuf[off], bUser, sUserLen); off += sUserLen; }
+                            s_pConfigChar->setValue(ackBuf, off);
+                            s_pConfigChar->notify();
+                            delay(50); // Flush packet over air before socket reconnect
+                        }
+
+                        // 2. Apply NVS credentials and live restart WebSocket:
+                        applyAndRestartCloudCredentials(
+                            strlen(bDevId) > 0 ? bDevId : NULL,
+                            strlen(bUser) > 0 ? bUser : NULL,
+                            strlen(bPass) > 0 ? bPass : "",
+                            strlen(bName) > 0 ? bName : NULL
+                        );
+                        notifyEnvState();
+                    }
                 }
             } else if (cmd.data[0] == '{') { // JSON Wi-Fi Provisioning via BLE
                 char jsonBuf[256];

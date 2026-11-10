@@ -1540,16 +1540,16 @@ static void wifiWorkerTask(void* pvParameters) {
         // 4. Update cloud WebSocket client if internet is active (throttled auto-reconnect)
         if (s_wifiConnected) {
             updateCloudClient();
-            if (!s_cloudConnected) {
-                static uint32_t s_lastWsAutoReconnectMs = 0;
-                if (millis() - s_lastWsAutoReconnectMs >= 15000UL) {
-                    s_lastWsAutoReconnectMs = millis();
-                    // checkInternetAccess uses non-blocking 60-second cooldown cache
-                    if (checkInternetAccess()) {
-                        Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay after disconnect/sleep (15s tick)...");
-                        startCloudClient();
-                    }
-                }
+            // Preventing Render Free Tier from sleeping (14-minute HTTP keep-alive ping)
+            static uint32_t s_lastRenderKeepAliveMs = millis();
+            if (millis() - s_lastRenderKeepAliveMs >= 840000UL) { // 14 minutes
+                s_lastRenderKeepAliveMs = millis();
+                HTTPClient httpPing;
+                httpPing.begin("https://smart-desk-controller.onrender.com/health");
+                httpPing.setTimeout(3500);
+                httpPing.GET();
+                httpPing.end();
+                Serial.println(">>> [CLOUD] Sent 14-min keep-alive ping to Render to prevent sleep.");
             }
         }
 
