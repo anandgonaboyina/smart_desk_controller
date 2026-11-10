@@ -33,9 +33,10 @@ static char             s_cloudDeviceId[36]  = CLOUD_DEVICE_ID;
 static char             s_cloudDeviceKey[48] = CLOUD_AUTH_KEY;
 static char             s_cloudUser[36]      = CLOUD_DEFAULT_USER;
 static char             s_cloudPassword[36]  = ""; // Default empty / disabled (no password required initially)
-static bool    s_cloudSleepEnabled = false;
-static uint8_t s_cloudSleepStart   = 2;  // 2 AM default
-static uint8_t s_cloudSleepEnd     = 6;  // 6 AM default
+
+bool    s_cloudSleepEnabled = true;
+uint8_t s_cloudSleepStart   = 2;
+uint8_t s_cloudSleepEnd     = 6;
 
 /* ── NVS Persistence for Cloud Configuration ─────────────────────────────── */
 static inline void loadCloudConfigFromNVS() {

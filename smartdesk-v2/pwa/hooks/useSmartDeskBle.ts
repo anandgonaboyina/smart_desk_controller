@@ -1402,9 +1402,8 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
 
   connectRef.current = handleConnect;
 
-  /* Teardown & Auto-Connect on Mount */
+/* Teardown & Auto-Connect on Mount */
   useEffect(() => {
-    // Teardown listener on actual page refresh/close (avoid pagehide so screen lock doesn't disconnect)
     const onCleanTeardown = () => {
       if (deviceRef.current?.gatt?.connected) {
         try {
@@ -1435,64 +1434,26 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
       };
     }
 
-    let timeoutId: NodeJS.Timeout;
+    // Single-run check on mount (No retries or loops)
     const checkPersistentDevices = async () => {
       try {
         if (nav.bluetooth?.getDevices) {
           const knownDevices = await nav.bluetooth.getDevices();
           if (knownDevices && knownDevices.length > 0) {
             const lastId = localStorage.getItem("smartdesk_last_device_id");
-            const lastName = localStorage.getItem("smartdesk_last_device_name");
-            const matched = (lastId && knownDevices.find((d) => d.id === lastId)) ||
-              (lastName && knownDevices.find((d) => d.name === lastName)) ||
-              knownDevices.find((d) => d.name?.toLowerCase().includes("smartdesk") || d.name?.toLowerCase().includes("controller") || d.name?.toLowerCase().includes("sd") || d.name?.toLowerCase().includes("desk")) ||
-              knownDevices[0];
-
-            if (matched) {
+            const matched = lastId && knownDevices.find((d) => d.id === lastId);
+            if (matched && !connectedRef.current) {
               setLastDeviceDetected(matched);
-              addLog(`Found pre-authorized device '${matched.name || "smartDesk"}'. Auto-reconnecting...`, "info");
-
-              // Listen for live BLE advertisement if supported
-              if ("watchAdvertisements" in matched) {
-                try {
-                  const abortCtrl = new AbortController();
-                  matched.addEventListener("advertisementreceived", async () => {
-                    abortCtrl.abort();
-                    if (!connectedRef.current && !connectingRef.current) {
-                      addLog(`BLE Advertisement detected from '${matched.name}'. Connecting...`, "info");
-                      await connectRef.current(matched, true);
-                    }
-                  }, { once: true, signal: abortCtrl.signal });
-                  await (matched as any).watchAdvertisements({ signal: abortCtrl.signal });
-                } catch (_) {}
-              }
-
-              // Direct auto-connect attempt
-              try {
-                await connectRef.current(matched, true);
-              } catch (_) {
-                // If initial attempt fails due to reload GATT transition, retry once after 2.5s
-                setTimeout(async () => {
-                  if (!connectedRef.current && !connectingRef.current) {
-                    try {
-                      addLog("Retrying auto-connect...", "info");
-                      await connectRef.current(matched, true);
-                    } catch (_) {}
-                  }
-                }, 2500);
-              }
+              addLog(`Found pre-authorized device '${matched.name || "smartDesk"}'.`, "info");
             }
           }
         }
       } catch (e) {}
     };
 
-    timeoutId = setTimeout(() => {
-      checkPersistentDevices();
-    }, 200);
+    checkPersistentDevices();
 
     return () => {
-      clearTimeout(timeoutId);
       window.removeEventListener("beforeunload", onCleanTeardown);
     };
   }, [addLog]);
@@ -1747,6 +1708,31 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     savePresenceConfig({ ...presenceConfig, enabled: false }, "");
     onToastRef.current?.("Designated presence device cleared. Presence tracking inactive.");
   }, [savePresenceConfig, presenceConfig]);
+
+// Save Cloud Sleep Schedule via BLE (Command 0xE5)
+  const saveCloudSleepOverBle = useCallback(
+    async (enabled: boolean, startH: number, endH: number) => {
+      if (!configCharRef.current) return;
+      try {
+        const payload = new Uint8Array([
+          0xe5, // Command byte
+          enabled ? 1 : 0,
+          startH,
+          endH
+        ]);
+        
+        enqueueWrite("Set Cloud Sleep Config via BLE", async () => {
+          addLog(`[TX CONFIG] ${bytesToHex(payload)} (Cloud Sleep: ${enabled ? 'ON' : 'OFF'}, ${startH}:00-${endH}:00)`, "tx");
+          await writeCharFast(configCharRef.current, payload);
+        });
+
+      } catch (err) {
+        console.error("[BLE TX] Failed to send Cloud Sleep config", err);
+      }
+    },
+    [enqueueWrite, addLog]
+  );
+
 
   /* Dynamic Strip Length Command (0xF3) */
   const saveStripLength = useCallback(
@@ -2293,6 +2279,7 @@ export function useSmartDeskBle(options?: UseSmartDeskBleOptions) {
     deleteStoredClient,
     customDelayInput,
     setCustomDelayInput,
+    saveCloudSleepOverBle,
     stripLength,
     setStripLength,
     saveStripLength,

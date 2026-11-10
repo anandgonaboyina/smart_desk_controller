@@ -23,8 +23,8 @@
 #include "smartdesk_cloud.h"
 
 static volatile int8_t s_reqConnectSlot = -1;
-static volatile bool   s_reqConnectAny  = false;
 static volatile bool   s_reqBleWifiScan = false;
+volatile bool s_reqConnectAny = false;
 bool                   s_softApActive   = false;
 
 /* Forward Declarations */
@@ -85,7 +85,7 @@ extern void getLocalTime(uint8_t* outH, uint8_t* outM, uint8_t* outS, uint8_t* o
 static SavedNetwork  s_savedNetworks[MAX_WIFI_NETWORKS];
 static ApConfig      s_apConfig;
 static bool          s_wifiOnAwayOnly   = false; // Default: Wi-Fi on all the time
-static bool          s_wifiConnected    = false;
+ bool          s_wifiConnected    = false;
 static char          s_currentSsid[65]  = {0};
 static char          s_ipAddress[20]    = "0.0.0.0";
 static int8_t        s_wifiRssi         = 0;
@@ -1555,27 +1555,29 @@ static void wifiWorkerTask(void* pvParameters) {
             notifyEnvState();
         }
 
-        // 4. Update cloud WebSocket client if internet is active
+// 4. Update cloud WebSocket client if internet is active
+        static bool s_cloudIntendedState = false; // Tracks if we want the WS running
         if (s_wifiConnected) {
+
             if (s_connected) {
                 // BLE is actively connected. Drop the Cloud WS to save Render hours.
-                if (s_cloudConnected) {
+                if (s_cloudIntendedState) {
                     Serial.println(">>> [POWER SAVE] BLE connected. Dropping Cloud WebSocket...");
                     stopCloudClient();
+                    s_cloudIntendedState = false; // Mark it as intentionally stopped
                 }
             } else {
-                updateCloudClient();
-                if (!s_cloudConnected) {
-                    static uint32_t s_lastWsAutoReconnectMs = 0;
-                    if (millis() - s_lastWsAutoReconnectMs >= 15000UL) {
-                        s_lastWsAutoReconnectMs = millis();
-                        if (checkInternetAccess()) {
-                            Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay...");
-                            startCloudClient();
-                        }
-                    }
-                } else {
-                    // Prevent Render Free Tier from sleeping ONLY when actively using the cloud
+                // BLE is disconnected. Start the Cloud WS exactly ONCE and let the native library handle retries.
+                if (!s_cloudIntendedState) {
+                    Serial.println(">>> [CLOUD WS] BLE disconnected. Initializing cloud relay...");
+                    startCloudClient();
+                    s_cloudIntendedState = true; // Mark it as intentionally running
+                }
+                
+                updateCloudClient(); // Process incoming data and native auto-reconnects
+                
+                // Prevent Render Free Tier from sleeping ONLY when actively using the cloud
+                if (s_cloudConnected) {
                     static uint32_t s_lastRenderKeepAliveMs = millis();
                     if (millis() - s_lastRenderKeepAliveMs >= 840000UL) { // 14 minutes
                         s_lastRenderKeepAliveMs = millis();
@@ -1588,6 +1590,9 @@ static void wifiWorkerTask(void* pvParameters) {
                     }
                 }
             }
+        } else {
+            // If Wi-Fi drops completely, reset intended state so it gets freshly initialized upon Wi-Fi reconnect
+            s_cloudIntendedState = false;
         }
 
         uint32_t now = millis();

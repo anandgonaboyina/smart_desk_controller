@@ -95,81 +95,84 @@ export function useRemoteDeskWs({
 }: UseRemoteDeskWsOptions = {}) {
   const effectiveWsUrl = wsUrl || resolveDefaultWsUrl();
 
-  // Load cached credentials from localStorage if available
-  const [currentUserId, setCurrentUserId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("smartdesk_cloud_user") || userId;
-    }
-    return userId;
-  });
-
-  const [currentPassword, setCurrentPassword] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("smartdesk_cloud_pass") || password;
-    }
-    return password;
-  });
-
-  const [currentDeviceId, setCurrentDeviceId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("smartdesk_cloud_device_id");
-      if (saved && saved.trim()) {
-        const trimmed = saved.trim();
-        // Automatically migrate legacy 'desk_anand' or 'desk_anand_s3' to active 'desk_anandkumar'
-        if (trimmed === "desk_anand" || trimmed === "desk_anand_s3") {
-          localStorage.setItem("smartdesk_cloud_device_id", "desk_anandkumar");
-          return "desk_anandkumar";
-        }
-        return trimmed;
-      }
-    }
-    return deviceId || "desk_anandkumar";
-  });
-
+  // Deterministic initial state to guarantee zero SSR hydration mismatch
+  const [currentUserId, setCurrentUserId] = useState<string>(userId);
+  const [currentPassword, setCurrentPassword] = useState<string>(password);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>(deviceId || "desk_anandkumar");
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [remoteModeEnabled, setRemoteModeEnabled] = useState<boolean>(false);
-  const [deviceState, setDeviceState] = useState<RemoteDeviceState>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const cached = localStorage.getItem("smartdesk_cached_remote_state");
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed.relays) && parsed.relays.length === 4) {
-            return parsed;
-          }
-        }
-      } catch (_) {}
-    }
-    return {
-      relays: [
-        { load: false, remainingMin: 0 },
-        { load: false, remainingMin: 0 },
-        { load: false, remainingMin: 0 },
-        { load: false, remainingMin: 0 },
-      ],
-      configs: [
-        { name: "Relay 1", wiring: 0 },
-        { name: "Relay 2", wiring: 0 },
-        { name: "Relay 3", wiring: 0 },
-        { name: "Relay 4", wiring: 0 },
-      ],
-      led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
-      env: { tempC: 0, humidity: 0, valid: false },
-    };
+  const [deviceState, setDeviceState] = useState<RemoteDeviceState>({
+    relays: [
+      { load: false, remainingMin: 0 },
+      { load: false, remainingMin: 0 },
+      { load: false, remainingMin: 0 },
+      { load: false, remainingMin: 0 },
+    ],
+    configs: [
+      { name: "Relay 1", wiring: 0 },
+      { name: "Relay 2", wiring: 0 },
+      { name: "Relay 3", wiring: 0 },
+      { name: "Relay 4", wiring: 0 },
+    ],
+    led: { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
+    env: { tempC: 0, humidity: 0, valid: false },
   });
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Stable callback refs to prevent un-memoized parent functions from triggering reconnect cycles
+  const onStateUpdateRef = useRef(onStateUpdate);
+  onStateUpdateRef.current = onStateUpdate;
+  const onToastRef = useRef(onToast);
+  onToastRef.current = onToast;
+
+  // Lightweight deduplication cache: key -> timestamp received
+  const processedMessageKeysRef = useRef<Map<string, number>>(new Map());
+
+  // Stable reference to connect function to prevent re-creation cascades
+  const connectRef = useRef<() => void>(() => {});
+
   // Synchronous ref to prevent stale credentials closure across async socket reconnects:
   const credsRef = useRef<{ user: string; pass: string; devId: string; name: string }>({
-    user: currentUserId,
-    pass: currentPassword,
-    devId: currentDeviceId,
-    name: typeof window !== "undefined" ? localStorage.getItem("smartdesk_last_device_name") || "" : "",
+    user: userId,
+    pass: password,
+    devId: deviceId || "desk_anandkumar",
+    name: "",
   });
+
+  // Client-side hydration: Read cached credentials and state safely on mount without SSR mismatch
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedUser = localStorage.getItem("smartdesk_cloud_user");
+      if (savedUser) {
+        setCurrentUserId(savedUser);
+        credsRef.current.user = savedUser;
+      }
+      const savedPass = localStorage.getItem("smartdesk_cloud_pass");
+      if (savedPass) {
+        setCurrentPassword(savedPass);
+        credsRef.current.pass = savedPass;
+      }
+      const savedDevId = localStorage.getItem("smartdesk_cloud_device_id");
+      if (savedDevId && savedDevId.trim()) {
+        const trimmed = savedDevId.trim();
+        const effectiveDev = (trimmed === "desk_anand" || trimmed === "desk_anand_s3") ? "desk_anandkumar" : trimmed;
+        setCurrentDeviceId(effectiveDev);
+        credsRef.current.devId = effectiveDev;
+      }
+      const cached = localStorage.getItem("smartdesk_cached_remote_state");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed.relays) && parsed.relays.length === 4) {
+          setDeviceState(parsed);
+        }
+      }
+    } catch (_) {}
+  }, []);
 
   const forceReconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -182,6 +185,8 @@ export function useRemoteDeskWs({
     }
     if (wsRef.current) {
       try {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
         wsRef.current.close();
@@ -191,7 +196,7 @@ export function useRemoteDeskWs({
     setIsWsConnected(false);
     setIsDeviceOnline(false);
     setTimeout(() => {
-      connect();
+      connectRef.current();
     }, 50);
   }, []);
 
@@ -226,9 +231,19 @@ export function useRemoteDeskWs({
       }`
     );
 
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-      console.log(`[CLOUD WS LIFECYCLE] connect() skipped: socket already active with readyState: ${formatReadyState(wsRef.current.readyState)}`);
-      return;
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+        console.log(`[CLOUD WS LIFECYCLE] connect() skipped: socket already active with readyState: ${formatReadyState(wsRef.current.readyState)}`);
+        return;
+      }
+      try {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+      } catch (_) {}
+      wsRef.current = null;
     }
 
     try {
@@ -255,6 +270,7 @@ export function useRemoteDeskWs({
       }, 7000);
 
       socket.onopen = () => {
+        if (wsRef.current !== socket) return;
         if (connectTimeoutRef.current) {
           clearTimeout(connectTimeoutRef.current);
           connectTimeoutRef.current = null;
@@ -274,116 +290,145 @@ export function useRemoteDeskWs({
         };
         console.log("[CLOUD WS TX AUTH] Outgoing auth handshake payload:", JSON.stringify(authPayload));
         socket.send(JSON.stringify(authPayload));
-
-        // State-sync handshake: Immediately request live hardware state upon WebSocket connect
-        const getStatePayload = {
-          cmd: "get_state",
-          type: "get_state",
-          deviceId: credsRef.current.devId,
-          timestamp: Date.now(),
-        };
-        console.log("[CLOUD WS TX] Requesting live hardware state:", JSON.stringify(getStatePayload));
-        socket.send(JSON.stringify(getStatePayload));
       };
 
       socket.onmessage = (event) => {
-        console.log(
-          `[CLOUD WS RX] readyState: ${formatReadyState(socket.readyState)} | raw data length: ${
-            typeof event.data === "string" ? event.data.length : "non-string"
-          } | payload preview:`,
-          typeof event.data === "string" && event.data.length > 300 ? event.data.substring(0, 300) + "..." : event.data
-        );
-        try {
-          const data = JSON.parse(event.data);
-          console.log(`[CLOUD WS RX PARSED] type="${data.type || data.cmd || data.action || "(none)"}"`, data);
+        if (wsRef.current !== socket) return;
+        if (typeof event.data !== "string") return;
 
-          if (data.type === "auth_res") {
-            if (data.ok) {
-              setIsDeviceOnline(Boolean(data.deviceOnline));
-              setRemoteModeEnabled(Boolean(data.remoteModeEnabled));
+        const now = Date.now();
+        const cache = processedMessageKeysRef.current;
 
-              // If server confirmed canonical device ID (e.g. desk_anandkumar), synchronize it immediately
-              if (data.deviceId && data.deviceId !== credsRef.current.devId) {
-                console.log(`[CLOUD WS] Syncing canonical deviceId from server: "${data.deviceId}" (was "${credsRef.current.devId}")`);
-                credsRef.current.devId = data.deviceId;
-                setCurrentDeviceId(data.deviceId);
-                if (typeof window !== "undefined") {
-                  try {
-                    localStorage.setItem("smartdesk_cloud_device_id", data.deviceId);
-                  } catch (_) {}
-                }
-              }
-
-              const targetDevId = data.deviceId || credsRef.current.devId;
-              const stateObj = data.currentState || data.cachedState || data.state;
-              if (stateObj) {
-                const rawRelays = stateObj.relays || data.relays;
-                if (Array.isArray(rawRelays) && rawRelays.length > 0) {
-                  const relays = rawRelays.map((r: any) => {
-                    if (typeof r === "boolean") return { load: r, remainingMin: 0 };
-                    if (typeof r === "number") return { load: Boolean(r), remainingMin: 0 };
-                    return {
-                      load: Boolean(r?.load),
-                      remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
-                    };
-                  });
-                  const rawWifi = stateObj.wifi || data.wifi;
-                  const updated: RemoteDeviceState = {
-                    relays,
-                    configs: stateObj.configs || data.configs,
-                    led: stateObj.led || data.led || { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
-                    env: stateObj.env || data.env || { tempC: 0, humidity: 0, valid: false },
-                    presence: stateObj.presence,
-                    deviceName: stateObj.deviceName || data.deviceName,
-                    stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
-                    matrix: stateObj.matrix || data.matrix,
-                    schedules: stateObj.schedules || data.schedules,
-                    wifi: rawWifi
-                      ? {
-                          connected: Boolean(rawWifi.connected),
-                          ssid: rawWifi.ssid || "",
-                          ip: rawWifi.ip || "",
-                        }
-                      : undefined,
-                  };
-                  if (typeof window !== "undefined") {
-                    try {
-                      localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
-                    } catch (_) {}
-                  }
-                  setDeviceState(updated);
-                  if (onStateUpdate) onStateUpdate(updated);
-                }
-              }
-
-              // State-sync handshake: Send { cmd: 'get_state' } right after auth confirmation
-              const getStatePayload = {
-                cmd: "get_state",
-                type: "get_state",
-                deviceId: targetDevId,
-                timestamp: Date.now(),
-              };
-              console.log("[CLOUD WS TX] Requesting live hardware state after auth_res:", JSON.stringify(getStatePayload));
-              socket.send(JSON.stringify(getStatePayload));
-
-              // Automatically synchronize device hardware clock with browser's local time upon connection
-              const now = new Date();
-              socket.send(
-                JSON.stringify({
-                  type: "time_sync",
-                  deviceId: targetDevId,
-                  h: now.getHours(),
-                  m: now.getMinutes(),
-                  s: now.getSeconds(),
-                  dow: now.getDay(),
-                  timestamp: Date.now(),
-                })
-              );
-            } else {
-              console.error("[CLOUD WS] Authentication failed:", data.error);
-              if (onToast) onToast(`Cloud Auth Failed: ${data.error || "Unauthorized"}`, "error");
+        // Prune stale cache entries older than 3 seconds (keeps cache lightweight)
+        if (cache.size > 50) {
+          for (const [key, ts] of cache.entries()) {
+            if (now - ts > 3000) {
+              cache.delete(key);
             }
           }
+        }
+
+        // Fast raw payload deduplication: if exact raw string received within 600ms, skip duplicate
+        const rawPrev = cache.get(event.data);
+        if (rawPrev !== undefined && now - rawPrev < 600) {
+          return;
+        }
+        cache.set(event.data, now);
+
+        try {
+          const data = JSON.parse(event.data);
+          const msgType = data.type || data.cmd || data.action || "";
+          const msgDeviceId = data.deviceId || "";
+
+          // 1. Semantic deduplication for state updates (fingerprint relay loads + led mode/color)
+          if (msgType === "state_update" || Boolean(data.relays) || Boolean(data.state?.relays)) {
+            const rawR = data.relays || data.state?.relays;
+            const relaySignature = Array.isArray(rawR)
+              ? rawR.map((r: any) => (typeof r === "boolean" ? (r ? "1" : "0") : (r?.load ? "1" : "0"))).join("")
+              : "";
+            const ledR = data.led || data.state?.led;
+            const ledSignature = ledR ? `${ledR.mode}_${ledR.r}_${ledR.g}_${ledR.b}_${ledR.bri}` : "";
+            const stateDedupKey = `state_${msgDeviceId}_${relaySignature}_${ledSignature}`;
+            const statePrev = cache.get(stateDedupKey);
+            if (statePrev !== undefined && now - statePrev < 600) {
+              return; // Suppress duplicate back-to-back state update broadcast
+            }
+            cache.set(stateDedupKey, now);
+          }
+
+          // 2. Semantic deduplication for command acknowledgements
+          if (msgType === "cmd_ack" && data.action) {
+            const ackKey = `ack_${msgDeviceId}_${data.action}_${data.channel ?? ""}_${Boolean(data.success)}`;
+            const ackPrev = cache.get(ackKey);
+            if (ackPrev !== undefined && now - ackPrev < 600) {
+              return; // Suppress duplicate command ack
+            }
+            cache.set(ackKey, now);
+          }
+
+          // 3. Concise single-line diagnostic log (replaces 2 separate RX + PARSED logs)
+          console.log(
+            `[CLOUD WS RX] type="${msgType || "(none)"}" | readyState: ${formatReadyState(socket.readyState)} | device: ${msgDeviceId}`,
+            data
+          );
+
+        if (data.type === "auth_res") {
+                    if (data.ok) {
+                      setIsDeviceOnline(Boolean(data.deviceOnline));
+                      setRemoteModeEnabled(Boolean(data.remoteModeEnabled));
+
+                      // If server confirmed canonical device ID, synchronize it immediately
+                      if (data.deviceId && data.deviceId !== credsRef.current.devId) {
+                        console.log(`[CLOUD WS] Syncing canonical deviceId from server: "${data.deviceId}" (was "${credsRef.current.devId}")`);
+                        credsRef.current.devId = data.deviceId;
+                        setCurrentDeviceId(data.deviceId);
+                        if (typeof window !== "undefined") {
+                          try {
+                            localStorage.setItem("smartdesk_cloud_device_id", data.deviceId);
+                          } catch (_) {}
+                        }
+                      }
+
+                      const targetDevId = data.deviceId || credsRef.current.devId;
+                      const stateObj = data.currentState || data.cachedState || data.state;
+                      if (stateObj) {
+                        const rawRelays = stateObj.relays || data.relays;
+                        if (Array.isArray(rawRelays) && rawRelays.length > 0) {
+                          const relays = rawRelays.map((r: any) => {
+                            if (typeof r === "boolean") return { load: r, remainingMin: 0 };
+                            if (typeof r === "number") return { load: Boolean(r), remainingMin: 0 };
+                            return {
+                              load: Boolean(r?.load),
+                              remainingMin: typeof r?.remainingMin === "number" ? r.remainingMin : 0,
+                            };
+                          });
+                          const rawWifi = stateObj.wifi || data.wifi;
+                          const updated: RemoteDeviceState = {
+                            relays,
+                            configs: stateObj.configs || data.configs,
+                            led: stateObj.led || data.led || { mode: 1, r: 0, g: 180, b: 255, bri: 50, spd: 5 },
+                            env: stateObj.env || data.env || { tempC: 0, humidity: 0, valid: false },
+                            presence: stateObj.presence,
+                            deviceName: stateObj.deviceName || data.deviceName,
+                            stripLength: stateObj.stripLen || data.stripLen || stateObj.stripLength || data.stripLength,
+                            matrix: stateObj.matrix || data.matrix,
+                            schedules: stateObj.schedules || data.schedules,
+                            wifi: rawWifi
+                              ? {
+                                  connected: Boolean(rawWifi.connected),
+                                  ssid: rawWifi.ssid || "",
+                                  ip: rawWifi.ip || "",
+                                }
+                              : undefined,
+                          };
+                          if (typeof window !== "undefined") {
+                            try {
+                              localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
+                            } catch (_) {}
+                          }
+                          setDeviceState(updated);
+                          if (onStateUpdateRef.current) onStateUpdateRef.current(updated);
+                        }
+                      }
+
+                      // Automatically synchronize device hardware clock with browser's local time upon connection
+                      const now = new Date();
+                      socket.send(
+                        JSON.stringify({
+                          type: "time_sync",
+                          deviceId: targetDevId,
+                          h: now.getHours(),
+                          m: now.getMinutes(),
+                          s: now.getSeconds(),
+                          dow: now.getDay(),
+                          timestamp: Date.now(),
+                        })
+                      );
+                    } else {
+                      console.error("[CLOUD WS] Authentication failed:", data.error);
+                      if (onToastRef.current) onToastRef.current(`Cloud Auth Failed: ${data.error || "Unauthorized"}`, "error");
+                    }
+                  }
 
           if (data.type === "device_status") {
             const isOnline = Boolean(data.isOnline);
@@ -394,8 +439,8 @@ export function useRemoteDeskWs({
                 wifi: prev.wifi ? { ...prev.wifi, connected: false } : { connected: false },
               }));
             }
-            if (onToast) {
-              onToast(isOnline ? "SmartDesk connected to Cloud" : "SmartDesk went Offline", isOnline ? "success" : "warn");
+            if (onToastRef.current) {
+              onToastRef.current(isOnline ? "SmartDesk connected to Cloud" : "SmartDesk went Offline", isOnline ? "success" : "warn");
             }
           }
 
@@ -470,7 +515,7 @@ export function useRemoteDeskWs({
                   localStorage.setItem("smartdesk_cached_remote_state", JSON.stringify(updated));
                 } catch (_) {}
               }
-              if (onStateUpdate) onStateUpdate(updated);
+              if (onStateUpdateRef.current) onStateUpdateRef.current(updated);
               return updated;
             });
           }
@@ -480,7 +525,7 @@ export function useRemoteDeskWs({
           }
 
           if (data.type === "error") {
-            if (onToast) onToast(data.message || "Cloud error", "error");
+            if (onToastRef.current) onToastRef.current(data.message || "Cloud error", "error");
           }
         } catch (e) {
           console.error("[CLOUD WS] Message parse error", e);
@@ -488,6 +533,10 @@ export function useRemoteDeskWs({
       };
 
       socket.onclose = (event) => {
+        // If this socket was already superseded or cleaned up, completely ignore its onclose
+        if (wsRef.current !== socket) {
+          return;
+        }
         if (connectTimeoutRef.current) {
           clearTimeout(connectTimeoutRef.current);
           connectTimeoutRef.current = null;
@@ -498,10 +547,11 @@ export function useRemoteDeskWs({
         console.warn(
           `[CLOUD WS] Connection closed. code=${event.code}, reason="${event.reason || "(none)"}", wasClean=${event.wasClean}, readyState: ${formatReadyState(socket.readyState)}. Retrying in 2 seconds...`
         );
-        reconnectTimeoutRef.current = setTimeout(connect, 2000);
+        reconnectTimeoutRef.current = setTimeout(() => connectRef.current(), 2000);
       };
 
       socket.onerror = (err) => {
+        if (wsRef.current !== socket) return;
         const errorDetails = {
           type: (err as any)?.type || "error",
           readyState: formatReadyState(socket.readyState),
@@ -514,18 +564,37 @@ export function useRemoteDeskWs({
       };
     } catch (err) {
       console.error("[CLOUD WS] Connection attempt error", err);
-      reconnectTimeoutRef.current = setTimeout(connect, 2000);
+      reconnectTimeoutRef.current = setTimeout(() => connectRef.current(), 2000);
     }
-  }, [effectiveWsUrl, deviceKey, onStateUpdate, onToast]);
+  }, [effectiveWsUrl, deviceKey]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     console.log(`[CLOUD WS LIFECYCLE] Hook mount / connect trigger. wsUrl: "${effectiveWsUrl}"`);
     connect();
     return () => {
       console.log(`[CLOUD WS LIFECYCLE] Hook cleanup. Current readyState: ${wsRef.current ? formatReadyState(wsRef.current.readyState) : "null"}`);
-      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (wsRef.current) wsRef.current.close();
+      if (connectTimeoutRef.current) {
+        clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        try {
+          wsRef.current.onopen = null;
+          wsRef.current.onmessage = null;
+          wsRef.current.onclose = null;
+          wsRef.current.onerror = null;
+          wsRef.current.close();
+        } catch (_) {}
+        wsRef.current = null;
+      }
     };
   }, [connect, effectiveWsUrl]);
 

@@ -436,7 +436,7 @@ export default function SettingsPanel({
                 type="checkbox" 
                 className="sr-only peer" 
                 checked={sleepEnabled}
-                onChange={(e) => handleSaveCloudSleep(e.target.checked, sleepStartH, sleepEndH)}
+                onChange={(e) => setSleepEnabled(e.target.checked)}
               />
               <div className="w-9 h-5 md:w-11 md:h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 md:after:h-5 md:after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
             </label>
@@ -448,7 +448,7 @@ export default function SettingsPanel({
               <input 
                 type="number" min="0" max="23"
                 value={sleepStartH}
-                onChange={(e) => handleSaveCloudSleep(sleepEnabled, parseInt(e.target.value) || 0, sleepEndH)}
+                onChange={(e) => setSleepStartH(parseInt(e.target.value) || 0)}
                 className="w-full bg-black/50 border border-white/40 text-white rounded-lg px-2.5 py-1.5 md:py-2 text-[10px] md:text-xs font-bold focus:border-cyan-500 outline-none"
               />
             </div>
@@ -457,11 +457,20 @@ export default function SettingsPanel({
               <input 
                 type="number" min="0" max="23"
                 value={sleepEndH}
-                onChange={(e) => handleSaveCloudSleep(sleepEnabled, sleepStartH, parseInt(e.target.value) || 0)}
+                onChange={(e) => setSleepEndH(parseInt(e.target.value) || 0)}
                 className="w-full bg-black/50 border border-white/40 text-white rounded-lg px-2.5 py-1.5 md:py-2 text-[10px] md:text-xs font-bold focus:border-cyan-500 outline-none"
               />
             </div>
           </div>
+          
+          {/* Explicit Save Button to prevent accidental lockouts */}
+          <button 
+            type="button"
+            onClick={() => handleSaveCloudSleep(sleepEnabled, sleepStartH, sleepEndH)}
+            className="w-full mt-3 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-bold text-[10px] md:text-xs active:scale-95 cursor-pointer transition-all"
+          >
+            Save Sleep Schedule
+          </button>
         </div>
 
       {/* ── WORLDWIDE CLOUD REMOTE CREDENTIALS ── */}

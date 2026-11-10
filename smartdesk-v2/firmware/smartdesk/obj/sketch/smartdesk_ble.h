@@ -14,6 +14,7 @@
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 #include "smartdesk_pins.h"
+#include <WiFi.h>
 
 /* ── Fast Command Queue for Non-Blocking Callbacks ───────────────────────── */
 enum WriteType { WT_NONE = 0, WT_RELAY, WT_LED, WT_CONFIG };
@@ -170,7 +171,42 @@ class ConfigCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pChr, NimBLEConnInfo& connInfo) override {
         (void)connInfo;
         NimBLEAttValue val = pChr->getValue();
-        enqueueCmd(WT_CONFIG, val.data(), val.length());
+        const uint8_t* rxValue = val.data();
+        size_t len = val.length();
+
+        // --- NEW: 0xE5 Cloud Sleep Config & Rescue via BLE ---
+        if (len >= 4 && rxValue[0] == 0xE5) {
+            extern bool s_cloudSleepEnabled;
+            extern uint8_t s_cloudSleepStart;
+            extern uint8_t s_cloudSleepEnd;
+            extern bool s_wifiConnected;
+            extern volatile bool s_reqConnectAny;
+
+            s_cloudSleepEnabled = (rxValue[1] > 0);
+            s_cloudSleepStart = (uint8_t)rxValue[2];
+            s_cloudSleepEnd = (uint8_t)rxValue[3];
+
+            Preferences prefs;
+            prefs.begin("desk_cloud", false);
+            prefs.putBool("slp_en", s_cloudSleepEnabled);
+            prefs.putUChar("slp_st", s_cloudSleepStart);
+            prefs.putUChar("slp_ed", s_cloudSleepEnd);
+            prefs.end();
+
+            Serial.printf(">>> [BLE] Cloud Sleep set: En=%d, %02d:00 to %02d:00\n", 
+                          s_cloudSleepEnabled, s_cloudSleepStart, s_cloudSleepEnd);
+
+            // RESCUE MECHANISM: If sleep was just disabled, immediately wake up the Wi-Fi radio!
+            if (!s_cloudSleepEnabled && !s_wifiConnected) {
+                Serial.println(">>> [BLE RESCUE] Sleep disabled via BLE. Waking up Wi-Fi radio...");
+                WiFi.mode(WIFI_STA);
+                s_reqConnectAny = true; 
+            }
+            return; // Command handled directly, no need to enqueue
+        }
+
+        // Standard commands (0xE1, etc) get enqueued for the main loop
+        enqueueCmd(WT_CONFIG, rxValue, len);
     }
 };
 

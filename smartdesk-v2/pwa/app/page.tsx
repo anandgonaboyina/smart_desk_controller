@@ -62,7 +62,28 @@ export default function SmartDeskApp() {
     onMusicFrame: remote.sendMusicFrame,
   });
 
+  // 1. The unified disconnect function
+  const handleUserDisconnectBle = useCallback(() => {
+    console.log("[PWA FAILOVER] User clicked Disconnect. Dropping BLE and waking up Cloud WS...");
+    ble.handleDisconnected(); // Tell the BLE hook to disconnect
+    remote.reconnect();       // Tell the Cloud hook to wake up
+  }, [ble, remote]);
+
+  // 2. The Auto-Failover Effect (Replace the old one with this)
+  const wasBleConnectedRef = useRef(ble.connected);
+  
+useEffect(() => {
+    // Only trigger exactly once when transitioning from True -> False
+    if (wasBleConnectedRef.current && !ble.connected) {
+      console.log("[PWA FAILOVER] BLE dropped. Forcing fresh Cloud WS reconnect...");
+      remote.reconnect(); 
+    } 
+    
+    wasBleConnectedRef.current = ble.connected;
+  }, [ble.connected, remote.reconnect]);
+
   const isWsOnline = remote.isWsConnected && (remote.isDeviceOnline || Boolean(remote.deviceState.wifi?.connected));
+
 
   const effectiveWifiConnected = useMemo(() => {
     if (ble.connected) return ble.wifiConnected;
@@ -611,7 +632,7 @@ export default function SmartDeskApp() {
           bleConnected={ble.connected}
           bleConnecting={ble.connecting}
           onConnectBle={ble.handleConnect}
-          onDisconnectBle={ble.handleDisconnected}
+          onDisconnectBle={handleUserDisconnectBle}
           isWsConnected={remote.isWsConnected}
           isCloudOnline={remote.isWsConnected && (remote.isDeviceOnline || effectiveWifiConnected || isDeskConnected)}
           onOpenHandshake={() => setShowHandshakeModal(true)}
@@ -780,7 +801,7 @@ export default function SmartDeskApp() {
                 onTestBuzzer={handleTestBuzzer}
                 onRename={handleRename}
                 onConnect={ble.handleConnect}
-                onDisconnect={ble.handleDisconnected}
+                onDisconnect={handleUserDisconnectBle}
                 onClearLogs={ble.clearLogs}
                 wifiHost={ble.wifiHost}
                 wifiConnected={effectiveWifiConnected}
@@ -797,7 +818,18 @@ export default function SmartDeskApp() {
                   await ble.saveCloudCredentialsOverBle(user, pass);
                 }}
                 onSetTempOffset={handleSetTempOffset}
-                onSetCloudSleep={remote.sendCloudSleepCommand}
+                onSetCloudSleep={(enabled, start, end) => {
+                  if (ble.connected) {
+                    ble.saveCloudSleepOverBle(enabled, start, end);
+                  }
+                  if (remote.isWsConnected && remote.isDeviceOnline) {
+                    remote.sendCloudSleepCommand(enabled, start, end);
+                  }
+                  // Let the user know the command was sent successfully
+                  if (!ble.connected && (!remote.isWsConnected || !remote.isDeviceOnline)) {
+                    showToast("Connect via BLE or Cloud to save schedule", "warn");
+                  }
+                }}
               />
             )}
           </div>
