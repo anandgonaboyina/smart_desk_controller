@@ -9,6 +9,14 @@ $buildDir = "$firmwareDir\build"
 $objDir = "$firmwareDir\obj"
 $cliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
 
+# =========================================================================
+# Wipe the build and object directories to force a 100% fresh build for minute changes comment out below two if statements
+# =========================================================================
+Write-Host "Wiping old build cache to force fresh compilation..." -ForegroundColor Yellow
+if (Test-Path $buildDir) { Remove-Item -Recurse -Force "$buildDir\*" -ErrorAction SilentlyContinue }
+if (Test-Path $objDir) { Remove-Item -Recurse -Force "$objDir\*" -ErrorAction SilentlyContinue }
+# =========================================================================
+
 Write-Host "Starting compiler (First run takes 1-3 minutes to build cache)...`n" -ForegroundColor Yellow
 
 # Build arguments array
