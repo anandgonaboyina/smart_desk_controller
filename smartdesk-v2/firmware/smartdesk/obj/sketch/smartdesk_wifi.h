@@ -1469,7 +1469,25 @@ static void wifiWorkerTask(void* pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(2000)); // Allow Core 1 setup() & BLE to finish completely before Wi-Fi starts
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(25)); // 25ms tick for fast background response
-
+        // --- Hardware Sleep Window Check ---
+        static bool s_wasSleeping = false;
+        if (isCloudSleepTime()) {
+            if (!s_wasSleeping) {
+                Serial.println(">>> [POWER SAVE] Sleep window active. Shutting down Wi-Fi radio & Cloud...");
+                stopCloudClient();
+                WiFi.disconnect(true, true);
+                WiFi.mode(WIFI_OFF);
+                s_wifiConnected = false;
+                s_wasSleeping = true;
+            }
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue; // Skip all other Wi-Fi operations while sleeping
+        } else if (s_wasSleeping) {
+            Serial.println(">>> [POWER SAVE] Sleep window ended. Waking up Wi-Fi radio...");
+            WiFi.mode(WIFI_STA);
+            s_reqConnectAny = true; 
+            s_wasSleeping = false;
+        }
         // 1. Handle BLE Wi-Fi Airwave Scan Request (0xEE)
         if (s_reqBleWifiScan) {
             s_reqBleWifiScan = false;
@@ -1538,19 +1556,38 @@ static void wifiWorkerTask(void* pvParameters) {
             notifyEnvState();
         }
 
-        // 4. Update cloud WebSocket client if internet is active (throttled auto-reconnect)
+        // 4. Update cloud WebSocket client if internet is active
         if (s_wifiConnected) {
-            updateCloudClient();
-            // Preventing Render Free Tier from sleeping (14-minute HTTP keep-alive ping)
-            static uint32_t s_lastRenderKeepAliveMs = millis();
-            if (millis() - s_lastRenderKeepAliveMs >= 840000UL) { // 14 minutes
-                s_lastRenderKeepAliveMs = millis();
-                HTTPClient httpPing;
-                httpPing.begin("https://smart-desk-controller.onrender.com/health");
-                httpPing.setTimeout(3500);
-                httpPing.GET();
-                httpPing.end();
-                Serial.println(">>> [CLOUD] Sent 14-min keep-alive ping to Render to prevent sleep.");
+            if (s_connected) {
+                // BLE is actively connected. Drop the Cloud WS to save Render hours.
+                if (s_cloudConnected) {
+                    Serial.println(">>> [POWER SAVE] BLE connected. Dropping Cloud WebSocket...");
+                    stopCloudClient();
+                }
+            } else {
+                updateCloudClient();
+                if (!s_cloudConnected) {
+                    static uint32_t s_lastWsAutoReconnectMs = 0;
+                    if (millis() - s_lastWsAutoReconnectMs >= 15000UL) {
+                        s_lastWsAutoReconnectMs = millis();
+                        if (checkInternetAccess()) {
+                            Serial.println(">>> [CLOUD WS] Auto-reconnecting to cloud relay...");
+                            startCloudClient();
+                        }
+                    }
+                } else {
+                    // Prevent Render Free Tier from sleeping ONLY when actively using the cloud
+                    static uint32_t s_lastRenderKeepAliveMs = millis();
+                    if (millis() - s_lastRenderKeepAliveMs >= 840000UL) { // 14 minutes
+                        s_lastRenderKeepAliveMs = millis();
+                        HTTPClient httpPing;
+                        httpPing.begin("https://smart-desk-controller.onrender.com/health");
+                        httpPing.setTimeout(3500);
+                        httpPing.GET();
+                        httpPing.end();
+                        Serial.println(">>> [CLOUD] Sent 14-min keep-alive ping to Render to prevent sleep.");
+                    }
+                }
             }
         }
 

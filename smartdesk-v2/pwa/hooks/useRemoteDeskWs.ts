@@ -1091,6 +1091,28 @@ export function useRemoteDeskWs({
     if (onToast) onToast("Synchronized hardware clock with browser time", "info");
   }, [currentDeviceId, onToast]);
 
+  // Send Cloud Sleep Schedule Command
+    const sendCloudSleepCommand = useCallback(
+      (enabled: boolean, startH: number, endH: number) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          if (onToast) onToast("Cannot save sleep schedule: Cloud offline", "warn");
+          return;
+        }
+        wsRef.current.send(
+          JSON.stringify({
+            type: "cloud_sleep_set",
+            deviceId: currentDeviceId,
+            enabled,
+            startH,
+            endH,
+            timestamp: Date.now(),
+          })
+        );
+        if (onToast) onToast("Cloud Sleep Schedule updated!", "success");
+      },
+      [currentDeviceId, onToast]
+    );
+
   return {
     wsUrl: effectiveWsUrl,
     userId: currentUserId,
@@ -1123,6 +1145,7 @@ export function useRemoteDeskWs({
     sendScheduleDelete,
     sendScheduleTest,
     sendTimeSync,
+    sendCloudSleepCommand,
     sendAllOff,
   };
 }

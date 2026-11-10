@@ -16,7 +16,7 @@ firmware/.vscode/
 *.synctex.gz
 *.fls
 *.fdb_latexmk
-
+doc/
 
 # === Node / Next.js ===
 node_modules/

@@ -447,7 +447,8 @@ wss.on("connection", (ws, req) => {
         msg.type === "schedule_test" ||
         msg.type === "test_schedule" ||
         msg.type === "time_sync" ||
-        msg.type === "sync_time"
+        msg.type === "sync_time" ||
+        msg.type === "cloud_sleep_set"
       ) {
         if (!targetDev.isOnline || !targetDev.ws || targetDev.ws.readyState !== WebSocket.OPEN) {
           return ws.send(

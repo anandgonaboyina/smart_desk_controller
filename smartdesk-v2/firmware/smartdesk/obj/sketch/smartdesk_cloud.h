@@ -34,6 +34,9 @@ static char             s_cloudDeviceId[36]  = CLOUD_DEVICE_ID;
 static char             s_cloudDeviceKey[48] = CLOUD_AUTH_KEY;
 static char             s_cloudUser[36]      = CLOUD_DEFAULT_USER;
 static char             s_cloudPassword[36]  = ""; // Default empty / disabled (no password required initially)
+static bool    s_cloudSleepEnabled = false;
+static uint8_t s_cloudSleepStart   = 2;  // 2 AM default
+static uint8_t s_cloudSleepEnd     = 6;  // 6 AM default
 
 /* ── NVS Persistence for Cloud Configuration ─────────────────────────────── */
 static inline void loadCloudConfigFromNVS() {
@@ -45,6 +48,9 @@ static inline void loadCloudConfigFromNVS() {
     String devKey = prefs.getString("dev_key", CLOUD_AUTH_KEY);
     String user   = prefs.getString("user", CLOUD_DEFAULT_USER);
     String pass   = prefs.getString("pass", "");
+    s_cloudSleepEnabled = prefs.getBool("slp_en", false);
+    s_cloudSleepStart   = prefs.getUChar("slp_st", 2);
+    s_cloudSleepEnd     = prefs.getUChar("slp_ed", 6);
     prefs.end();
 
     strncpy(s_cloudHost, host.c_str(), sizeof(s_cloudHost) - 1);
@@ -272,6 +278,20 @@ static bool getJsonBool(const char* json, const char* key, bool defaultVal) {
     if (strncmp(p, "true", 4) == 0 || *p == '1') return true;
     if (strncmp(p, "false", 5) == 0 || *p == '0') return false;
     return defaultVal;
+}
+
+static inline bool isCloudSleepTime() {
+    if (!s_cloudSleepEnabled) return false;
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo, 10)) return false; // If NTP isn't synced yet, don't sleep
+    
+    uint8_t h = timeinfo.tm_hour;
+    if (s_cloudSleepStart < s_cloudSleepEnd) {
+        return (h >= s_cloudSleepStart && h < s_cloudSleepEnd);
+    } else { 
+        // Handles overnight wrapping (e.g., here 02:00 to 06:00)
+        return (h >= s_cloudSleepStart || h < s_cloudSleepEnd);
+    }
 }
 
 /* ── Inbound Cloud Message Handler ───────────────────────────────────────── */
@@ -797,6 +817,36 @@ static void handleCloudMessage(const char* payload, size_t length) {
         }
         return;
     }
+    // 21. Cloud Sleep Schedule Command
+    if (strcmp(cmd, "cloud_sleep_set") == 0) {
+        if (strstr(payload, "\"enabled\":")) {
+            s_cloudSleepEnabled = getJsonBool(payload, "enabled", s_cloudSleepEnabled);
+        }
+        int st = getJsonInt(payload, "startH", -1);
+        if (st >= 0 && st <= 23) s_cloudSleepStart = (uint8_t)st;
+        int ed = getJsonInt(payload, "endH", -1);
+        if (ed >= 0 && ed <= 23) s_cloudSleepEnd = (uint8_t)ed;
+
+        Preferences prefs;
+        prefs.begin("desk_cloud", false);
+        prefs.putBool("slp_en", s_cloudSleepEnabled);
+        prefs.putUChar("slp_st", s_cloudSleepStart);
+        prefs.putUChar("slp_ed", s_cloudSleepEnd);
+        prefs.end();
+
+        Serial.printf(">>> [CLOUD WS] Sleep Schedule set: Enabled=%d, Window: %02d:00 to %02d:00\n",
+                      s_cloudSleepEnabled, s_cloudSleepStart, s_cloudSleepEnd);
+        
+        char ackMsg[128];
+        snprintf(ackMsg, sizeof(ackMsg),
+            "{\"type\":\"ack\",\"deviceId\":\"%s\",\"action\":\"cloud_sleep_set\",\"success\":true}",
+            s_cloudDeviceId
+        );
+        s_cloudWs.sendTXT(ackMsg);
+        broadcastCloudState();
+        return;
+    }
+    
 }
 
 /* ── WebSocket Event Dispatcher ──────────────────────────────────────────── */

@@ -797,6 +797,7 @@ export default function SmartDeskApp() {
                   await ble.saveCloudCredentialsOverBle(user, pass);
                 }}
                 onSetTempOffset={handleSetTempOffset}
+                onSetCloudSleep={remote.sendCloudSleepCommand}
               />
             )}
           </div>

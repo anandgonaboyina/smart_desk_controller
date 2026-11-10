@@ -42,6 +42,7 @@ export interface SettingsPanelProps {
   cloudPassword?: string;
   onUpdateCloudCredentials?: (user: string, pass: string) => void;
   onSetTempOffset?: (offset: number) => void;
+  onSetCloudSleep?: (enabled: boolean, startH: number, endH: number) => void;
 }
 
 export default function SettingsPanel({
@@ -75,6 +76,7 @@ export default function SettingsPanel({
   cloudPassword = "",
   onUpdateCloudCredentials,
   onSetTempOffset,
+  onSetCloudSleep,
 }: SettingsPanelProps) {
   const [showRenameModal, setShowRenameModal] = useState<boolean>(false);
   const [showWifiModal, setShowWifiModal] = useState<boolean>(false);
@@ -96,6 +98,32 @@ export default function SettingsPanel({
     }
     return 0;
   });
+
+  // Cloud Sleep Schedule State
+  const [sleepEnabled, setSleepEnabled] = useState<boolean>(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("smartdesk_sleep_en") !== "false";
+    return false; // Default OFF
+  });
+  const [sleepStartH, setSleepStartH] = useState<number>(() => {
+    if (typeof window !== "undefined") return parseInt(localStorage.getItem("smartdesk_sleep_st") || "2");
+    return 2;
+  });
+  const [sleepEndH, setSleepEndH] = useState<number>(() => {
+    if (typeof window !== "undefined") return parseInt(localStorage.getItem("smartdesk_sleep_ed") || "6");
+    return 6;
+  });
+
+  const handleSaveCloudSleep = (enabled: boolean, start: number, end: number) => {
+    setSleepEnabled(enabled);
+    setSleepStartH(start);
+    setSleepEndH(end);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("smartdesk_sleep_en", enabled ? "true" : "false");
+      localStorage.setItem("smartdesk_sleep_st", start.toString());
+      localStorage.setItem("smartdesk_sleep_ed", end.toString());
+    }
+    onSetCloudSleep?.(enabled, start, end);
+  };
 
   const handleUpdateTempOffset = (val: number) => {
     const clamped = Math.round(Math.max(-15, Math.min(15, val)) * 10) / 10;
@@ -394,6 +422,47 @@ export default function SettingsPanel({
           </button>
         </div>
       </div>
+      
+{/* Smart Cloud Sleep Schedule */}
+        <div className="bg-black/40 border border-white/10 rounded-xl p-3 md:p-4 mt-3 border-t border-white/50">
+          <div className="flex justify-between items-center mb-3">
+            <div>
+              <h3 className="text-white font-bold text-[10px] md:text-xs">Smart Cloud Sleep</h3>
+              <p className="text-zinc-400 text-[8px] md:text-[10px]">Drop cloud connection overnight to save Render free-tier hours.</p>
+            </div>
+            
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={sleepEnabled}
+                onChange={(e) => handleSaveCloudSleep(e.target.checked, sleepStartH, sleepEndH)}
+              />
+              <div className="w-9 h-5 md:w-11 md:h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 md:after:h-5 md:after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+            </label>
+          </div>
+
+          <div className={`grid grid-cols-2 gap-3 transition-opacity duration-300 ${sleepEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <div>
+              <label className="block text-[9px] md:text-[10px] font-bold text-white/50 mb-1">Sleep Start (0-23)</label>
+              <input 
+                type="number" min="0" max="23"
+                value={sleepStartH}
+                onChange={(e) => handleSaveCloudSleep(sleepEnabled, parseInt(e.target.value) || 0, sleepEndH)}
+                className="w-full bg-black/50 border border-white/40 text-white rounded-lg px-2.5 py-1.5 md:py-2 text-[10px] md:text-xs font-bold focus:border-cyan-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] md:text-[10px] font-bold text-white/50 mb-1">Wake Up (0-23)</label>
+              <input 
+                type="number" min="0" max="23"
+                value={sleepEndH}
+                onChange={(e) => handleSaveCloudSleep(sleepEnabled, sleepStartH, parseInt(e.target.value) || 0)}
+                className="w-full bg-black/50 border border-white/40 text-white rounded-lg px-2.5 py-1.5 md:py-2 text-[10px] md:text-xs font-bold focus:border-cyan-500 outline-none"
+              />
+            </div>
+          </div>
+        </div>
 
       {/* ── WORLDWIDE CLOUD REMOTE CREDENTIALS ── */}
       <div className="p-3 md:p-5 rounded-xl md:rounded-2xl bg-white/[0.02] border border-white/50 space-y-3 md:space-y-4 shrink-0">
